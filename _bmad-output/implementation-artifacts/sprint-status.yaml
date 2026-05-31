@@ -37,6 +37,8 @@
 
 generated: 2026-05-31
 last_updated: 2026-05-31
+# story 3-1 code-review: done (2026-05-31) — 0 HIGH; 1 MED resolved inline (empty-slug title guard); 0 deferred
+# story 3-1: review (2026-05-31) — dev complete, 287 tests green
 # story 3-0 code-review: done (2026-05-31) — 0 HIGH/MED; 2 LOW deferred (3.0-a, 3.0-b)
 # story 3-0: ready-for-dev (2026-05-31) — epic-cycle retro-review gate
 # story 2-5 code-review: done (2026-05-31)
@@ -77,7 +79,7 @@ development_status:
   # Epic 3: Projects & sub-boards (MCP)
   epic-3: in-progress
   3-0-epic-2-deferred-cleanup: done
-  3-1-announce-a-project-and-create-its-sub-board: backlog
+  3-1-announce-a-project-and-create-its-sub-board: review
   3-2-browse-the-main-board: backlog
   3-3-join-a-sub-board-single-and-multiple: backlog
   3-4-sub-board-directory-with-focus-and-last-seen: backlog

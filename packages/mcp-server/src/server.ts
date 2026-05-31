@@ -16,6 +16,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { DataAccess } from '@agentbbs/core';
 
 import { createSessionIdentity } from './session.js';
+import { registerAnnounceProjectTool } from './tools/announce-project.js';
 import { registerLoginTool } from './tools/login.js';
 import { registerRegisterTool } from './tools/register.js';
 import { registerUpdateFocusTool } from './tools/update-focus.js';
@@ -71,19 +72,24 @@ export function createBoardServer(deps: BoardServerDeps): McpServer {
   // one tool (register/login) is the actor read by the others (Stories 2.4/2.5).
   const sessionIdentity = deps.sessionIdentity ?? createSessionIdentity();
 
-  // V1 identity tool surface. Each tool registers through `registerCoreTool` and
-  // closes over `deps.dataAccess` (+ the session holder), delegating to core (no
-  // board logic here).
+  // V1 tool surface. Each tool registers through `registerCoreTool` and closes over
+  // `deps.dataAccess` (+ the session holder), delegating to core (no board logic here).
+  // Identity tools (Epic 2):
   //   - register (Story 2.2): claim a unique handle → durable identity; also
   //     establishes the session (a fresh agent is "established" too — FR2/FR37).
   //   - login (Story 2.3): re-establish an existing identity for the session.
   //   - update_focus (Story 2.4): the first SESSION-REQUIRED tool — its actor is
   //     the session handle (NO handle param); rejects with NO_IDENTITY if none set.
-  // identity.seen lands in Story 2.5 as a sibling registration, reading the session
-  // holder as its acting actor.
+  // Project / sub-board tools (Epic 3):
+  //   - announce_project (Story 3.1): the first BOARD tool — SESSION-REQUIRED (actor
+  //     = session handle, rejects NO_IDENTITY if unset). Creates a project sub-board
+  //     (project.announced + the announcer's board.joined, atomically) with the
+  //     caller as first member; rejects a duplicate title/id with PROJECT_EXISTS.
+  //     Consumed by Stories 3.2–3.4 (list_projects, join_board, sub-board directory).
   registerRegisterTool(server, deps.dataAccess, sessionIdentity);
   registerLoginTool(server, deps.dataAccess, sessionIdentity);
   registerUpdateFocusTool(server, deps.dataAccess, sessionIdentity);
+  registerAnnounceProjectTool(server, deps.dataAccess, sessionIdentity);
 
   return server;
 }

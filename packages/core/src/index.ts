@@ -47,6 +47,14 @@ export { login } from './identity/login.js';
 export { updateFocus } from './identity/update-focus.js';
 export { recordSeen } from './identity/record-seen.js';
 
+// --- Projects directory projection (Story 3.1) ---
+export { findProject, foldProjects } from './projects/projection.js';
+export type { Project } from './projects/projection.js';
+
+// --- Project board operations (Story 3.1) ---
+export { announceProject } from './projects/announce-project.js';
+export type { AnnounceProjectInput } from './projects/announce-project.js';
+
 // --- Cross-package Vitest `src`-alias proof fixture (Story 3.0, AC #1) ---
 // Test-only sentinel: proves cross-package specifiers resolve to `src` via the
 // root vitest `resolve.alias` (not stale `dist`). See cross-package-alias-proof.ts.

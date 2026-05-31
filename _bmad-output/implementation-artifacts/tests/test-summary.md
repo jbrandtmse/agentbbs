@@ -539,3 +539,73 @@ SDK obstruction). `docs/adr/` confirmed absent — no ADR constraints to honor.
 - Story 2.4 (`update_focus`): the FIRST consumer of the session holder — its integration
   AC should assert the appended `identity.focus_updated` event's actor IS the session
   handle these tests prove is correctly established/replaced/isolated.
+
+---
+
+# Test Automation Summary — Story 3.1
+
+**Story:** 3.1 — Announce a project and create its sub-board (`announce_project`)
+**Stage:** `bmad-qa-generate-e2e-tests` (epic-cycle QA) · 2026-05-31 · branch `feature/AGENTBBS-1_agentbbs-mvp`
+**Framework:** Vitest 4.1.7 (single root runner) + the typecheck gate.
+
+## Outcome: 2 real-runtime gap tests added; dev coverage otherwise strong
+
+This is the first BOARD (non-identity) tool plus a `core` board op (`announceProject`)
+and the projects projection. The dev suite is genuinely strong: slug edge cases,
+two-event atomic happy path, `PROJECT_EXISTS` (same title AND distinct-title→same-slug)
+with nothing-appended against the in-memory fake, projection fold (announcer first
+member, seq-ordered, join-order de-dup, unknown-project ignored), and a real-runtime
+integration suite (real `Client`↔`McpServer` over `InMemoryTransport` + real
+`createDataAccess` SQLite ledger, nothing mocked) covering AC #5 same-title duplicate
+(same + cross identity, `maxSeq` unchanged), AC #3 `NO_IDENTITY`, AC #4 invalid-input,
+and the snake_case discovery surface.
+
+Two genuine real-runtime gaps were closed (the unit fake modeled them, but the REAL
+better-sqlite3 `appendGuarded` did not prove them end-to-end):
+
+## Test file (extended)
+
+- `packages/mcp-server/src/tools/announce-project.integration.test.ts` (**+2 QA tests**)
+
+## QA-added coverage (2 tests, all real-runtime / OS temp DBs)
+
+### AC #2 — dual-guard slug collision over the REAL ledger
+- [x] **A DISTINCT title that slugs to the SAME `project_id` is rejected `PROJECT_EXISTS`
+  by the real ledger.** The pre-existing same-title duplicate is caught by the `title`
+  guard ALONE — so the real adapter's enforcement of the SECOND (`project_id`) guard
+  (the dev's documented collision policy) was proven only against the in-memory fake.
+  This announces "Hello World" then "hello, world!" (both → `hello-world`) over real
+  SQLite: second rejected, `maxSeq` unchanged, still exactly one project + one join. A
+  single-guard implementation would let this through — now caught end-to-end.
+
+### AC #1 — multi-event ordering over the REAL ledger
+- [x] **`project.announced` lands BEFORE the announcer's `board.joined` (lower `seq`),
+  both attributed to the announcer, on the real ledger.** The relative ordering of the
+  two atomically-appended events was asserted only against the unit fake; this pins it
+  through real better-sqlite3.
+
+## Gate runs (clean tree, all exit 0)
+
+| Command | Result |
+| --- | --- |
+| `pnpm test` | Test Files 43 passed (43) · Tests **289 passed (289)** (was 287; +2) |
+| `pnpm run typecheck` | `tsc --noEmit -p tsconfig.typecheck.json` — exit 0 (covers the new tests) |
+| `pnpm run lint` (`eslint .`) | clean |
+
+## Rule 8 (discoverability)
+
+Single runner. The added tests live in an existing `*.test.ts` file under
+`packages/mcp-server/src/tools/` (matched by the root `vitest.config.ts` include glob
+`packages/*/src/**/*.test.{ts,tsx}`, under no ignore path) — auto-discovered: the default
+`pnpm test` went 287→289 tests. The integration suite is real-runtime (real
+`createDataAccess` + `InMemoryTransport`, no SDK mock), satisfying Rule 3.
+
+## Rule 5 / Rule 6
+
+No NFR tripwire (`announce_project` implementable exactly as worded). `docs/adr/`
+confirmed absent — no ADR constraints to honor.
+
+## Next Steps
+- Story 3.2 (`list_projects`): the first cross-story consumer of `foldProjects`/`findProject`
+  and `announceProject` — its integration AC should read the directory (ordered by `seq`)
+  back over the real transport.
