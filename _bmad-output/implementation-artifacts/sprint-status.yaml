@@ -48,7 +48,7 @@ story_location: "{project-root}/_bmad-output/implementation-artifacts"
 
 development_status:
   # Epic 1: Foundation - monorepo, append-only ledger & shared core
-  epic-1: in-progress
+  epic-1: done
   1-1-scaffold-the-pnpm-workspace-and-package-skeleton: done
   1-2-shared-toolchain-and-boundary-enforcement: done
   1-3-event-vocabulary-dataaccess-port-and-error-model: done
@@ -56,7 +56,7 @@ development_status:
   1-5-append-only-events-table-with-authoritative-sequence: done
   1-6-read-query-path-and-wire-internal-mapping: done
   1-7-multi-process-concurrency-verification: done
-  epic-1-retrospective: optional
+  epic-1-retrospective: done
 
   # Epic 2: Agent identity & presence (MCP)
   epic-2: backlog
