@@ -46,3 +46,11 @@ export type { RegisterInput } from './identity/register.js';
 export { login } from './identity/login.js';
 export { updateFocus } from './identity/update-focus.js';
 export { recordSeen } from './identity/record-seen.js';
+
+// --- Cross-package Vitest `src`-alias proof fixture (Story 3.0, AC #1) ---
+// Test-only sentinel: proves cross-package specifiers resolve to `src` via the
+// root vitest `resolve.alias` (not stale `dist`). See cross-package-alias-proof.ts.
+export {
+  CROSS_PACKAGE_ALIAS_PROOF,
+  crossPackageAliasProof,
+} from './cross-package-alias-proof.js';

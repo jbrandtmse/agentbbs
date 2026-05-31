@@ -21,8 +21,9 @@
 // This test lives in data-access (not core) because it needs BOTH @agentbbs/core
 // (recordSeen + foldIdentities) AND better-sqlite3 for direct schema introspection
 // — and core's lint forbids it from importing the storage adapter. data-access
-// already depends on both. core's recordSeen resolves via the BUILT @agentbbs/core
-// dist (package exports), so the suite must be built before this runs.
+// already depends on both. As of Story 3.0, the root vitest `resolve.alias` maps
+// @agentbbs/core to its src/index.ts, so core's recordSeen resolves from live TS
+// source — no prior `pnpm run build` is required for this cross-package suite.
 //
 // Never touches the repo's real `.agentbbs/`: every DB lives under os.tmpdir().
 
@@ -31,7 +32,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import Database from 'better-sqlite3';
-import { foldIdentities, recordSeen, register } from '@agentbbs/core';
+import {
+  foldIdentities,
+  recordSeen,
+  register,
+  updateFocus,
+} from '@agentbbs/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createDataAccess } from './data-access.js';
@@ -364,28 +370,49 @@ describe('recordSeen append-only retention of a MIXED prior stream + multi-ident
   });
 });
 
-describe('recordSeen against an UNREGISTERED handle over the real ledger (QA, AC #1/#2)', () => {
-  it('FAILS LOUD (throws) and mints NO phantom directory entry, yet still appends exactly one orphan identity.seen (append-only) — never an UPDATE of a stored last_seen', async () => {
-    // The "no phantom identity" priority end-to-end against real SQLite: recordSeen
-    // for a never-registered handle appends an orphan identity.seen (append-only —
-    // the row is written), the projection mints NO record for a seen-without-
-    // registration, so recordSeen throws its fail-loud guard rather than fabricate an
-    // Identity. Proves the defensive branch behaves identically on the real engine and
-    // that presence is an EVENT (the orphan ping lands) — never a mutated column.
-    await expect(recordSeen(da!, 'ghost')).rejects.toThrow(
-      /not found in its own event stream/u,
-    );
+describe('recordSeen against an UNREGISTERED handle over the real ledger (QA, AC #1/#2/#3)', () => {
+  it('FAILS LOUD (throws) and mints NO phantom directory entry, and writes NO orphan identity.seen — the real ledger is UNCHANGED (guard-before-append)', async () => {
+    // Story 3.0 (AC #3) reorders recordSeen to GUARD existence BEFORE appending.
+    // End-to-end against real SQLite: recordSeen for a never-registered handle throws
+    // its pre-append guard WITHOUT writing anything — no orphan identity.seen lands,
+    // no phantom directory entry is minted, and the on-disk ledger stays empty. (Was:
+    // the old append-then-throw contract left exactly one orphan ping on disk.)
+    await expect(recordSeen(da!, 'ghost')).rejects.toThrow(/not registered/u);
 
-    // The orphan identity.seen WAS appended (append-only — exactly one, verbatim
-    // actor + { handle } payload); no registration was conjured.
+    // NO orphan identity.seen was appended — the unregistered path writes nothing.
     const ghostEvents = await da!.eventsByActor('ghost');
-    expect(ghostEvents.map((e) => e.type)).toEqual(['identity.seen']);
-    expect(ghostEvents[0]?.payload).toEqual({ handle: 'ghost' });
+    expect(ghostEvents).toHaveLength(0);
+    expect(await da!.eventsByType('identity.seen')).toHaveLength(0);
     expect(await da!.eventsByType('identity.registered')).toHaveLength(0);
 
-    // The directory has NO entry for the unregistered handle (no phantom minted),
-    // even though its orphan seen sits in the ledger.
+    // The directory has NO entry for the unregistered handle (no phantom minted).
     expect(await derived('ghost')).toBe(undefined);
-    expect(await totalEvents()).toBe(1); // just the orphan ping
+    // The real ledger is entirely unchanged — zero rows written on the throw path.
+    expect(await totalEvents()).toBe(0);
+  });
+});
+
+describe('updateFocus against an UNREGISTERED handle over the real ledger (QA, AC #3/#4)', () => {
+  it('FAILS LOUD (throws) and writes NO orphan identity.focus_updated — the real ledger is UNCHANGED (guard-before-append, symmetric with recordSeen)', async () => {
+    // Story 3.0 (AC #3/#4) fixes the orphan-append wart as a CLASS via the shared
+    // appendIdentityEventOrThrow helper. recordSeen has a real-ledger no-orphan proof
+    // (above); this is its SYMMETRIC counterpart for updateFocus over genuine SQLite —
+    // the second op delegates to the same guard, but the on-disk assertion is about
+    // its OWN event type (identity.focus_updated) not landing. Without this, the
+    // class fix is real-ledger-proven for only one of the two ops.
+    await expect(updateFocus(da!, 'ghost', 'some focus')).rejects.toThrow(
+      /not registered/u,
+    );
+
+    // NO orphan identity.focus_updated was appended — the unregistered path writes
+    // nothing (was: the old append-then-throw contract left one orphan on disk).
+    const ghostEvents = await da!.eventsByActor('ghost');
+    expect(ghostEvents).toHaveLength(0);
+    expect(await da!.eventsByType('identity.focus_updated')).toHaveLength(0);
+    expect(await da!.eventsByType('identity.registered')).toHaveLength(0);
+
+    // No phantom directory entry; the whole on-disk ledger is empty after the throw.
+    expect(await derived('ghost')).toBe(undefined);
+    expect(await totalEvents()).toBe(0);
   });
 });
