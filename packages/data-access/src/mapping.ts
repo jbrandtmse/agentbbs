@@ -100,7 +100,12 @@ export function payloadToWire(event: NewEvent): Record<string, unknown> {
     }
     case 'announcement.posted': {
       const p: PayloadOf<'announcement.posted'> = event.payload;
-      return { room_id: p.roomId, subject: p.subject, body: p.body };
+      return {
+        project_id: p.projectId,
+        room_id: p.roomId,
+        subject: p.subject,
+        body: p.body,
+      };
     }
     case 'room.replied': {
       const p: PayloadOf<'room.replied'> = event.payload;
@@ -224,6 +229,7 @@ export function wireToPayload(
       } satisfies PayloadOf<'board.joined'>;
     case 'announcement.posted':
       return {
+        projectId: String(wire.project_id),
         roomId: String(wire.room_id),
         subject: String(wire.subject),
         body: String(wire.body),

@@ -65,3 +65,14 @@ export { announceProject } from './projects/announce-project.js';
 export type { AnnounceProjectInput } from './projects/announce-project.js';
 export { listProjects } from './projects/list-projects.js';
 export { joinBoard } from './projects/join-board.js';
+
+// --- Rooms projection + room-id derivation (Story 4.1) — proto-rooms folded from
+// `announcement.posted`; `active` derives in Story 4.3. ---
+export { findRoom, foldRooms } from './rooms/projection.js';
+export type { Room } from './rooms/projection.js';
+export { roomIdBase } from './rooms/room-id.js';
+
+// --- Announcement / room board operations (Story 4.1) — the first consumer of the
+// Story 3.5 membership write-gate; opens a globally-unique proto-room. ---
+export { postAnnouncement } from './rooms/post-announcement.js';
+export type { PostAnnouncementInput } from './rooms/post-announcement.js';

@@ -52,14 +52,24 @@ describe('payloadToWire — camelCase -> snake_case (AC1)', () => {
     ).toEqual({ message_seq: 42 });
   });
 
-  it('leaves single-word keys unchanged', () => {
+  it('leaves single-word keys unchanged and maps projectId/roomId on announcement.posted', () => {
     expect(
       payloadToWire({
         type: 'announcement.posted',
         actor: 'alice',
-        payload: { roomId: 'r1', subject: 'Subj', body: 'Body' },
+        payload: {
+          projectId: 'calling-interface',
+          roomId: 'r1',
+          subject: 'Subj',
+          body: 'Body',
+        },
       }),
-    ).toEqual({ room_id: 'r1', subject: 'Subj', body: 'Body' });
+    ).toEqual({
+      project_id: 'calling-interface',
+      room_id: 'r1',
+      subject: 'Subj',
+      body: 'Body',
+    });
   });
 
   it('never emits a camelCase key for any event type', () => {
@@ -84,7 +94,7 @@ describe('payloadToWire — camelCase -> snake_case (AC1)', () => {
       {
         type: 'announcement.posted',
         actor: 'a',
-        payload: { roomId: 'r', subject: 's', body: 'b' },
+        payload: { projectId: 'p', roomId: 'r', subject: 's', body: 'b' },
       },
       { type: 'room.replied', actor: 'a', payload: { roomId: 'r', body: 'b' } },
       {
@@ -225,7 +235,7 @@ describe('mapping round-trip — write then read yields original payload (AC1)',
       {
         type: 'announcement.posted',
         actor: 'a',
-        payload: { roomId: 'r', subject: 's', body: 'b' },
+        payload: { projectId: 'p', roomId: 'r', subject: 's', body: 'b' },
       },
       { type: 'room.replied', actor: 'a', payload: { roomId: 'r', body: 'b' } },
       {

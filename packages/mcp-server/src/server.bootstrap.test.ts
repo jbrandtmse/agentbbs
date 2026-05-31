@@ -210,7 +210,7 @@ describe('createBoardServer bootstrap over a real in-memory transport', () => {
     // `announce_project` (Story 3.1 — the first board tool), `list_projects`
     // (Story 3.2 — the first board READ tool), `join_board` (Story 3.3 — the
     // membership-write tool), `list_members` (Story 3.4 — the sub-board directory
-    // READ tool).
+    // READ tool), `post_announcement` (Story 4.1 — the first room tool).
     expect(tools.map((t) => t.name).sort()).toEqual([
       'alpha',
       'announce_project',
@@ -219,6 +219,7 @@ describe('createBoardServer bootstrap over a real in-memory transport', () => {
       'list_members',
       'list_projects',
       'login',
+      'post_announcement',
       'register',
       'update_focus',
     ]);

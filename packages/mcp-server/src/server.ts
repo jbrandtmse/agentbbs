@@ -21,6 +21,7 @@ import { registerJoinBoardTool } from './tools/join-board.js';
 import { registerListMembersTool } from './tools/list-members.js';
 import { registerListProjectsTool } from './tools/list-projects.js';
 import { registerLoginTool } from './tools/login.js';
+import { registerPostAnnouncementTool } from './tools/post-announcement.js';
 import { registerRegisterTool } from './tools/register.js';
 import { registerUpdateFocusTool } from './tools/update-focus.js';
 
@@ -104,6 +105,15 @@ export function createBoardServer(deps: BoardServerDeps): McpServer {
   //     project_id; returns each member's handle/current_focus/last_seen in join order
   //     (the membership ⋈ identity join). Rejects an unknown project_id with
   //     BOARD_NOT_FOUND.
+  // Announcement / room tools (Epic 4):
+  //   - post_announcement (Story 4.1): the first ROOM tool — SESSION-REQUIRED (actor =
+  //     session handle, rejects NO_IDENTITY if unset). The first consumer of the Story
+  //     3.5 membership write-gate: posting requires membership of the target sub-board,
+  //     so it rejects NOT_A_MEMBER (board exists, not joined) / BOARD_NOT_FOUND (no such
+  //     board). Appends one announcement.posted opening a proto-room with a
+  //     globally-unique room id (subject slug + disambiguator on collision — a
+  //     same-subject post never fails, it gets a distinct id). Consumed by Stories 4.2
+  //     (list) / 4.3 (reply activates) / 4.4 (read history).
   registerRegisterTool(server, deps.dataAccess, sessionIdentity);
   registerLoginTool(server, deps.dataAccess, sessionIdentity);
   registerUpdateFocusTool(server, deps.dataAccess, sessionIdentity);
@@ -111,6 +121,7 @@ export function createBoardServer(deps: BoardServerDeps): McpServer {
   registerListProjectsTool(server, deps.dataAccess, sessionIdentity);
   registerJoinBoardTool(server, deps.dataAccess, sessionIdentity);
   registerListMembersTool(server, deps.dataAccess, sessionIdentity);
+  registerPostAnnouncementTool(server, deps.dataAccess, sessionIdentity);
 
   return server;
 }
