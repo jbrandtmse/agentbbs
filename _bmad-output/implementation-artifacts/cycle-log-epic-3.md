@@ -43,3 +43,4 @@
 2026-05-31T16:49:40Z	Story 3.5	qa_complete	spawn_at=2026-05-31T16:51:00Z model=claude-opus-4-8 tests_added=1 first_run_failures=0 clarifications=0 closing_sections_present=true
 2026-05-31T16:52:55Z	Story 3.5	cr_complete	spawn_at=2026-05-31T16:54:00Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=2 high=0 med=0 low=0 clarifications=0 closing_sections_present=true
 2026-05-31T16:53:42Z	Story 3.5	smoke_complete	method=api result=pass iterations=1 defects_caught=0 evidence=_bmad-output/implementation-artifacts/tests/smoke-3-5.mjs model=claude-opus-4-8
+2026-05-31T16:53:58Z	Story 3.5	committed	sha=a92f268 submodules=

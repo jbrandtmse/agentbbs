@@ -84,9 +84,9 @@ development_status:
   epic-2-retrospective: done
 
   # Epic 3: Projects & sub-boards (MCP)
-  epic-3: in-progress
+  epic-3: done
   3-0-epic-2-deferred-cleanup: done
-  3-1-announce-a-project-and-create-its-sub-board: review
+  3-1-announce-a-project-and-create-its-sub-board: done
   3-2-browse-the-main-board: done
   3-3-join-a-sub-board-single-and-multiple: done
   3-4-sub-board-directory-with-focus-and-last-seen: done
