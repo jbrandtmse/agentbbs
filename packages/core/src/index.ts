@@ -30,8 +30,19 @@ export type {
 export type { Event, EventOf, NewEvent, NewEventOf } from './events/event.js';
 
 // --- DataAccess port — the NFR2 seam (AC2) ---
-export type { DataAccess } from './ports.js';
+export type { DataAccess, UniquenessGuard } from './ports.js';
 
 // --- Error model (AC3) ---
 export { BOARD_ERROR_CODES, BoardError } from './errors.js';
 export type { BoardErrorCode } from './errors.js';
+
+// --- Identity directory projection (Story 2.2) ---
+export { findIdentity, foldIdentities } from './identity/projection.js';
+export type { Identity } from './identity/projection.js';
+
+// --- Identity board operations (Story 2.2 / 2.3 / 2.4 / 2.5) ---
+export { register } from './identity/register.js';
+export type { RegisterInput } from './identity/register.js';
+export { login } from './identity/login.js';
+export { updateFocus } from './identity/update-focus.js';
+export { recordSeen } from './identity/record-seen.js';

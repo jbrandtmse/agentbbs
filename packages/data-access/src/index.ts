@@ -38,8 +38,13 @@ export {
 } from './sqlite/connection.js';
 export type { OpenDatabaseOptions } from './sqlite/connection.js';
 
-// --- Typed exhaustion error (AC2) ---
-export { STORE_BUSY, StoreBusyError } from './errors.js';
+// --- Typed errors: store-busy exhaustion (AC2) + uniqueness conflict (Story 2.2) ---
+export {
+  STORE_BUSY,
+  StoreBusyError,
+  UNIQUENESS_CONFLICT,
+  UniquenessConflictError,
+} from './errors.js';
 
 // --- Schema + forward-only idempotent migration (Story 1.5, AC1) ---
 export { EVENTS_TABLE, SCHEMA_SQL } from './sqlite/schema.js';
@@ -47,6 +52,9 @@ export { migrate } from './sqlite/migrate.js';
 
 // --- Transactional append: the WRITE half of the seam (Story 1.5, AC2) ---
 export { createAppend } from './sqlite/append.js';
+
+// --- Uniqueness-guarded append: atomic check-then-insert (Story 2.2) ---
+export { createAppendGuarded } from './sqlite/append-guarded.js';
 
 // --- Read queries: the READ half of the seam (Story 1.6, AC1) ---
 export { createReadQueries } from './sqlite/queries.js';

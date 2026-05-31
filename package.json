@@ -23,7 +23,6 @@
     "eslint": "catalog:",
     "@eslint/js": "catalog:",
     "typescript-eslint": "catalog:",
-    "eslint-plugin-boundaries": "catalog:",
     "eslint-plugin-import-x": "catalog:",
     "eslint-plugin-unicorn": "catalog:",
     "eslint-config-prettier": "catalog:",

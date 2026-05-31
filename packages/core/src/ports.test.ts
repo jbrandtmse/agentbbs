@@ -40,18 +40,35 @@ describe('DataAccess port (AC2)', () => {
     // in V1) AND by an async one (V2 HTTP) — the identical-interface swap claim.
     let seq = 0;
     const store: Event[] = [];
+    const append = (events: NewEvent[]): Promise<number[]> => {
+      const assigned = events.map((e) => {
+        seq += 1;
+        store.push({
+          ...e,
+          seq,
+          createdAt: '2026-05-30T00:00:00.000Z',
+        } as Event);
+        return seq;
+      });
+      return Promise.resolve(assigned);
+    };
     const da: DataAccess = {
-      append(events: NewEvent[]): Promise<number[]> {
-        const assigned = events.map((e) => {
-          seq += 1;
-          store.push({
-            ...e,
-            seq,
-            createdAt: '2026-05-30T00:00:00.000Z',
-          } as Event);
-          return seq;
-        });
-        return Promise.resolve(assigned);
+      append,
+      // The synchronous conformer also satisfies the additive appendGuarded
+      // (Story 2.2): assert each guard against the in-memory store, then append.
+      appendGuarded(events: NewEvent[], guards): Promise<number[]> {
+        for (const guard of guards) {
+          const collides = store.some(
+            (e) =>
+              e.type === guard.type &&
+              (e.payload as unknown as Record<string, unknown>)[guard.field] ===
+                guard.value,
+          );
+          if (collides) {
+            return Promise.reject(new Error('uniqueness conflict'));
+          }
+        }
+        return append(events);
       },
       eventsSince: (cursor) =>
         Promise.resolve(store.filter((e) => e.seq > cursor)),
