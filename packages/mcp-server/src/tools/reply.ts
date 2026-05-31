@@ -18,10 +18,11 @@
 // core stays session-agnostic.
 //
 // No NEW error code: ROOM_NOT_FOUND + NO_IDENTITY are already in the closed set (Epics 3/2)
-// and any thrown BoardError is mapped by registerCoreTool. The 256 KB body cap /
-// BODY_TOO_LARGE is Epic 5 Story 5.1 — `room-shared.ts` uses a sane interim cap (shared with
-// post_announcement) and explicitly defers the formal cap; this story introduces no
-// body-size code.
+// and any thrown BoardError is mapped by registerCoreTool. The reply `body` is validated
+// non-empty at the Zod boundary (`announcementBodySchema`, `.min(1)`); the formal 256 KB
+// `BODY_TOO_LARGE` size cap (Story 5.1) is enforced in CORE (`assertBodyWithinCap`, on UTF-8
+// byte length) before any append, so an over-cap body surfaces the closed `BODY_TOO_LARGE`
+// code for every client — this thin tool adds no body-size logic of its own.
 
 import { BoardError, reply } from '@agentbbs/core';
 

@@ -73,6 +73,11 @@ export { findRoom, foldRooms } from './rooms/projection.js';
 export type { Room } from './rooms/projection.js';
 export { roomIdBase } from './rooms/room-id.js';
 
+// --- Message body-size cap (Story 5.1) — the formal 256 KB `BODY_TOO_LARGE` (NFR6/AR7) the
+// body-bearing ops (`reply`, `postAnnouncement`) enforce before appending. A CORE check on
+// UTF-8 BYTE length returning the closed code (NOT a Zod `.max`, which carries no code). ---
+export { assertBodyWithinCap, MAX_BODY_BYTES } from './rooms/body-cap.js';
+
 // --- Announcement / room board operations (Story 4.1) — the first consumer of the
 // Story 3.5 membership write-gate; opens a globally-unique proto-room. ---
 export { postAnnouncement } from './rooms/post-announcement.js';

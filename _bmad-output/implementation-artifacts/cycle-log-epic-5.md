@@ -8,3 +8,10 @@
 2026-05-31T22:29:19Z	Story 5.0	qa_complete	spawn_at=2026-05-31T22:35:00Z model=claude-opus-4-8 tests_added=0 first_run_failures=0 clarifications=0 closing_sections_present=true
 2026-05-31T22:34:30Z	Story 5.0	cr_complete	spawn_at=2026-05-31T22:36:00Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=0 high=0 med=0 low=0 clarifications=0 closing_sections_present=true
 2026-05-31T22:35:07Z	Story 5.0	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=_bmad-output/implementation-artifacts/tests/smoke-5-0.mjs model=claude-opus-4-8
+2026-05-31T22:35:10Z	Story 5.0	committed	sha=e66fe6c submodules=
+2026-05-31T22:39:19Z	Story 5.1	story_created	path=_bmad-output/implementation-artifacts/5-1-post-a-verbatim-message-with-a-size-cap.md integration_ac=present service_introducing=false consumed_by=5.2,5.3
+2026-05-31T22:52:30Z	Story 5.1	dev_complete	spawn_at=2026-05-31T22:48:00Z model=claude-opus-4-8 files=7 tests_added=18 clarifications=0 nfr_tripwires=0 adr_violations_surfaced=0 cycle_iteration=1 closing_sections_present=true
+2026-05-31T22:52:30Z	Story 5.1	adr_verifications_complete	result=none_required
+2026-05-31T22:56:56Z	Story 5.1	qa_complete	spawn_at=2026-05-31T22:58:00Z model=claude-opus-4-8 tests_added=4 first_run_failures=0 clarifications=0 closing_sections_present=true
+2026-05-31T23:04:00Z	Story 5.1	cr_complete	spawn_at=2026-05-31T22:58:40Z model=claude-opus-4-8 resolved=1 deferred=1 dismissed=0 high=0 med=0 low=2 clarifications=0 closing_sections_present=true
+2026-05-31T23:04:42Z	Story 5.1	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=_bmad-output/implementation-artifacts/tests/smoke-5-1.mjs model=claude-opus-4-8

@@ -31,6 +31,7 @@
 import { BoardError } from '../errors.js';
 import { findProject } from '../projects/projection.js';
 import { isMember } from '../projects/membership.js';
+import { assertBodyWithinCap } from './body-cap.js';
 import { findRoom } from './projection.js';
 
 import type { DataAccess } from '../ports.js';
@@ -113,6 +114,12 @@ export async function reply(
   if (!alreadyMember) {
     toAppend.push({ type: 'board.joined', actor, payload: { projectId } });
   }
+
+  // Body-size cap (Story 5.1 / AC #2) — throw BODY_TOO_LARGE for an over-cap body BEFORE the
+  // append, so NOTHING lands (neither room.replied NOR the conditional board.joined). The
+  // cap is on UTF-8 BYTE length; it is the closed core code (not a Zod .max). Placed after
+  // room resolution so a reply to a real room with an over-cap body is rejected for size.
+  assertBodyWithinCap(body);
 
   // Step 4 — PLAIN append (not appendGuarded). Replies are not uniqueness-constrained:
   // concurrent replies both land with sequential `seq`s (AC #4), and a benign concurrent

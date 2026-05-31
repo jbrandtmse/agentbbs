@@ -21,6 +21,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { BoardError } from '../errors.js';
+import { MAX_BODY_BYTES } from './body-cap.js';
 import { reply } from './reply.js';
 
 import type { Event, NewEvent } from '../events/event.js';
@@ -280,5 +281,73 @@ describe('reply — sequential replies + reply to an already-active room (AC #1,
     expect(second.activatedBy).toBe('bob');
     expect(second.activatedAtSeq).toBe(replies[0]!.seq);
     expect(second.active).toBe(true);
+  });
+});
+
+describe('reply — body-size cap (Story 5.1 / AC #2)', () => {
+  it('accepts a reply body EXACTLY at the 256 KB cap (room.replied appended verbatim)', async () => {
+    const da = memoryDataAccess(ledger());
+    const before = await da.maxSeq();
+    const atCap = 'a'.repeat(MAX_BODY_BYTES); // ASCII → byteLength === MAX_BODY_BYTES
+
+    const room = await reply(da, 'bob', {
+      roomId: 'need-a-reviewer',
+      body: atCap,
+    });
+    expect(room.active).toBe(true);
+
+    // The at-cap body is stored VERBATIM (===) and exactly one room.replied was appended.
+    const replies = await da.eventsByType('room.replied');
+    expect(replies).toHaveLength(1);
+    expect((replies[0]?.payload as { body: string }).body).toBe(atCap);
+    expect(await da.maxSeq()).toBe(before + 1);
+  });
+
+  it('throws BODY_TOO_LARGE for a reply body ONE byte over the cap and appends NOTHING (not even board.joined)', async () => {
+    const da = memoryDataAccess(ledger());
+    const before = await da.maxSeq();
+    const overCap = 'a'.repeat(MAX_BODY_BYTES + 1);
+
+    // cleo is a NON-member: were the cap not enforced before the append, her over-cap reply
+    // would also append a board.joined (auto-join). The cap must precede BOTH appends.
+    const err = await reply(da, 'cleo', {
+      roomId: 'need-a-reviewer',
+      body: overCap,
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(BoardError);
+    expect((err as BoardError).code).toBe('BODY_TOO_LARGE');
+
+    // NOTHING appended: no room.replied, and the seed's two board.joined are unchanged.
+    expect(await da.maxSeq()).toBe(before);
+    expect(await da.eventsByType('room.replied')).toHaveLength(0);
+    expect(await da.eventsByType('board.joined')).toHaveLength(2);
+  });
+
+  // QA gap (Story 5.1, Design decision + Dev Note "reply: ROOM_NOT_FOUND first"): the dev
+  // pins the over-cap path against a REAL room (BODY_TOO_LARGE) and the unknown-room path with
+  // a SMALL body (ROOM_NOT_FOUND), but never the COLLISION — an over-cap body to an UNKNOWN
+  // room. The op resolves the room (ROOM_NOT_FOUND) BEFORE asserting the cap, so room-existence
+  // must win. This LOCKS that precedence: a refactor hoisting the cap above the findRoom check
+  // (e.g. to mirror post_announcement, which checks the cap right after its gate) would flip a
+  // caller's observable error from ROOM_NOT_FOUND to BODY_TOO_LARGE — this test would catch it.
+  it('throws ROOM_NOT_FOUND (NOT BODY_TOO_LARGE) for an over-cap body to an UNKNOWN room — room-existence is resolved first', async () => {
+    const da = memoryDataAccess(ledger());
+    const before = await da.maxSeq();
+    const overCap = 'a'.repeat(MAX_BODY_BYTES + 1);
+
+    const err = await reply(da, 'bob', {
+      roomId: 'no-such-room',
+      body: overCap,
+    }).catch((e: unknown) => e);
+
+    // The unknown room is resolved before the body is measured → ROOM_NOT_FOUND wins.
+    expect(err).toBeInstanceOf(BoardError);
+    expect((err as BoardError).code).toBe('ROOM_NOT_FOUND');
+
+    // Nothing appended either way (both rejection paths precede the append).
+    expect(await da.maxSeq()).toBe(before);
+    expect(await da.eventsByType('room.replied')).toHaveLength(0);
+    expect(await da.eventsByType('board.joined')).toHaveLength(2);
   });
 });

@@ -24,23 +24,13 @@ import type { Room, RoomMessage } from '@agentbbs/core';
 export const ANNOUNCEMENT_SUBJECT_MAX_LENGTH = 200;
 
 /**
- * Max announcement-body length at THIS story's boundary — a sane defensive upper bound.
- *
- * DEFERRED: the FORMAL 256 KB body cap and its dedicated `BODY_TOO_LARGE` error code are
- * Epic 5 Story 5.1 (project-context.md "Body cap 256 KB … reject with BODY_TOO_LARGE"),
- * NOT this story. Until then this is a generous sanity cap that keeps an absurdly large
- * body out of the ledger; it is intentionally LARGER than a normal message yet well under
- * the eventual 256 KB formal cap, and it raises a plain Zod validation error (NOT a closed
- * board code). Do not conflate this with the Epic 5 cap — Story 5.1 replaces it.
- */
-export const ANNOUNCEMENT_BODY_MAX_LENGTH = 16_000;
-
-/**
  * The shared Zod validator for a `subject` wire param: a non-empty, length-bounded
  * string. Unlike a project title, the subject is NOT required to contain a slug-able
  * character — an all-punctuation subject is ACCEPTED and the room-id base falls back to
  * `room` (Story 4.1 AC #5; announcements disambiguate, they never reject on the slug). The
  * SDK validates against this and rejects a missing/empty subject BEFORE the delegate runs.
+ * The subject `.max` STAYS (Story 5.1): a subject is a short line, so a Zod boundary
+ * rejection is the correct surface — only the BODY moves to the core byte-cap + closed code.
  */
 export const announcementSubjectSchema = z
   .string()
@@ -48,16 +38,18 @@ export const announcementSubjectSchema = z
   .max(ANNOUNCEMENT_SUBJECT_MAX_LENGTH);
 
 /**
- * The shared Zod validator for a `body` wire param: a non-empty, length-bounded string
- * (see {@link ANNOUNCEMENT_BODY_MAX_LENGTH} — the formal 256 KB cap is deferred to Epic 5).
- * The SDK validates against this and rejects a missing/empty body BEFORE the delegate runs.
- * REUSED by `reply` (Story 4.3) for its reply `body` — the interim cap is shared across the
- * room write tools, and Epic 5 Story 5.1 replaces it with the formal 256 KB / BODY_TOO_LARGE.
+ * The shared Zod validator for a `body` wire param: a non-empty string (`.min(1)` ONLY).
+ *
+ * Story 5.1 DROPPED the interim char `.max` cap (the retired `ANNOUNCEMENT_BODY_MAX_LENGTH =
+ * 16_000`). The FORMAL body cap is now the 256 KB UTF-8 BYTE cap enforced in CORE
+ * (`assertBodyWithinCap` / `MAX_BODY_BYTES`), which raises the closed `BODY_TOO_LARGE` code
+ * for every client. A Zod `.max` would instead reject with a plain validation error carrying
+ * NO closed code (Story 5.0 proved a Zod rejection yields `readErrorPayload === undefined`),
+ * so the `.max` is removed so an over-cap body REACHES core and gets the proper code; only
+ * the non-empty `.min(1)` boundary stays here. REUSED by `reply` (Story 4.3) for its reply
+ * `body` — both room write tools share the one core cap.
  */
-export const announcementBodySchema = z
-  .string()
-  .min(1)
-  .max(ANNOUNCEMENT_BODY_MAX_LENGTH);
+export const announcementBodySchema = z.string().min(1);
 
 /**
  * Max room-id length — a defensive boundary so a pathologically long id is rejected at the

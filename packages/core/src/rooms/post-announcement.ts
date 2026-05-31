@@ -24,6 +24,7 @@
 // session-agnostic, mirroring `announceProject`/`joinBoard`/`updateFocus`.
 
 import { requireMembership } from '../projects/membership.js';
+import { assertBodyWithinCap } from './body-cap.js';
 import { roomIdBase } from './room-id.js';
 import { findRoom } from './projection.js';
 
@@ -120,6 +121,12 @@ export async function postAnnouncement(
   // Step 1 — membership gate. Owns BOARD_NOT_FOUND (unknown board) + NOT_A_MEMBER
   // (non-member); on either it throws and we append nothing. Runs FIRST.
   await requireMembership(dataAccess, actor, projectId);
+
+  // Body-size cap (Story 5.1 / AC #2) — throw BODY_TOO_LARGE for an over-cap body BEFORE the
+  // appendGuarded allocation loop, so NOTHING is appended on over-cap. The cap is on UTF-8
+  // BYTE length and is the closed core code (not a Zod .max). Placed AFTER the membership
+  // gate so a non-member's over-cap post is rejected NOT_A_MEMBER first (the gate runs first).
+  assertBodyWithinCap(body);
 
   // Step 2 — allocate a globally-unique roomId via appendGuarded + disambiguator retry.
   const base = roomIdBase(subject);
