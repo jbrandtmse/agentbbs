@@ -1,0 +1,25 @@
+# Build output & deps
+node_modules/
+dist/
+build/
+out/
+*.tsbuildinfo
+coverage/
+*.vsix
+
+# Lockfile (pnpm owns its formatting)
+pnpm-lock.yaml
+
+# BMad assets, planning artifacts & agent-tool caches — not ours to reformat.
+_bmad/
+_bmad-output/
+integration/
+docs/
+.cline/
+.agent/
+.agents/
+.claude/
+
+# Pre-existing repo docs outside this story's scope.
+README.md
+epic-cycle-workflow-creation.md

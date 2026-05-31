@@ -96,3 +96,11 @@ A test that exists but does not run in the default suite is invisible to CI and 
 ## Project-specific rules (add below as retros surface them)
 
 > Add additional rules here as retrospectives identify durable patterns. Number sequentially after Rule 8. Each rule should state what it applies to, the obligation, and (briefly) why.
+
+## Rule 9 — Epic pre-flight toolchain/environment check (`/epic-cycle` lead, epic-start)
+
+Before creating the first story of an epic (i.e. during per-epic setup, alongside the clean-tree and branch gates), the lead MUST verify that the runtime toolchain on the machine matches the versions the planning artifacts commit to — at minimum the pinned **Node** and **package-manager** versions (`project-context.md` / `architecture.md` / root `package.json` `engines`/`packageManager`), plus any other pinned tool the epic's stories will invoke.
+
+If a version does not match, **STOP and surface to the user at epic start** (offer to provision, build on the available version with a documented caveat, or amend the pins) — do NOT let the mismatch surface mid-story at the dev stage.
+
+**Why:** In Epic 1 the machine had Node 22 / pnpm 10 against a Node 24 / pnpm 11.3 commitment; the gap was only discovered when Story 1.1's dev stage halted. Catching it during epic pre-flight is one decision at the front instead of a mid-pipeline interruption. Surfaced in the Epic 1 retrospective (2026-05-31).
