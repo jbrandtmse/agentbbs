@@ -17,3 +17,10 @@ TAB-separated, append-only. Fields: `<UTC> TAB <Story <id> | Epic N> TAB <stage>
 2026-05-31T04:00:00Z	Story 1.1	qa_complete	spawn_at=2026-05-31T03:54:00Z model=claude-opus-4-8 tests_added=0 first_run_failures=0 clarifications=0 closing_sections_present=true note=build_pipeline_exempt_rule3_vitest_deferred_to_1.2
 2026-05-31T04:08:00Z	Story 1.1	cr_complete	spawn_at=2026-05-31T04:01:00Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=4 high=0 med=0 low=0 clarifications=0 closing_sections_present=true verdict=clean
 2026-05-31T04:14:00Z	Story 1.1	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=frozen_install_exit0+clean_build_exit0+7of7_dist_esm_barrels model=claude-opus-4-8
+2026-05-31T04:15:00Z	Story 1.1	committed	sha=ffd21fb submodules=
+2026-05-31T04:18:00Z	Story 1.2	story_created	path=_bmad-output/implementation-artifacts/1-2-shared-toolchain-and-boundary-enforcement.md
+2026-05-31T04:45:00Z	Story 1.2	dev_complete	spawn_at=2026-05-31T04:19:00Z model=claude-opus-4-8 files=22 clarifications=0 nfr_tripwires=1 adr_violations_surfaced=0 cycle_iteration=1 closing_sections_present=true note=rule5_vitest_workspace_to_config_amended_artifacts;eslint10_flatconfig;unrs_resolver_allowbuilds
+2026-05-31T04:45:10Z	Story 1.2	adr_verifications_complete	result=none_required acs=ac1,ac2,ac3 model=claude-opus-4-8
+2026-05-31T05:00:00Z	Story 1.2	qa_complete	spawn_at=2026-05-31T04:46:00Z model=claude-opus-4-8 tests_added=4 first_run_failures=0 clarifications=0 closing_sections_present=true note=extended_boundary_enforcement_test_11to15_all_gates_exit0
+2026-05-31T05:12:00Z	Story 1.2	cr_complete	spawn_at=2026-05-31T05:01:00Z model=claude-opus-4-8 resolved=0 deferred=1 dismissed=0 high=0 med=0 low=1 clarifications=0 closing_sections_present=true verdict=approved note=rule5_amendment_verified_correct;low_unused_boundaries_dep_deferred
+2026-05-31T05:18:00Z	Story 1.2	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=frozen_install+clean_build+lint+test_15of15_all_exit0 model=claude-opus-4-8

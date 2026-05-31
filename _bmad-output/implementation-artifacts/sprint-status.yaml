@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-31
-last_updated: 2026-05-30
+last_updated: 2026-05-31
 project: AgentBBS
 project_key: NOKEY
 tracking_system: file-system
@@ -45,7 +45,7 @@ development_status:
   # Epic 1: Foundation - monorepo, append-only ledger & shared core
   epic-1: in-progress
   1-1-scaffold-the-pnpm-workspace-and-package-skeleton: done
-  1-2-shared-toolchain-and-boundary-enforcement: backlog
+  1-2-shared-toolchain-and-boundary-enforcement: done
   1-3-event-vocabulary-dataaccess-port-and-error-model: backlog
   1-4-sqlite-connection-concurrency-mode-and-db-discovery: backlog
   1-5-append-only-events-table-with-authoritative-sequence: backlog

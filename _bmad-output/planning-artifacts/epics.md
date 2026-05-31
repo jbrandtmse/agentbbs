@@ -319,7 +319,7 @@ So that the load-bearing architectural rules are mechanically enforced rather th
 **Given** a pushed branch,
 **When** CI runs,
 **Then** `ci.yml` executes build + test + lint across all packages and fails on any error,
-**And** `tsconfig.base.json`, the ESLint config, `.prettierrc`, and one `vitest.workspace.ts` exist at the root and packages extend (never redefine) them.
+**And** `tsconfig.base.json`, the ESLint config, `.prettierrc`, and one root Vitest config (`vitest.config.ts` using `test.projects` — Vitest 4 removed the standalone `vitest.workspace.ts` file) exist at the root and packages extend (never redefine) them.
 
 #### Story 1.3: Event vocabulary, DataAccess port, and error model
 

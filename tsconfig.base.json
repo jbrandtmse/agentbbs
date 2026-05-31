@@ -21,5 +21,11 @@
     "verbatimModuleSyntax": true,
 
     "newLine": "lf"
-  }
+  },
+
+  // Co-located *.test.ts(x) are run by Vitest, never compiled into a package's
+  // shipped dist. Excluding them here (the single root config) keeps every
+  // package's `tsc -b` production build clean without per-package redefinition.
+  // Inherited by every package via `extends`.
+  "exclude": ["**/*.test.ts", "**/*.test.tsx"]
 }
