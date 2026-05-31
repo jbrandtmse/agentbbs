@@ -22,6 +22,9 @@ pnpm-debug.log*
 .env.*
 !.env.example
 
+# BMad installation-kit backups (detect→backup→idempotent rewrite)
+*.bak-*
+
 # Editor / OS cruft
 .DS_Store
 Thumbs.db
