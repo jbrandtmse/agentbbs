@@ -609,3 +609,83 @@ confirmed absent — no ADR constraints to honor.
 - Story 3.2 (`list_projects`): the first cross-story consumer of `foldProjects`/`findProject`
   and `announceProject` — its integration AC should read the directory (ordered by `seq`)
   back over the real transport.
+
+---
+
+# Test Automation Summary — Story 3.2
+
+**Story:** 3.2 — Browse the main board (`list_projects` read tool + `core.listProjects`)
+**Stage:** `bmad-qa-generate-e2e-tests` (epic-cycle QA) · 2026-05-31 · branch `feature/AGENTBBS-1_agentbbs-mvp`
+**Framework:** Vitest 4.1.7 (single root runner) + the typecheck gate.
+
+## Outcome: 1 real-runtime wire-ordering gap test added; dev coverage otherwise complete
+
+The dev suite was assessed against every AC and the stage scrutiny list. It is genuinely
+strong: the core unit suite (`list-projects.test.ts`) proves empty→`[]`, seq-ordering with
+a deliberate seq≠alphabetical announce order (C, R, D by seq vs C, D, R by title — a
+title-sort bug fails it), accreted membership, and no-phantom-for-unknown-join; the
+integration suite (real `Client`↔`McpServer` over `InMemoryTransport` + real
+`createDataAccess` SQLite under `os.tmpdir()`, nothing mocked) proves the AC #5
+cross-identity board-wide-open read (B=bob, member of neither, sees both + is NOT a
+member), the `{ projects: [...] }` envelope in BOTH `structuredContent` and the JSON text
+block, AC #3 empty→`[]`, AC #4 `NO_IDENTITY` over the real transport, and the
+no-required-params discovery surface.
+
+ONE genuine gap was found and closed:
+
+## Per-scrutiny-point verdict
+
+| Scrutiny point | Verdict |
+|---|---|
+| AC #1 seq≠alphabetical at the CORE layer | Covered (unit C,R,D) |
+| AC #1 seq≠alphabetical at the WIRE/tool layer | **GAP → added** — the AC #5 titles (Calling/Release) were already alphabetical, so the wire path could not distinguish seq from title sort |
+| AC #2/#5 board-wide-open read w/o membership (different identity) | Covered (B=bob non-member sees both) |
+| AC #3 empty → `[]` (not error) | Covered (unit + integration) |
+| AC #4 `NO_IDENTITY` over the real transport | Covered (null session → `isError`, `code: NO_IDENTITY`) |
+| `{ projects: [...] }` envelope in structuredContent + text | Covered |
+| Ordering uses `seq`, never `created_at` | Covered (core sorts strictly `a.seq - b.seq`; the tool does not re-sort) |
+| Integration real-runtime (real createDataAccess + InMemoryTransport, no SDK mock) | Confirmed |
+| Rule 8 discoverability | Confirmed |
+
+## Test added (1, real-runtime / OS temp DB)
+
+- `packages/mcp-server/src/tools/list-projects.integration.test.ts` (**+1 QA test**) —
+  "orders the wire list by announcement seq, NOT alphabetically by title (AC #1)".
+  Announces "Zephyr Board" FIRST then "Alpha Board" SECOND (seq-order is the REVERSE of
+  alphabetical); asserts the wire list — in BOTH `structuredContent.projects` and the JSON
+  text block — is `[zephyr-board, alpha-board]`. A title/slug-sort anywhere in the full
+  wire path (`announce_project` writes → core seq-sort → `projectToWire`) would now fail.
+  The tool maps core's already-sorted array straight through, so this is the cheap
+  end-to-end insurance the AC #5 case (coincidentally-alphabetical titles) could not give.
+
+## Gate runs (clean tree, all exit 0)
+
+| Command | Result |
+| --- | --- |
+| `pnpm test` (`vitest run`) | Test Files 45 passed (45) · Tests **299 passed (299)** (was 298; +1) |
+| `pnpm prettier --check` (touched file) | "All matched files use Prettier code style!" |
+| `pnpm eslint` (touched file) | clean |
+
+(Full `typecheck`/`build`/repo-wide `format` were green at the dev gate — 298 — and this is
+a test-only, source-untouched addition resolved through the `src` alias, so no rebuild was
+needed; the affected suite + the full run are green at 299.)
+
+## Rule 8 (discoverability)
+
+Single runner. Both Story 3.2 test files are `*.test.ts` (`list-projects.test.ts`,
+`list-projects.integration.test.ts` — the latter ends in `.test.ts`), under
+`packages/{core,mcp-server}/src/`, matched by the root `vitest.config.ts` include glob
+`packages/*/src/**/*.test.{ts,tsx}`, under no ignore path, ran in the default `vitest run`
+(45 files / 299 tests). No second runner, no opt-out tag. The integration suite is
+real-runtime (real `createDataAccess` + `InMemoryTransport`, no SDK mock) — Rule 3
+satisfied.
+
+## Rule 5 / Rule 6
+
+No NFR tripwire (`list_projects` implementable exactly as worded; the `NO_IDENTITY`-but-no-
+membership gate works with no SDK obstruction). `docs/adr/` confirmed absent — no ADR
+constraints to honor.
+
+## Next Steps
+- Story 3.4 (sub-board member directory) and the Epic 9 UI reuse `core.listProjects`; their
+  own consumer ACs cover those read paths. Nothing further required for 3.2.

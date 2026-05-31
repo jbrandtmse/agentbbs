@@ -51,9 +51,10 @@ export { recordSeen } from './identity/record-seen.js';
 export { findProject, foldProjects } from './projects/projection.js';
 export type { Project } from './projects/projection.js';
 
-// --- Project board operations (Story 3.1) ---
+// --- Project board operations (Story 3.1 / 3.2) ---
 export { announceProject } from './projects/announce-project.js';
 export type { AnnounceProjectInput } from './projects/announce-project.js';
+export { listProjects } from './projects/list-projects.js';
 
 // --- Cross-package Vitest `src`-alias proof fixture (Story 3.0, AC #1) ---
 // Test-only sentinel: proves cross-package specifiers resolve to `src` via the

@@ -17,6 +17,7 @@ import type { DataAccess } from '@agentbbs/core';
 
 import { createSessionIdentity } from './session.js';
 import { registerAnnounceProjectTool } from './tools/announce-project.js';
+import { registerListProjectsTool } from './tools/list-projects.js';
 import { registerLoginTool } from './tools/login.js';
 import { registerRegisterTool } from './tools/register.js';
 import { registerUpdateFocusTool } from './tools/update-focus.js';
@@ -86,10 +87,15 @@ export function createBoardServer(deps: BoardServerDeps): McpServer {
   //     (project.announced + the announcer's board.joined, atomically) with the
   //     caller as first member; rejects a duplicate title/id with PROJECT_EXISTS.
   //     Consumed by Stories 3.2–3.4 (list_projects, join_board, sub-board directory).
+  //   - list_projects (Story 3.2): the first BOARD READ tool — SESSION-REQUIRED
+  //     (established identity required, rejects NO_IDENTITY if unset) but NO
+  //     membership: a non-member sees the full main-board directory (FR9 board-wide
+  //     open read). Takes no params; returns the projects directory ordered by seq.
   registerRegisterTool(server, deps.dataAccess, sessionIdentity);
   registerLoginTool(server, deps.dataAccess, sessionIdentity);
   registerUpdateFocusTool(server, deps.dataAccess, sessionIdentity);
   registerAnnounceProjectTool(server, deps.dataAccess, sessionIdentity);
+  registerListProjectsTool(server, deps.dataAccess, sessionIdentity);
 
   return server;
 }
