@@ -91,7 +91,7 @@ development_status:
   3-3-join-a-sub-board-single-and-multiple: done
   3-4-sub-board-directory-with-focus-and-last-seen: done
   3-5-board-wide-read-with-join-to-post-gating: done
-  epic-3-retrospective: optional
+  epic-3-retrospective: done
 
   # Epic 4: Announcements, rooms & multi-party negotiation (MCP)
   epic-4: backlog
