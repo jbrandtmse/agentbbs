@@ -6,11 +6,11 @@
 // `registerCoreTool` helper, and is connected to a transport by the caller
 // (`main()` for stdio, or the integration test over an in-memory transport).
 //
-// V1 tool surface: the identity tools (`register`, `login`, focus, seen) are added
-// in Stories 2.2–2.5 by calling `registerCoreTool(server, …)` inside this factory,
-// each closing over `deps.dataAccess` (and, from Story 2.3, the per-connection
-// session-identity holder). As of Story 2.3 `register` and `login` are wired here;
-// `update_focus`/`identity.seen` follow in Stories 2.4/2.5.
+// V1 tool surface: the identity tools (`register`, `login`, `update_focus`, seen)
+// are added in Stories 2.2–2.5 by calling `registerCoreTool(server, …)` inside this
+// factory, each closing over `deps.dataAccess` (and, from Story 2.3, the
+// per-connection session-identity holder). As of Story 2.4 `register`, `login`, and
+// `update_focus` are wired here; `identity.seen` follows in Story 2.5.
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { DataAccess } from '@agentbbs/core';
@@ -18,6 +18,7 @@ import type { DataAccess } from '@agentbbs/core';
 import { createSessionIdentity } from './session.js';
 import { registerLoginTool } from './tools/login.js';
 import { registerRegisterTool } from './tools/register.js';
+import { registerUpdateFocusTool } from './tools/update-focus.js';
 
 import type { SessionIdentity } from './session.js';
 
@@ -76,10 +77,13 @@ export function createBoardServer(deps: BoardServerDeps): McpServer {
   //   - register (Story 2.2): claim a unique handle → durable identity; also
   //     establishes the session (a fresh agent is "established" too — FR2/FR37).
   //   - login (Story 2.3): re-establish an existing identity for the session.
-  // update-focus / seen land in Stories 2.4–2.5 as sibling registrations, reading
-  // the session holder as their acting actor.
+  //   - update_focus (Story 2.4): the first SESSION-REQUIRED tool — its actor is
+  //     the session handle (NO handle param); rejects with NO_IDENTITY if none set.
+  // identity.seen lands in Story 2.5 as a sibling registration, reading the session
+  // holder as its acting actor.
   registerRegisterTool(server, deps.dataAccess, sessionIdentity);
   registerLoginTool(server, deps.dataAccess, sessionIdentity);
+  registerUpdateFocusTool(server, deps.dataAccess, sessionIdentity);
 
   return server;
 }

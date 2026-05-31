@@ -65,6 +65,10 @@ export interface Identity {
  */
 const IDENTITY_EVENT_TYPES: ReadonlySet<EventType> = new Set<EventType>([
   'identity.registered',
+  // Story 2.4: a focus update's actor IS the subject identity, so folding one
+  // advances that identity's lastSeen (and the reducer branch below overwrites
+  // currentFocus). Story 2.5 adds 'identity.seen' here next.
+  'identity.focus_updated',
 ]);
 
 /** True for an event whose `actor` is the subject identity (see the set above). */
@@ -107,9 +111,18 @@ export function foldIdentities(events: Event[]): Map<string, Identity> {
         }
         break;
       }
-      // Stories 2.4 (identity.focus_updated → overwrite currentFocus) and 2.5
-      // (identity.seen → presence-only) add their branches here. They must add
-      // their type to IDENTITY_EVENT_TYPES above for this switch to receive them.
+      case 'identity.focus_updated': {
+        // Story 2.4: overwrite the existing identity's currentFocus with the new
+        // value. No-op if the record is absent (a focus update with no preceding
+        // registration — not reachable in V1 since update_focus requires an
+        // established/registered session; defensive only, mints no phantom). The
+        // shared lastSeen advancement below carries this event's createdAt.
+        const existing = directory.get(handle);
+        if (existing) existing.currentFocus = event.payload.currentFocus;
+        break;
+      }
+      // Story 2.5 (identity.seen → presence-only) adds its branch here. It must add
+      // its type to IDENTITY_EVENT_TYPES above for this switch to receive it.
       default:
         break;
     }

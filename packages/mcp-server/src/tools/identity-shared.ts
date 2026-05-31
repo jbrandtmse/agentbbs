@@ -41,6 +41,24 @@ export const handleSchema = z
   .max(HANDLE_MAX_LENGTH)
   .regex(HANDLE_PATTERN, 'handle must be lowercase and use only [a-z0-9._@-]');
 
+/**
+ * Max current-focus length — a sane defensive upper bound so a pathologically
+ * long focus statement is rejected at the boundary rather than stored. A focus is
+ * a one-line "what I'm working on now" statement, not a document; this is a sanity
+ * cap, not a product constraint. `register` accepts any non-empty focus today; the
+ * shared {@link focusSchema} below is the canonical bounded validator the
+ * focus-bearing tools (`update_focus` 2.4 onward) use.
+ */
+export const FOCUS_MAX_LENGTH = 280;
+
+/**
+ * The shared Zod validator for a `current_focus` wire param: a non-empty,
+ * length-bounded string. The SDK validates against this and rejects invalid input
+ * BEFORE the delegate runs. Single source of truth for the focus contract shared
+ * by the focus-bearing identity tools.
+ */
+export const focusSchema = z.string().min(1).max(FOCUS_MAX_LENGTH);
+
 /** The snake_case identity payload returned on the wire (camelCase mapped here). */
 export interface IdentityWire {
   handle: string;

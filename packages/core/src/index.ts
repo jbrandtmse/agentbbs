@@ -44,3 +44,4 @@ export type { Identity } from './identity/projection.js';
 export { register } from './identity/register.js';
 export type { RegisterInput } from './identity/register.js';
 export { login } from './identity/login.js';
+export { updateFocus } from './identity/update-focus.js';

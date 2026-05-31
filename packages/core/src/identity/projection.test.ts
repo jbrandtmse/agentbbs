@@ -44,6 +44,22 @@ function seen(seq: number, handle: string, createdAt: string): Event {
   };
 }
 
+/** Build an identity.focus_updated Event at a given seq/createdAt (Story 2.4). */
+function focus(
+  seq: number,
+  handle: string,
+  newFocus: string,
+  createdAt: string,
+): Event {
+  return {
+    seq,
+    type: 'identity.focus_updated',
+    actor: handle,
+    createdAt,
+    payload: { handle, currentFocus: newFocus },
+  };
+}
+
 describe('foldIdentities — registration (AC #1)', () => {
   it('folds one identity.registered into one record (handle, currentFocus, createdAt, lastSeen)', () => {
     const dir = foldIdentities([
@@ -86,6 +102,96 @@ describe('foldIdentities — registration (AC #1)', () => {
     expect(dir.size).toBe(1);
     expect(dir.get('ada')?.createdAt).toBe('2026-05-31T00:00:01.000Z');
     expect(dir.get('ada')?.currentFocus).toBe('first');
+  });
+});
+
+describe('foldIdentities — identity.focus_updated (Story 2.4, AC #1)', () => {
+  it('overwrites currentFocus with the focus_updated value and advances lastSeen', () => {
+    const dir = foldIdentities([
+      reg(1, 'ada', 'old focus', '2026-05-31T00:00:01.000Z'),
+      focus(2, 'ada', 'new focus', '2026-05-31T00:05:00.000Z'),
+    ]);
+
+    const ada = dir.get('ada');
+    // currentFocus is the latest (focus_updated) value, NOT the registration value.
+    expect(ada?.currentFocus).toBe('new focus');
+    // createdAt stays pinned to the registration; lastSeen advanced to the update.
+    expect(ada?.createdAt).toBe('2026-05-31T00:00:01.000Z');
+    expect(ada?.lastSeen).toBe('2026-05-31T00:05:00.000Z');
+  });
+
+  it('keeps the LATEST focus across multiple sequential updates (folded in seq order)', () => {
+    const dir = foldIdentities([
+      reg(1, 'ada', 'focus-0', '2026-05-31T00:00:01.000Z'),
+      focus(2, 'ada', 'focus-1', '2026-05-31T00:01:00.000Z'),
+      focus(3, 'ada', 'focus-2', '2026-05-31T00:02:00.000Z'),
+      focus(4, 'ada', 'focus-3', '2026-05-31T00:03:00.000Z'),
+    ]);
+
+    const ada = dir.get('ada');
+    expect(ada?.currentFocus).toBe('focus-3');
+    expect(ada?.lastSeen).toBe('2026-05-31T00:03:00.000Z');
+    expect(ada?.createdAt).toBe('2026-05-31T00:00:01.000Z');
+  });
+
+  it('folds focus updates strictly by seq, NOT by createdAt — when two focus_updated share a createdAt, the higher seq wins (QA)', () => {
+    // The append invariant forbids createdAt as an ordering key; the fold trusts
+    // the caller's seq order. If two focus_updated events collide on createdAt (a
+    // realistic ms-granularity clock collision when two updates land in the same
+    // millisecond), the LATER one by seq must win currentFocus. Here the events are
+    // seq-ordered (1,2,3) — as every DataAccess read guarantees — but the focus
+    // updates share one timestamp, so only seq can break the tie. If the reducer
+    // ever compared createdAt instead of trusting seq order, this would be
+    // ambiguous/wrong; trusting seq order makes seq=3 ('later-by-seq') win.
+    const sharedTs = '2026-05-31T00:05:00.000Z';
+    const dir = foldIdentities([
+      reg(1, 'ada', 'focus-0', '2026-05-31T00:00:01.000Z'),
+      focus(2, 'ada', 'earlier-by-seq', sharedTs),
+      focus(3, 'ada', 'later-by-seq', sharedTs),
+    ]);
+
+    const ada = dir.get('ada');
+    // seq=3 is the last folded event for ada → its focus wins, even though seq=2
+    // carries the IDENTICAL createdAt (no timestamp comparison decides this).
+    expect(ada?.currentFocus).toBe('later-by-seq');
+    // lastSeen is that shared timestamp (the latest-by-seq event's createdAt).
+    expect(ada?.lastSeen).toBe(sharedTs);
+  });
+
+  it('does NOT create a phantom identity for a focus_updated with no prior registration', () => {
+    // Only identity.registered mints a directory entry; a focus update for a handle
+    // with no registration is ignored by the fold (defensive — unreachable in V1,
+    // since update_focus requires an established/registered session). Stance:
+    // ignore, do not mint.
+    const dir = foldIdentities([
+      focus(1, 'ghost', 'whatever', '2026-05-31T00:00:01.000Z'),
+    ]);
+    expect(dir.size).toBe(0);
+    expect(dir.get('ghost')).toBeUndefined();
+  });
+
+  it('folds a focus update for one handle without polluting another identity', () => {
+    const dir = foldIdentities([
+      reg(1, 'ada', 'ada-focus', '2026-05-31T00:00:01.000Z'),
+      reg(2, 'bob', 'bob-focus', '2026-05-31T00:00:02.000Z'),
+      focus(3, 'ada', 'ada-new', '2026-05-31T00:03:00.000Z'),
+    ]);
+
+    expect(dir.get('ada')?.currentFocus).toBe('ada-new');
+    expect(dir.get('ada')?.lastSeen).toBe('2026-05-31T00:03:00.000Z');
+    // bob is untouched by ada's focus update.
+    expect(dir.get('bob')?.currentFocus).toBe('bob-focus');
+    expect(dir.get('bob')?.lastSeen).toBe('2026-05-31T00:00:02.000Z');
+  });
+
+  it('findIdentity reflects the folded focus update for a single handle', () => {
+    const events = [
+      reg(1, 'ada', 'old', '2026-05-31T00:00:01.000Z'),
+      focus(2, 'ada', 'fresh', '2026-05-31T00:09:00.000Z'),
+    ];
+    const ada = findIdentity(events, 'ada');
+    expect(ada?.currentFocus).toBe('fresh');
+    expect(ada?.lastSeen).toBe('2026-05-31T00:09:00.000Z');
   });
 });
 

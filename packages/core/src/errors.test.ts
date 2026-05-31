@@ -44,6 +44,9 @@ describe('BoardError (AC3)', () => {
       'NOT_A_MEMBER',
       'ROOM_NOT_FOUND',
       'BODY_TOO_LARGE',
+      // Story 2.4 (additive): the reusable "no established identity" code for
+      // every session-required tool (update_focus is its first consumer).
+      'NO_IDENTITY',
     ] as const;
     for (const code of required) {
       expect(BOARD_ERROR_CODES).toContain(code);

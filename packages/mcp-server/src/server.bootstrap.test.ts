@@ -205,13 +205,14 @@ describe('createBoardServer bootstrap over a real in-memory transport', () => {
     const client = await connect(server);
 
     const { tools } = await client.listTools();
-    // The two representatives plus the built-in identity tools (`register` from
-    // Story 2.2, `login` from Story 2.3) the factory wires.
+    // The two representatives plus the built-in identity tools the factory wires:
+    // `register` (Story 2.2), `login` (Story 2.3), `update_focus` (Story 2.4).
     expect(tools.map((t) => t.name).sort()).toEqual([
       'alpha',
       'beta',
       'login',
       'register',
+      'update_focus',
     ]);
   });
 });
