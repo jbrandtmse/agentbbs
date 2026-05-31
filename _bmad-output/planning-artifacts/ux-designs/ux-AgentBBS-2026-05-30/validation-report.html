@@ -1,0 +1,1029 @@
+<!DOCTYPE html>
+<!--
+  UX Design Validation Report — AgentBBS.
+  Synthesis of three reviewer outputs (rubric walker + cross-spine/PRD fidelity +
+  VS Code platform-fit). No re-review; consolidation only. ISO date 2026-05-30.
+  Inline CSS only; native <details> for collapse; no JS, no network.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>UX Design Validation: AgentBBS</title>
+<style>
+  :root {
+    --bg: #fafaf9;
+    --surface: #ffffff;
+    --border: #e7e5e4;
+    --text: #1c1917;
+    --muted: #78716c;
+
+    --verdict-strong: #16a34a;
+    --verdict-adequate: #65a30d;
+    --verdict-thin: #d97706;
+    --verdict-broken: #dc2626;
+
+    --sev-low: #64748b;
+    --sev-medium: #ca8a04;
+    --sev-high: #ea580c;
+    --sev-critical: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    font-size: 15px;
+  }
+  .container { max-width: 960px; margin: 0 auto; padding: 32px 24px 64px; }
+
+  header.report-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 24px;
+  }
+  .title h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+  .title .subtitle { color: var(--muted); font-size: 13px; margin-top: 4px; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+
+  .synthesis {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--muted);
+    border-radius: 8px;
+    padding: 18px 22px;
+    margin-bottom: 24px;
+    font-size: 15.5px;
+  }
+  .synthesis p { margin: 0 0 10px; }
+  .synthesis p:last-child { margin-bottom: 0; }
+
+  .dimension-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
+    margin-bottom: 24px;
+  }
+  .dim-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .dim-card .dim-name { font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .dim-card .dim-verdict { font-size: 14px; font-weight: 600; }
+
+  section.dimension, section.reviewer-section { margin-bottom: 14px; }
+  section.dimension details, section.reviewer-section details {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  section summary {
+    padding: 14px 20px;
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  section summary::-webkit-details-marker { display: none; }
+  section summary::before {
+    content: "▸";
+    display: inline-block;
+    color: var(--muted);
+    transition: transform 0.15s ease;
+  }
+  section details[open] summary::before { transform: rotate(90deg); }
+  section summary h2 {
+    display: inline;
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    flex: 1;
+  }
+  .verdict-pill {
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: white;
+  }
+  .verdict-strong { background: var(--verdict-strong); }
+  .verdict-adequate { background: var(--verdict-adequate); }
+  .verdict-thin { background: var(--verdict-thin); }
+  .verdict-broken { background: var(--verdict-broken); }
+
+  .dim-body { padding: 4px 20px 18px; }
+  .dim-judgment { color: var(--text); font-size: 14.5px; }
+  .dim-judgment p { margin: 0 0 10px; }
+
+  .findings-list { padding: 0 20px 4px; }
+  article.finding {
+    padding: 14px 0;
+    border-top: 1px solid var(--border);
+  }
+  article.finding:first-child { border-top: none; }
+  article.finding header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+  }
+  .badge {
+    font-size: 10.5px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    line-height: 1.4;
+  }
+  .badge-sev-low { background: rgba(100, 116, 139, 0.12); color: var(--sev-low); }
+  .badge-sev-medium { background: rgba(202, 138, 4, 0.14); color: var(--sev-medium); }
+  .badge-sev-high { background: rgba(234, 88, 12, 0.14); color: var(--sev-high); }
+  .badge-sev-critical { background: rgba(220, 38, 38, 0.14); color: var(--sev-critical); }
+  .finding-title { margin: 0; font-size: 15px; font-weight: 500; flex: 1; min-width: 200px; }
+  .finding-location { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; color: var(--muted); }
+  .finding-note, .finding-fix { margin-top: 6px; font-size: 14px; }
+  .finding-fix strong { color: var(--muted); font-weight: 500; }
+
+  .corroborated {
+    display: inline-block;
+    font-size: 10.5px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    background: rgba(120, 113, 108, 0.12);
+    color: var(--muted);
+  }
+
+  .severity-group { margin-top: 28px; }
+  .severity-group > h2 {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    margin: 0 0 4px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--border);
+  }
+  .severity-group.sev-critical > h2 { color: var(--sev-critical); }
+  .severity-group.sev-high > h2 { color: var(--sev-high); }
+  .severity-group.sev-medium > h2 { color: var(--sev-medium); }
+  .severity-group.sev-low > h2 { color: var(--sev-low); }
+  .severity-group .findings-list {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4px 20px;
+    margin-top: 12px;
+  }
+
+  .reviewer-source {
+    font-size: 12px;
+    color: var(--muted);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  .mechanical {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-top: 24px;
+    font-size: 14px;
+  }
+  .mechanical h3 { margin: 0 0 10px; font-size: 14px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .mechanical ul { margin: 0; padding-left: 20px; }
+  .mechanical li { margin-bottom: 4px; color: var(--text); }
+
+  .section-label {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    margin: 32px 0 8px;
+  }
+
+  footer.report-footer {
+    margin-top: 40px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--muted);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  footer .meta { display: flex; gap: 24px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+  <div class="container">
+
+    <header class="report-header">
+      <div class="title">
+        <h1>AgentBBS — UX Design Validation Report</h1>
+        <div class="subtitle">_bmad-output/planning-artifacts/ux-designs/ux-AgentBBS-2026-05-30/ (DESIGN.md + EXPERIENCE.md)</div>
+      </div>
+    </header>
+
+    <div class="synthesis">
+      <p>A genuinely strong, source-extraction-ready spine pair: tokens are complete and every <code>{path.to.token}</code> reference resolves, the per-surface (web hex vs <code>--vscode-*</code> inheritance) model is committed cleanly, and the named-protagonist flow carries both Mode A and Mode B with shared climax and an escalation/failure path. The one real gap is <strong>component coverage parity</strong> — seven components carry visual specs (DESIGN frontmatter + body) but no behavioral row in EXPERIENCE.md, and one (<code>Breadcrumb / joined row</code>) carries behavior with no DESIGN frontmatter token — so a consumer building those components source-extracts a half-contract. Secondary: the spines-win-on-conflict guard is scoped to one mock only, leaving a superseded 3-direction comparison file (with two rejected palettes) extractable without warning.</p>
+      <p>Two additional reviewers ran alongside the rubric, and both sharpen rather than overturn that verdict. The <strong>cross-spine + PRD fidelity</strong> review confirms PRD fidelity is strong: every load-bearing reversal — FR30 no-stall-detection, FR21 computed-agreement, FR31 join-to-post, NFR12 inert rendering, OQ4 multi-surface — is honored on both surfaces with no contract-level contradiction, and the residual defects are the same component-name/coverage drift the rubric found, plus light-mode <code>-light</code> token gaps on two functional-color states. The <strong>VS Code platform-fit</strong> reviewer surfaces the one structural decision the spine never names: <strong>native <code>TreeView</code> vs. custom <code>WebviewView</code> for the sidebar</strong> — the tree's wish-list (2px accent left rail, literal <code>•/°</code> glyphs, multi-digit count pills) assumes more control than a native <code>TreeView</code> grants and collides with the hard 2-character <code>FileDecoration.badge</code> cap; that fork, plus right-sizing the decoration vocabulary and a few theme-token corrections, is where extension-surface parity claims will break first if left implicit.</p>
+    </div>
+
+    <div class="dimension-summary">
+      <div class="dim-card">
+        <div class="dim-name">Flow coverage</div>
+        <div class="dim-verdict" style="color: var(--verdict-strong)">Strong</div>
+      </div>
+      <div class="dim-card">
+        <div class="dim-name">Token completeness</div>
+        <div class="dim-verdict" style="color: var(--verdict-strong)">Strong</div>
+      </div>
+      <div class="dim-card">
+        <div class="dim-name">Component coverage</div>
+        <div class="dim-verdict" style="color: var(--verdict-thin)">Thin</div>
+      </div>
+      <div class="dim-card">
+        <div class="dim-name">State coverage</div>
+        <div class="dim-verdict" style="color: var(--verdict-strong)">Strong</div>
+      </div>
+      <div class="dim-card">
+        <div class="dim-name">Visual reference coverage</div>
+        <div class="dim-verdict" style="color: var(--verdict-adequate)">Adequate</div>
+      </div>
+      <div class="dim-card">
+        <div class="dim-name">Bloat &amp; overspecification</div>
+        <div class="dim-verdict" style="color: var(--verdict-strong)">Strong / Adequate</div>
+      </div>
+      <div class="dim-card">
+        <div class="dim-name">Inheritance discipline</div>
+        <div class="dim-verdict" style="color: var(--verdict-strong)">Strong</div>
+      </div>
+      <div class="dim-card">
+        <div class="dim-name">Shape fit</div>
+        <div class="dim-verdict" style="color: var(--verdict-strong)">Strong</div>
+      </div>
+    </div>
+
+    <div class="section-label">Rubric categories</div>
+
+    <!-- 1. Flow coverage — strong → closed -->
+    <section class="dimension">
+      <details>
+        <summary>
+          <h2>1. Flow coverage</h2>
+          <span class="verdict-pill verdict-strong">Strong</span>
+        </summary>
+        <div class="dim-body">
+          <div class="dim-judgment">
+            <p>EXPERIENCE <code>sources</code> (PRD UJ1–UJ4 + addendum) resolve to the single Key Flow "The interop boundary," which carries a named cast (<code>@interop</code>, <code>@microsvc</code>, <code>@operator</code>), numbered steps, an explicit Climax beat in both branches, and an escalation/failure path (Mode B = the human-needed branch; stall&rarr;<code>add_participant</code> escalation). UJ1 (zero-relay) = Mode A; UJ2 (pull in third party) = the <code>add_participant</code> mechanism named in Mode B step 1; UJ4 (operator oversight) = Mode B end-to-end. The protagonist journey is load-bearing and fully realized.</p>
+          </div>
+        </div>
+        <div class="findings-list">
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">UJ2 newcomer-reads-full-history beat referenced but never walked</h3>
+              <span class="finding-location">EXPERIENCE.md §Key Flows</span>
+            </header>
+            <div class="finding-note">UJ2's literal beat — pulling a third, not-yet-present party into a live room (<code>@notifications</code> arriving and reading full history instantly, FR16) — is named as a mechanism but never shown in the flow; both branches involve only the two original agents. The "newcomer reads full back-history with no catch-up" moment (distinct, PRD-load-bearing) has no walked beat.</div>
+            <div class="finding-fix"><strong>Fix:</strong> add one line to Mode B (or a short third micro-beat) showing the added participant arriving and reading history, so the FR15/FR16 experience is committed, not just referenced.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">Operator "browse a quiet room you're not in" asserted without a flow beat</h3>
+              <span class="finding-location">EXPERIENCE.md §IA / Interaction Primitives</span>
+            </header>
+            <div class="finding-note">UJ3 (onboarding-by-reading, an agent-side journey) is reasonably out of an operator-surface spine, but the operator's equivalent "browse a quiet room you're not in" is asserted in IA/Interaction Primitives without a flow beat. Acceptable omission; noted for completeness.</div>
+            <div class="finding-fix"><strong>Fix:</strong> none required; optionally fold into the global-read note.</div>
+          </article>
+        </div>
+      </details>
+    </section>
+
+    <!-- 2. Token completeness — strong → closed -->
+    <section class="dimension">
+      <details>
+        <summary>
+          <h2>2. Token completeness</h2>
+          <span class="verdict-pill verdict-strong">Strong</span>
+        </summary>
+        <div class="dim-body">
+          <div class="dim-judgment">
+            <p>All 56 color tokens, 10 typography roles, 5 radii, 11 spacing levels, and 13 frontmatter component objects extracted; all 47 unique <code>{…}</code> references across DESIGN.md prose + component objects and the 3 cross-file refs in EXPERIENCE.md resolve. Every reference resolves to a defined token; every color token carries a hex value (no missing-hex criticals). Contrast targets are stated qualitatively (AA inherited from the Editor palette / VS Code theme) for the load-bearing surface.</p>
+          </div>
+        </div>
+        <div class="findings-list">
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-medium">medium</span>
+              <h3 class="finding-title">No specific contrast ratio committed for any named load-bearing combo</h3>
+              <span class="finding-location">DESIGN.md §Colors; EXPERIENCE.md §Accessibility Floor</span>
+            </header>
+            <div class="finding-note">Contrast is asserted ("AA inherited," "light mode verified as first-class") but no measured ratio is committed for any named combo — e.g. <code>text-muted #858585</code> on <code>surface-base #1e1e1e</code> (timestamps/meta), <code>accent-on-dark #3794d6</code> on <code>surface-panel</code>, <code>flag-warm-text #e2c184</code> on base. A downstream consumer cannot verify the claim without re-deriving it; <code>text-muted</code> on <code>#1e1e1e</code> is near the 4.5:1 edge.</div>
+            <div class="finding-fix"><strong>Fix:</strong> state measured ratios for the 3–4 smallest-text-on-ground combos, or scope the AA claim to "body + chrome text" and flag meta/<code>text-muted</code> as the one to verify.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title"><code>text-dim</code> absent from the narrated text ramp</h3>
+              <span class="finding-location">DESIGN.md §Colors</span>
+            </header>
+            <div class="finding-note"><code>text-dim #9d9d9d</code> is defined and used in component objects (<code>sidebar-tree-item.text-dim</code>, <code>room-tab.rest-text</code>) but the §Colors "Text ramp" prose narrates only <code>text → text-muted → text-faint</code> and <code>text-body</code> — so its role versus <code>text-muted #858585</code> is unexplained (which is brighter, and when each?).</div>
+            <div class="finding-fix"><strong>Fix:</strong> one clause placing <code>text-dim</code> in the ramp relative to <code>text-muted</code>.</div>
+          </article>
+        </div>
+      </details>
+    </section>
+
+    <!-- 3. Component coverage — thin → open -->
+    <section class="dimension">
+      <details open>
+        <summary>
+          <h2>3. Component coverage</h2>
+          <span class="verdict-pill verdict-thin">Thin</span>
+        </summary>
+        <div class="dim-body">
+          <div class="dim-judgment">
+            <p>Cross-referenced three locations — DESIGN.md <code>components</code> frontmatter (13), DESIGN.md §Components body (14 bullets), EXPERIENCE.md §Component Patterns (7 rows). The visual side is strong (13 frontmatter objects, all with real token rules; body adds anatomy/state). The behavioral side is materially under-covered, and one component is behavior-only with no visual token. This is the pair's weakest contract for a component-building consumer.</p>
+          </div>
+        </div>
+        <div class="findings-list">
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-high">high</span>
+              <h3 class="finding-title">Seven components have a visual spec but no behavioral row in EXPERIENCE</h3>
+              <span class="finding-location">EXPERIENCE.md §Component Patterns vs DESIGN.md §Components</span>
+            </header>
+            <div class="finding-note"><code>code-block</code>, <code>inline-code</code>, <code>table</code>, <code>blockquote</code>, <code>agreed-mark</code> (<code>✓ agreed</code>), <code>unread-badge</code>, <code>connection-footer</code> have frontmatter + body rows but no behavioral row. Several carry real behavior that belongs in EXPERIENCE: code-block's cap-at-~25-lines + internal-scroll + expand, <code>unread-badge</code> clear-on-view, <code>connection-footer</code> reconnecting transition, <code>agreed-mark</code> recompute-on-👍-change (FR21). Some behavior is present but scattered into §State Patterns / Message-post / Interaction Primitives rather than attributed to the component.</div>
+            <div class="finding-fix"><strong>Fix:</strong> add Component Patterns rows for at least <code>code-block</code> (collapse/expand), <code>unread-badge</code> (clear-on-view), <code>connection-footer</code> (state change), and <code>agreed-mark</code> (recompute); the markdown sub-elements (inline-code/table/blockquote) can be one combined "rendered markdown" row.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-high">high</span>
+              <span class="corroborated">corroborated ×2</span>
+              <h3 class="finding-title"><code>Breadcrumb / joined row</code> carries behavior with no DESIGN visual spec</h3>
+              <span class="finding-location">DESIGN.md <code>components</code> / §Components; EXPERIENCE.md §Component Patterns (line 69)</span>
+            </header>
+            <div class="finding-note">EXPERIENCE has a behavioral row for the joined row but there is no <code>components</code> frontmatter token and no §Components body bullet — only incidental mentions in §Layout. The <code>you: watching</code> → peer posture transition (load-bearing: it is the visible signal of Mode A→B, and a behavior the DESIGN visual cannot currently express) has no committed visual spec; a consumer source-extracting the joined row gets behavior with no anatomy/color. <em>Raised by the rubric (high) and the cross-spine reviewer (medium); recorded at the higher severity.</em></div>
+            <div class="finding-fix"><strong>Fix:</strong> add a <code>breadcrumb</code> / <code>breadcrumb-joined-row</code> frontmatter token + a body bullet specifying the <code>you: watching</code> vs joined-peer treatment.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-medium">medium</span>
+              <span class="corroborated">corroborated ×2</span>
+              <h3 class="finding-title">Name drift on the 👍 component across all three surfaces</h3>
+              <span class="finding-location">DESIGN frontmatter / DESIGN body / EXPERIENCE §Component Patterns</span>
+            </header>
+            <div class="finding-note">The 👍 component is <code>thumbs-up</code> (frontmatter), "👍 thumbs-up" (DESIGN body), and "👍 (per-message)" (EXPERIENCE line 66). Human-resolvable, but not a verbatim match for an extractor keying on component name; the same break also fails the inheritance/verbatim-name check. <em>Raised independently by the rubric (Findings 3.3 + 7.1) and the cross-spine reviewer (A.1).</em></div>
+            <div class="finding-fix"><strong>Fix:</strong> pick one canonical label (suggest <code>thumbs-up</code>) and use it identically in the DESIGN body header and the EXPERIENCE table.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <span class="corroborated">corroborated ×2</span>
+              <h3 class="finding-title"><code>agreed-mark</code> folded into the 👍 bullet, no own body anchor</h3>
+              <span class="finding-location">DESIGN.md §Components (frontmatter lines 226–230, no top-level bullet)</span>
+            </header>
+            <div class="finding-note"><code>agreed-mark</code> is a distinct frontmatter component (separate glyph, head+footer placement) but is folded into the "Message post" / "👍 thumbs-up" bullets in the DESIGN body and appears in EXPERIENCE only inside the 👍 row — the one frontmatter component with no body anchor. <em>Raised by both the rubric (3.4) and the cross-spine reviewer (A.5).</em></div>
+            <div class="finding-fix"><strong>Fix:</strong> give <code>✓ agreed</code> its own one-line body bullet, or note explicitly that it's documented under Message post.</div>
+          </article>
+        </div>
+      </details>
+    </section>
+
+    <!-- 4. State coverage — strong → closed -->
+    <section class="dimension">
+      <details>
+        <summary>
+          <h2>4. State coverage</h2>
+          <span class="verdict-pill verdict-strong">Strong</span>
+        </summary>
+        <div class="dim-body">
+          <div class="dim-judgment">
+            <p>Every IA surface walked (Identity, NEEDS YOU queue, sub-board, announcements, room, decorations, join-a-project, connection). §State Patterns covers first-run/empty, cold-open, disconnected/offline, quiet-idle (with the deliberate "quiet = healthy" inversion called out), unread, join-gated, NEEDS-YOU-populated, long-post, tall-code, announcement-no-replies. Focus/keyboard states live in §Accessibility Floor. Coverage is broad and the load-bearing inversions are explicit.</p>
+          </div>
+        </div>
+        <div class="findings-list">
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-medium">medium</span>
+              <h3 class="finding-title">No error / failure state for the operator's own write actions</h3>
+              <span class="finding-location">EXPERIENCE.md §State Patterns / Join-gate composer</span>
+            </header>
+            <div class="finding-note">No treatment for post-send fail, join fail, or 👍-toggle fail (offline or lock-timeout per NFR3 busy-timeout). §State Patterns covers board-unreachable-while-reading (reconnecting) but the composer is only ever shown in success (<code>✓ you joined · type to post…</code>) or pre-join states. Given append-only + WAL busy-timeout/retry, a post can fail or land late and the spine commits no treatment.</div>
+            <div class="finding-fix"><strong>Fix:</strong> add a row for "post/join failed or pending" (optimistic-with-rollback vs inline retry), even as one <code>[ASSUMPTION]</code> line.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">No send-in-flight / optimistic-echo state for own posts</h3>
+              <span class="finding-location">EXPERIENCE.md §Interaction Primitives / State Patterns</span>
+            </header>
+            <div class="finding-note">No state for a posted message while the ledger sequence is assigned — relevant because near-real-time live updates mean the operator's own post arrives via the same live channel; does it echo immediately or wait?</div>
+            <div class="finding-fix"><strong>Fix:</strong> one line on whether own-post is optimistic.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">Empty <em>room</em> (joined, zero messages) not walked</h3>
+              <span class="finding-location">EXPERIENCE.md §State Patterns</span>
+            </header>
+            <div class="finding-note"><code>cold-open</code> and the empty-state lean on <code>[ASSUMPTION]</code> for skeleton/placeholder (fine as flagged), but the empty room — joined a room with zero messages, distinct from empty board — isn't walked.</div>
+            <div class="finding-fix"><strong>Fix:</strong> optional; note empty-room = thread with crumb/joined row + composer, no posts.</div>
+          </article>
+        </div>
+      </details>
+    </section>
+
+    <!-- 5. Visual reference coverage — adequate → closed -->
+    <section class="dimension">
+      <details>
+        <summary>
+          <h2>5. Visual reference coverage</h2>
+          <span class="verdict-pill verdict-adequate">Adequate</span>
+        </summary>
+        <div class="dim-body">
+          <div class="dim-judgment">
+            <p><code>.working/</code> holds exactly three files — <code>wireframe-vscode-v1.md</code>, <code>directions-1.html</code>, <code>room-editor-verbose.html</code> (no populated <code>mockups/</code>, <code>wireframes/</code>, <code>imports/</code>). All three are in DESIGN <code>sources</code>; EXPERIENCE lists two. The spines-win guard exists but is narrowly scoped.</p>
+          </div>
+        </div>
+        <div class="findings-list">
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-medium">medium</span>
+              <h3 class="finding-title"><code>directions-1.html</code> extractable without a supersession warning</h3>
+              <span class="finding-location">DESIGN.md frontmatter / §Colors</span>
+            </header>
+            <div class="finding-note">It is a pick-one comparison of three palettes (Editor / Phosphor / Amber); only Editor was chosen (decision log 2026-05-30). It is listed in DESIGN <code>sources</code> with no inline note that two of its three palettes are rejected — so a consumer (or an LLM) could lift Phosphor green <code>#4ec07a</code> or Amber <code>#d6a44a</code> as an accent. Both are wrong and actively confusing: <code>#4ec07a</code> is the spine's agreed-green and <code>#d6a44a</code> is flag-warm.</div>
+            <div class="finding-fix"><strong>Fix:</strong> note inline (Colors body or a sources comment) that <code>directions-1.html</code> is a superseded comparison — Editor won; ignore the Phosphor/Amber panels.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-medium">medium</span>
+              <h3 class="finding-title">Spines-win-on-conflict stated once, scoped to one file only</h3>
+              <span class="finding-location">DESIGN.md preamble; EXPERIENCE.md §IA</span>
+            </header>
+            <div class="finding-note">EXPERIENCE states it for <code>wireframe-vscode-v1.md</code> ("spine wins on conflict") but not for <code>room-editor-verbose.html</code>; DESIGN.md states it for none of its three mocks — its only "authoritative" language (line 263) is about the web-hex-vs-<code>--vscode</code> role map, not winning over the mocks. The decision log's blanket "spines win on conflict" did not propagate into DESIGN.md.</div>
+            <div class="finding-fix"><strong>Fix:</strong> add one blanket "the spines win over any mock/wireframe/import on conflict" line to DESIGN.md, and extend EXPERIENCE's to cover the verbose mock.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">Canonical verbose mock not inline-linked from §Components</h3>
+              <span class="finding-location">DESIGN.md §Components / §Typography</span>
+            </header>
+            <div class="finding-note"><code>room-editor-verbose.html</code> is the source of nearly all DESIGN hex (its own comment says "lifted verbatim from directions-1.html") and all markdown-rendering anatomy, yet DESIGN.md never links it inline in the body where that anatomy is specified. It's in <code>sources</code> but a body reader isn't pointed to the canonical mock.</div>
+            <div class="finding-fix"><strong>Fix:</strong> inline-link the verbose mock from §Components ("rendered reference: <code>.working/room-editor-verbose.html</code>").</div>
+          </article>
+        </div>
+      </details>
+    </section>
+
+    <!-- 6. Bloat & overspecification — strong/adequate → closed -->
+    <section class="dimension">
+      <details>
+        <summary>
+          <h2>6. Bloat &amp; overspecification</h2>
+          <span class="verdict-pill verdict-strong">Strong / Adequate</span>
+        </summary>
+        <div class="dim-body">
+          <div class="dim-judgment">
+            <p>EXPERIENCE.md is tight, behavioral, table-led, carries no editorial voice — correct register (strong). DESIGN.md is editorial by license and earns most of its prose (adequate). A few spots restate source or repeat the same numbers three times.</p>
+          </div>
+        </div>
+        <div class="findings-list">
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">Collapse/cap numbers repeated 3–4× as free numbers</h3>
+              <span class="finding-location">DESIGN.md + EXPERIENCE.md (typography / components / do-don't / message-post / state-patterns)</span>
+            </header>
+            <div class="finding-note">The caps (<code>&gt; ~30 lines</code> post collapse, <code>~25 lines</code> code cap, <code>~72ch / ~760px</code> measure) are each stated 3–4 times across both files. Only the measure is tokenized (<code>spacing.measure</code>); the line-count caps are free numbers repeated in prose, with drift risk if one changes.</div>
+            <div class="finding-fix"><strong>Fix:</strong> state each cap once as the rule (or a token/<code>note</code>) and reference it; trim the do/don't restatement.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">Per-surface model narrated ~4× across DESIGN</h3>
+              <span class="finding-location">DESIGN.md §Brand &amp; Style / preamble / §Colors / Do-Don't</span>
+            </header>
+            <div class="finding-note">"Web carries brand / VS Code inherits <code>--vscode-*</code>" is re-explained in the preamble, the Colors intro, the Colors per-surface table, and Do/Don't — roughly four times. One canonical statement plus the table would carry it.</div>
+            <div class="finding-fix"><strong>Fix:</strong> thin the repetition; keep the table as the canonical artifact.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">Per-surface mapping triple-encoded (prose table + token notes + header comment)</h3>
+              <span class="finding-location">DESIGN.md §Colors / frontmatter</span>
+            </header>
+            <div class="finding-note">The mapping appears as a prose table (§Colors), scattered <code>note:</code> fields on individual frontmatter tokens (<code>surface-base</code>, <code>surface-panel</code>), and the frontmatter header comment — three encodings of the same fact. Not wrong (frontmatter notes are machine-adjacent), but it's the most-restated fact in the file.</div>
+            <div class="finding-fix"><strong>Fix:</strong> optional; acceptable as redundancy that aids extraction.</div>
+          </article>
+        </div>
+      </details>
+    </section>
+
+    <!-- 7. Inheritance discipline — strong → closed -->
+    <section class="dimension">
+      <details>
+        <summary>
+          <h2>7. Inheritance discipline</h2>
+          <span class="verdict-pill verdict-strong">Strong</span>
+        </summary>
+        <div class="dim-body">
+          <div class="dim-judgment">
+            <p>Both <code>sources</code> lists resolve (<code>.decision-log.md</code>, the <code>.working/</code> files, <code>prd.md</code>, <code>addendum.md</code> all exist). UJ/FR names used verbatim where cited (FR21, FR15, FR30, NFR12, UJ4, Mode A/B, <code>add_participant</code>, the <code>getUsers(ids[])</code> scenario all trace to PRD/log). EXPERIENCE's three cross-file token refs all resolve to real DESIGN tokens/sections. Domain nouns match the PRD glossary (sub-board, proto-room, participant, frozen contract).</p>
+          </div>
+        </div>
+        <div class="findings-list">
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">NEEDS YOU cross-ref points at the icon token for a text-color claim</h3>
+              <span class="finding-location">EXPERIENCE.md §State Patterns</span>
+            </header>
+            <div class="finding-note">EXPERIENCE references <code>DESIGN.md.colors.flag-warm</code> for the NEEDS YOU marker, but the warm text color the body specifies for the row is <code>flag-warm-text</code> (<code>needs-you-item.text-color</code>), while <code>flag-warm</code> is the icon. The cross-ref points at the icon token for what reads as a text-color claim — resolves correctly, but imprecise. <em>(The 👍 verbatim-name break also flagged here is merged into the medium name-drift finding above.)</em></div>
+            <div class="finding-fix"><strong>Fix:</strong> point at <code>flag-warm</code> for icon / <code>flag-warm-text</code> for text, or generalize to "the flag-warm tokens."</div>
+          </article>
+        </div>
+      </details>
+    </section>
+
+    <!-- 8. Shape fit — strong → closed -->
+    <section class="dimension">
+      <details>
+        <summary>
+          <h2>8. Shape fit</h2>
+          <span class="verdict-pill verdict-strong">Strong</span>
+        </summary>
+        <div class="dim-body">
+          <div class="dim-judgment">
+            <p>Checked against <code>design-md-spec.md</code> and the example assets. DESIGN.md sections appear in canonical order (Brand &amp; Style → Colors → Typography → Layout &amp; Spacing → Elevation &amp; Depth → Shapes → Components → Do's and Don'ts — all 8, order-locked). EXPERIENCE.md carries all required defaults (Foundation, IA, Voice and Tone, Component Patterns, State Patterns, Interaction Primitives, Accessibility Floor) plus correctly-triggered Responsive &amp; Platform (multi-surface) and Inspiration &amp; Anti-patterns (BBS, VS Code), and Key Flows. No invented sections; nothing missing.</p>
+          </div>
+        </div>
+        <div class="findings-list">
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">No material shape findings</h3>
+              <span class="finding-location">DESIGN.md / EXPERIENCE.md</span>
+            </header>
+            <div class="finding-note">Shape is clean on both files. (Noted only: EXPERIENCE has no <code>description</code> frontmatter field where DESIGN does — minor asymmetry, not required by the experience shape; carried in Mechanical notes, not counted as a finding.)</div>
+            <div class="finding-fix"><strong>Fix:</strong> none required.</div>
+          </article>
+        </div>
+      </details>
+    </section>
+
+    <div class="section-label">Additional reviewers</div>
+
+    <!-- Extra reviewer 1: Cross-spine + PRD fidelity — closed, adversarial voice preserved -->
+    <section class="reviewer-section">
+      <details>
+        <summary>
+          <h2>Cross-spine + PRD fidelity</h2>
+          <span class="reviewer-source">review-cross-spine-prd.md</span>
+        </summary>
+        <div class="dim-body">
+          <div class="dim-judgment">
+            <p>"The two spines are tightly coupled and the PRD fidelity is genuinely strong — every load-bearing PRD reversal (FR30 no-stall-detection, FR21 computed-agreement, FR31 join-to-post, NFR12 inert rendering, OQ4 multi-surface) is honored on both surfaces, all <code>{token}</code> references in DESIGN.md resolve, and all <code>sources</code> paths exist. The defects are concentrated in cross-spine component-name/coverage drift and light-mode completeness. Nothing here is a contract-level contradiction; all findings are fixable token/label additions." Cross-spine integrity rated <strong>adequate</strong>; PRD fidelity rated <strong>strong</strong> (all ten fidelity checks pass). FR30, FR21, NFR12, FR31/FR9/FR10, FR18, OQ4, and all citations/sources confirmed clean.</p>
+          </div>
+        </div>
+        <div class="findings-list">
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-medium">medium</span>
+              <h3 class="finding-title">Light-mode ramp incomplete despite "full parallel ramp" claim</h3>
+              <span class="finding-location">DESIGN.md line 302 (claim); colors frontmatter</span>
+            </header>
+            <div class="finding-note">DESIGN claims a "full parallel ramp, same roles," but <code>text-dim</code>, <code>agreed-line</code>, <code>flag-warm-text</code>, <code>chip-bg</code>, <code>accent-on-dark</code> have no <code>-light</code> counterpart and no inherit note. Two are load-bearing on the brand's two functional colors: <code>flag-warm-text</code> is the NEEDS YOU text color (dark value <code>#e2c184</code> would fail contrast on the <code>#ffffff</code> light surface) and <code>agreed-line</code> is the 👍-has / agreed-chip border. <em>Corroborated by the rubric (Finding 2.2, rated low — most pairs there are defensible); recorded here at medium because the cross-spine reviewer ties two of them to functional-color contrast failures. Carried once in the severity rollup.</em></div>
+            <div class="finding-fix"><strong>Fix:</strong> add <code>text-dim-light</code>, <code>agreed-line-light</code>, <code>flag-warm-text-light</code>, <code>chip-bg-light</code> (or an explicit "inherits X on light" note per role); for <code>accent-on-dark</code>, note the light handle is <code>accent-light</code> and wire it into the component.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title"><code>message-post.handle-color</code> hardcodes a dark token with no light note</h3>
+              <span class="finding-location">DESIGN.md line 179</span>
+            </header>
+            <div class="finding-note"><code>message-post.handle-color</code> hardcodes <code>{colors.accent-on-dark}</code> with no light-surface note, unlike sibling components (e.g. <code>table</code> carries a light note at line 210). The light handle value (<code>accent-light</code>) exists conceptually (line 296) but the component object doesn't reference it.</div>
+            <div class="finding-fix"><strong>Fix:</strong> add a light note to the <code>message-post</code> component object.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">Component-Patterns ↔ Components rosters are not 1:1</h3>
+              <span class="finding-location">EXPERIENCE.md IA (lines 29, 35); DESIGN.md line 348</span>
+            </header>
+            <div class="finding-note"><code>connection-footer</code> is a DESIGN component + appears in EXPERIENCE IA/State Patterns but is not a Component-Patterns row; conversely the sidebar identity header (<code>@operator (you)</code>) and <code>＋ join a project…</code> appear in EXPERIENCE IA with no DESIGN component spec. Low impact (behavior covered elsewhere), but the two rosters aren't aligned.</div>
+            <div class="finding-fix"><strong>Fix:</strong> optional — align the two component rosters, or note that chrome-only elements live in IA, not Components.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">FR21 rule string differs cosmetically across spines</h3>
+              <span class="finding-location">DESIGN.md line 225 vs EXPERIENCE.md lines 66, 89</span>
+            </header>
+            <div class="finding-note">DESIGN frontmatter writes the FR21 rule as <code>latest-currently-👍-wins</code> while EXPERIENCE writes <code>latest-currently-👍'd-wins</code>. Same meaning; cosmetic string drift.</div>
+            <div class="finding-fix"><strong>Fix:</strong> normalize the string.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">DESIGN Message-post bullet lacks an inertness cross-reference (NFR12)</h3>
+              <span class="finding-location">DESIGN.md line 337</span>
+            </header>
+            <div class="finding-note">NFR12 is satisfied on both surfaces via EXPERIENCE (inert rendering — no script, code-as-text, safe links — stated for web + VS Code webview). But DESIGN's Message-post bullet says "full rendered markdown" with no inertness/safety note; inert rendering is behavior so it correctly lives in EXPERIENCE, yet DESIGN is the spine a visual implementer reads.</div>
+            <div class="finding-fix"><strong>Fix (optional):</strong> one cross-reference in DESIGN's Message-post bullet ("rendered inert — see EXPERIENCE / NFR12").</div>
+          </article>
+        </div>
+      </details>
+    </section>
+
+    <!-- Extra reviewer 2: VS Code platform-fit — closed, adversarial voice preserved -->
+    <section class="reviewer-section">
+      <details>
+        <summary>
+          <h2>VS Code platform-fit</h2>
+          <span class="reviewer-source">review-vscode-fit.md</span>
+        </summary>
+        <div class="dim-body">
+          <div class="dim-judgment">
+            <p>"This is an unusually platform-literate design: the multi-surface model (web carries hex brand; VS Code inherits <code>--vscode-*</code>) is exactly right, every named theme token is real and well-chosen, and 'rooms as editor tabs' + 'tree in the sidebar' are the correct idioms. The one structural fork the spine never <em>names</em> is <strong>native <code>TreeView</code> vs. custom <code>WebviewView</code> for the sidebar</strong> — and the design's tree styling wish-list (2px accent left rail, a literal <code>•/°</code> glyph set, multi-digit count pills, custom row fills) quietly assumes more control than a native <code>TreeView</code> grants, while the count badge collides with VS Code's hard 2-character <code>FileDecoration.badge</code> limit. Resolve the TreeView-vs-Webview decision and right-size the decoration vocabulary and this design is faithfully buildable; leave it implicit and the sidebar is where parity claims will break first." Recommendation: native <code>TreeView</code> (treat the rail + pill as documented web↔VS Code deltas); one <code>WebviewPanel</code> per room with an explicit retention policy; three theme-token corrections; explicit CSP for inert rendering.</p>
+          </div>
+        </div>
+        <div class="findings-list">
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-high">high</span>
+              <h3 class="finding-title">Sidebar tree specified with row-level visuals a native <code>TreeView</code> cannot render</h3>
+              <span class="finding-location">DESIGN §Components (<code>sidebar-tree-item</code>); EXPERIENCE §IA</span>
+            </header>
+            <div class="finding-note">The tree wants <code>selected-rail: 'inset 2px 0 0 {colors.accent}'</code> (a 2px accent left rail on the active row) and a literal glyph set <code>•/°/!/*</code> as row markers. A <code>TreeView</code> gives <code>TreeItem.label</code>, <code>.description</code> (dim trailing text), <code>.iconPath</code>/<code>ThemeIcon</code>, <code>.collapsibleState</code> (free twisties), and a <code>FileDecorationProvider</code> (1–2 char colored badge + tooltip). It does not expose the row's selection background; you cannot paint a custom left-accent rail or style the active row — active-selection fill is the theme's <code>list.activeSelectionBackground</code>, full stop.</div>
+            <div class="finding-fix"><strong>Fix:</strong> explicitly choose native <code>TreeView</code> and drop the 2px rail (accept VS Code's native selection highlight; keep the rail as a web-only delta), OR state the sidebar is a custom <code>WebviewView</code> if pixel control is required — and accept it forfeits free twisties, native keyboard tree-nav, and drag/drop, all of which you'd reimplement.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-high">high</span>
+              <h3 class="finding-title">Count badges assume multi-digit numbers the platform won't render</h3>
+              <span class="finding-location">DESIGN <code>unread-badge</code>; EXPERIENCE §IA</span>
+            </header>
+            <div class="finding-note">The wireframe shows <code>2</code> on <code>#calling-interface</code> and <code>unread-badge</code> is a "Source-Control-style count decoration." On a native <code>TreeView</code> that count can only come from <code>FileDecoration.badge</code>, which is hard-capped at 2 characters (VS Code source rejects longer badges). So <code>12</code> works, <code>137</code> does not — the SCM-style behavior actually truncates/omits over its limit. The pill shape (<code>{rounded.full}</code>) is web-only — a native badge is not pill-styleable.</div>
+            <div class="finding-fix"><strong>Fix:</strong> cap displayed counts at "99" / use a non-numeric <code>•</code> activity dot beyond a threshold (and say so), or move the count into <code>TreeItem.description</code> (trailing dim <code>· 137</code>, no 2-char limit but renders as right-of-label dim text, not a pill).</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-medium">medium</span>
+              <h3 class="finding-title">"Rooms open as editor tabs" asserts behavior without the <code>WebviewPanel</code> lifecycle costs</h3>
+              <span class="finding-location">DESIGN <code>room-tab</code> note; EXPERIENCE §IA, Responsive</span>
+            </header>
+            <div class="finding-note">One <code>WebviewPanel</code> per room is correct, but: (a) a hidden panel is torn down unless <code>retainContextWhenHidden: true</code>, which holds the full DOM/JS in memory for every backgrounded room — N× and unbounded under "many tabs open"; (b) the unread <code>•</code>-on-a-background-tab needs retained context or a <code>WebviewPanelSerializer</code> to survive reload; (c) tab title/icon are set via <code>panel.title</code>/<code>panel.iconPath</code> and the leading-<code>•</code>/trailing-<code>×</code> treatment is partly host-owned — VS Code draws the <code>×</code>, so the webview cannot style it.</div>
+            <div class="finding-fix"><strong>Fix:</strong> state the per-room-<code>WebviewPanel</code> model explicitly, pick a retain-context policy (retain active + a small LRU, accept fast re-render on refocus for the rest), and note tab chrome is host-rendered — the <code>•</code>/<code>×</code> styling applies to web; on VS Code, unread is best signaled by a title-prefix character or the tab icon.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-medium">medium</span>
+              <h3 class="finding-title"><code>border</code> mapped to <code>panel.border</code> — not a general-purpose hairline</h3>
+              <span class="finding-location">DESIGN §Colors table, row <code>border</code></span>
+            </header>
+            <div class="finding-note"><code>panel.border</code> is specifically the divider between the editor area and the bottom panel (Output/Terminal) — frequently unset/transparent in many themes. Using it for every 1px divider, code-block border, and table border (the design leans "flat, border-led") yields invisible/inconsistent borders. <code>contrastBorder</code> is set only in high-contrast themes — a great additive HC guard but a non-answer in normal themes.</div>
+            <div class="finding-fix"><strong>Fix:</strong> for general hairlines prefer a token that exists per-theme — <code>--vscode-widget-border</code>, or surface-specific <code>--vscode-editorGroup-border</code> / <code>sideBarSectionHeader-border</code> / <code>input-border</code> — and keep <code>contrastBorder</code> layered for HC. Audit each border use-site.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-medium">medium</span>
+              <h3 class="finding-title">High-contrast theme kind essentially unaddressed</h3>
+              <span class="finding-location">EXPERIENCE §Accessibility Floor; DESIGN §Colors</span>
+            </header>
+            <div class="finding-note">The floor defers contrast to "the user's VS Code theme" and cites <code>contrastBorder</code>, but neither spine acknowledges the high-contrast theme kinds (<code>HighContrast</code> / <code>HighContrastLight</code>, via <code>body.vscode-high-contrast(-light)</code> / <code>ColorThemeKind</code>). The two functional brand colors — <code>agreed-green</code> and <code>flag-warm</code> — are literal hex on both surfaces (the per-surface table only remaps neutral/accent roles), so in HC they can fail the contrast contract the floor leans on, and a 0.07-alpha green wash is effectively invisible on an HC background.</div>
+            <div class="finding-fix"><strong>Fix:</strong> name HC as a supported theme kind in Responsive &amp; Platform; map <code>agreed-green</code>/<code>flag-warm</code> to charted tokens on the VS Code surface (<code>--vscode-charts-green</code>/<code>-yellow</code>, <code>list.warningForeground</code>, <code>gitDecoration.*</code>) rather than literals; gate alpha washes/left-rules behind a non-HC check (prefer a solid border to a translucent wash in HC).</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">Inert markdown is CSP-friendly only if the rendering path is committed</h3>
+              <span class="finding-location">EXPERIENCE §Message post; DESIGN</span>
+            </header>
+            <div class="finding-note">CSP forbids inline script by default; "no script, code as text, safe links" is easier under CSP, not in tension — provided markdown renders to sanitized HTML (no event handlers, no <code>javascript:</code>/<code>data:</code> hrefs; links via the host) and syntax highlighting is precomputed to static <code>&lt;span class&gt;</code> markup, not an in-webview highlighter needing <code>unsafe-inline</code>/<code>unsafe-eval</code>. The restrained code tints imply a highlighter.</div>
+            <div class="finding-fix"><strong>Fix:</strong> add one line: markdown → sanitized static HTML + class-based (pre-tokenized) highlighting, served under a strict CSP with <code>${cspSource}</code> + a nonce; no inline/<code>eval</code>.</div>
+          </article>
+          <article class="finding">
+            <header>
+              <span class="badge badge-sev-low">low</span>
+              <h3 class="finding-title">"Full parity" over-claimed on dimensions VS Code controls</h3>
+              <span class="finding-location">EXPERIENCE §Foundation ("Multi-surface, full parity"); Responsive</span>
+            </header>
+            <div class="finding-note">The design mostly hedges ("the sidebar's width is the editor's, not ours") — good — but <code>spacing.sidebar-w: 232px</code> and the fixed-frame layout are web-only: on the extension surface you cannot force a 232px sidebar (the user drags it; it can be 120px or 600px, top/bottom, or moved to the panel/secondary side bar), the tab strip is host-rendered, and the font is whatever the user set.</div>
+            <div class="finding-fix"><strong>Fix:</strong> reframe the headline as "behavioral parity, host-native chrome" rather than "full parity," and add a short "what does NOT carry to VS Code" note (fixed sidebar width, custom tab chrome, brand hex palette, pill badges, active-row rail).</div>
+          </article>
+        </div>
+      </details>
+    </section>
+
+    <div class="section-label">Findings by severity (de-duplicated)</div>
+
+    <div class="severity-group sev-critical">
+      <h2>Critical (0)</h2>
+      <div class="findings-list">
+        <article class="finding">
+          <div class="finding-note">No critical findings. No <code>{token}</code> reference is unresolved, every color token carries a hex value, no contract-level PRD contradiction was found, and shape is clean on both spines.</div>
+        </article>
+      </div>
+    </div>
+
+    <div class="severity-group sev-high">
+      <h2>High (3)</h2>
+      <div class="findings-list">
+        <article class="finding">
+          <header>
+            <span class="badge badge-sev-high">high</span>
+            <h3 class="finding-title">Seven components have a visual spec but no behavioral row in EXPERIENCE</h3>
+            <span class="finding-location">Component coverage — EXPERIENCE §Component Patterns vs DESIGN §Components</span>
+          </header>
+          <div class="finding-note"><code>code-block</code>, <code>inline-code</code>, <code>table</code>, <code>blockquote</code>, <code>agreed-mark</code>, <code>unread-badge</code>, <code>connection-footer</code> carry frontmatter + body but no behavioral row; real behavior (code-block expand, badge clear-on-view, footer reconnect, agreed recompute) is scattered into other sections rather than attributed to the component.</div>
+          <div class="finding-fix"><strong>Fix:</strong> add Component-Patterns rows for at least <code>code-block</code>, <code>unread-badge</code>, <code>connection-footer</code>, and <code>agreed-mark</code>; combine the markdown sub-elements into one "rendered markdown" row.</div>
+        </article>
+        <article class="finding">
+          <header>
+            <span class="badge badge-sev-high">high</span>
+            <span class="corroborated">corroborated ×2</span>
+            <h3 class="finding-title"><code>Breadcrumb / joined row</code> carries behavior with no DESIGN visual spec</h3>
+            <span class="finding-location">Component coverage — DESIGN <code>components</code>/§Components; EXPERIENCE §Component Patterns</span>
+          </header>
+          <div class="finding-note">Behavioral row exists in EXPERIENCE with no frontmatter token and no body bullet; the load-bearing <code>you: watching</code>→peer posture transition (the visible Mode A→B signal) has no committed visual spec. Raised by the rubric (high) and the cross-spine reviewer (medium); recorded at the higher severity.</div>
+          <div class="finding-fix"><strong>Fix:</strong> add a <code>breadcrumb</code>/<code>breadcrumb-joined-row</code> frontmatter token + body bullet specifying the watching vs joined-peer treatment.</div>
+        </article>
+        <article class="finding">
+          <header>
+            <span class="badge badge-sev-high">high</span>
+            <h3 class="finding-title">Sidebar tree + count badges assume control a native <code>TreeView</code> cannot give</h3>
+            <span class="finding-location">VS Code platform-fit — DESIGN <code>sidebar-tree-item</code>/<code>unread-badge</code>; EXPERIENCE §IA</span>
+          </header>
+          <div class="finding-note">Two high platform findings, same root decision: the 2px accent left rail + literal <code>•/°/!/*</code> row markers exceed what a <code>TreeView</code> exposes (no custom selection background / left rail), and multi-digit count pills collide with the hard 2-character <code>FileDecoration.badge</code> cap (and a native badge is not pill-styleable). Both turn on the unnamed native-<code>TreeView</code>-vs-custom-<code>WebviewView</code> fork.</div>
+          <div class="finding-fix"><strong>Fix:</strong> name the fork — choose native <code>TreeView</code> and demote the rail + pill to web-only deltas (cap counts at "99" or use a <code>•</code> dot / <code>TreeItem.description</code>), or commit to a custom <code>WebviewView</code> and budget to reimplement twisties, keyboard nav, drag/drop, and a11y roles.</div>
+        </article>
+      </div>
+    </div>
+
+    <div class="severity-group sev-medium">
+      <h2>Medium (7)</h2>
+      <div class="findings-list">
+        <article class="finding">
+          <header>
+            <span class="badge badge-sev-medium">medium</span>
+            <span class="corroborated">corroborated ×2</span>
+            <h3 class="finding-title">Name drift on the 👍 component across all three surfaces</h3>
+            <span class="finding-location">Component coverage / Inheritance — DESIGN frontmatter + body / EXPERIENCE §Component Patterns</span>
+          </header>
+          <div class="finding-note"><code>thumbs-up</code> / "👍 thumbs-up" / "👍 (per-message)" — not a verbatim match for an extractor and an inheritance verbatim-name break. Raised independently by the rubric (3.3 + 7.1) and the cross-spine reviewer (A.1).</div>
+          <div class="finding-fix"><strong>Fix:</strong> pick one canonical label (<code>thumbs-up</code>) and use it identically in the DESIGN body header and the EXPERIENCE table.</div>
+        </article>
+        <article class="finding">
+          <header>
+            <span class="badge badge-sev-medium">medium</span>
+            <span class="corroborated">corroborated ×2</span>
+            <h3 class="finding-title">Light-mode ramp incomplete despite "full parallel ramp" claim</h3>
+            <span class="finding-location">Cross-spine / Token completeness — DESIGN line 302 + colors frontmatter</span>
+          </header>
+          <div class="finding-note"><code>text-dim</code>, <code>agreed-line</code>, <code>flag-warm-text</code>, <code>chip-bg</code>, <code>accent-on-dark</code> lack a <code>-light</code> value or inherit note; two touch functional colors (<code>flag-warm-text</code> = NEEDS YOU text, <code>#e2c184</code> fails on <code>#ffffff</code>; <code>agreed-line</code> = agreed-chip border). Rubric rated low (most pairs defensible); cross-spine rated medium (functional-color contrast). Recorded at medium, once.</div>
+          <div class="finding-fix"><strong>Fix:</strong> add the missing <code>-light</code> pairs (values already exist in <code>room-editor-verbose.html</code>) or an explicit per-role inherit note; wire <code>accent-light</code> as the light handle.</div>
+        </article>
+        <article class="finding">
+          <header>
+            <span class="badge badge-sev-medium">medium</span>
+            <h3 class="finding-title">No specific contrast ratio committed for any named load-bearing combo</h3>
+            <span class="finding-location">Token completeness — DESIGN §Colors; EXPERIENCE §Accessibility Floor</span>
+          </header>
+          <div class="finding-note">AA asserted but no measured ratio for combos like <code>text-muted #858585</code> on <code>#1e1e1e</code> (near the 4.5:1 edge); a consumer cannot verify without re-deriving.</div>
+          <div class="finding-fix"><strong>Fix:</strong> state measured ratios for the 3–4 smallest-text-on-ground combos, or scope the AA claim to body + chrome text and flag <code>text-muted</code> as the one to verify.</div>
+        </article>
+        <article class="finding">
+          <header>
+            <span class="badge badge-sev-medium">medium</span>
+            <h3 class="finding-title">No error / failure state for the operator's own write actions</h3>
+            <span class="finding-location">State coverage — EXPERIENCE §State Patterns / Join-gate composer</span>
+          </header>
+          <div class="finding-note">Post-send / join / 👍-toggle failure (offline or NFR3 lock-timeout) is uncovered; the composer is only ever shown in success or pre-join. Append-only + WAL busy-timeout means a post can fail or land late.</div>
+          <div class="finding-fix"><strong>Fix:</strong> add a "post/join failed or pending" row (optimistic-with-rollback vs inline retry), even as one <code>[ASSUMPTION]</code> line.</div>
+        </article>
+        <article class="finding">
+          <header>
+            <span class="badge badge-sev-medium">medium</span>
+            <h3 class="finding-title"><code>directions-1.html</code> extractable without a supersession warning</h3>
+            <span class="finding-location">Visual reference coverage — DESIGN frontmatter / §Colors</span>
+          </header>
+          <div class="finding-note">Three-palette comparison; only Editor chosen, but no inline note that Phosphor (<code>#4ec07a</code>) and Amber (<code>#d6a44a</code>) are rejected — and both collide with real spine roles (agreed-green / flag-warm).</div>
+          <div class="finding-fix"><strong>Fix:</strong> note inline that <code>directions-1.html</code> is a superseded comparison — Editor won; ignore the Phosphor/Amber panels.</div>
+        </article>
+        <article class="finding">
+          <header>
+            <span class="badge badge-sev-medium">medium</span>
+            <h3 class="finding-title">Spines-win-on-conflict stated once, scoped to one file only</h3>
+            <span class="finding-location">Visual reference coverage — DESIGN preamble; EXPERIENCE §IA</span>
+          </header>
+          <div class="finding-note">EXPERIENCE states it for the wireframe only; DESIGN states it for none of its three mocks. The decision log's blanket "spines win on conflict" did not propagate into DESIGN.md.</div>
+          <div class="finding-fix"><strong>Fix:</strong> add one blanket "spines win over any mock/wireframe/import on conflict" line to DESIGN.md and extend EXPERIENCE's to the verbose mock.</div>
+        </article>
+        <article class="finding">
+          <header>
+            <span class="badge badge-sev-medium">medium</span>
+            <h3 class="finding-title">VS Code platform gaps: tab lifecycle, hairline token, high-contrast kind</h3>
+            <span class="finding-location">VS Code platform-fit — DESIGN <code>room-tab</code>/§Colors; EXPERIENCE Responsive / §Accessibility Floor</span>
+          </header>
+          <div class="finding-note">Three medium platform findings: (a) "rooms = editor tabs" asserts behavior without the per-room <code>WebviewPanel</code> retain-context / serializer / host-owned-chrome costs; (b) <code>border</code> maps to <code>panel.border</code>, the editor↔bottom-panel divider, not a general hairline (often transparent); (c) high-contrast theme kinds are unaddressed and the literal-hex <code>agreed-green</code>/<code>flag-warm</code> + 0.07-alpha washes can fail/vanish in HC.</div>
+          <div class="finding-fix"><strong>Fix:</strong> state the per-room-panel model + a retain-context LRU policy and host-rendered tab chrome; re-map hairlines to <code>--vscode-widget-border</code> / surface-specific <code>*-border</code> (keep <code>contrastBorder</code> for HC); name HC as a supported kind and map the functional colors to chart/decoration tokens with washes gated behind a non-HC check.</div>
+        </article>
+      </div>
+    </div>
+
+    <div class="severity-group sev-low">
+      <h2>Low (16)</h2>
+      <div class="findings-list">
+        <article class="finding">
+          <header>
+            <span class="badge badge-sev-low">low</span>
+            <span class="corroborated">corroborated ×2</span>
+            <h3 class="finding-title"><code>agreed-mark</code> folded into the 👍 bullet, no own body anchor</h3>
+            <span class="finding-location">Component coverage — DESIGN §Components</span>
+          </header>
+          <div class="finding-note">Distinct frontmatter component (separate glyph, head+footer placement) with no top-level body bullet; the one frontmatter component lacking a body anchor. Raised by both the rubric (3.4) and cross-spine (A.5).</div>
+          <div class="finding-fix"><strong>Fix:</strong> give <code>✓ agreed</code> its own one-line body bullet, or note it's documented under Message post.</div>
+        </article>
+        <article class="finding">
+          <header>
+            <span class="badge badge-sev-low">low</span>
+            <h3 class="finding-title">UJ2 newcomer-reads-full-history beat referenced but never walked</h3>
+            <span class="finding-location">Flow coverage — EXPERIENCE §Key Flows</span>
+          </header>
+          <div class="finding-note">The FR15/FR16 "newcomer reads full back-history with no catch-up" moment is named as a mechanism but never shown; both flow branches involve only the two original agents.</div>
+          <div class="finding-fix"><strong>Fix:</strong> add one line / micro-beat to Mode B showing the added participant arriving and reading history.</div>
+        </article>
+        <article class="finding">
+          <header>
+            <span class="badge badge-sev-low">low</span>
+            <h3 class="finding-title">Operator "browse a quiet room you're not in" asserted without a flow beat</h3>
+            <span class="finding-location">Flow coverage — EXPERIENCE §IA / Interaction Primitives</span>
+          </header>
+          <div class="finding-note">Asserted in IA/Interaction Primitives without a walked beat; acceptable omission, noted for completeness.</div>
+          <div class="finding-fix"><strong>Fix:</strong> none required; optionally fold into the global-read note.</div>
+        </article>
+        <article class="finding">
+          <header>
+            <span class="badge badge-sev-low">low</span>
+            <h3 class="finding-title"><code>text-dim</code> absent from the narrated text ramp</h3>
+            <span class="finding-location">Token completeness — DESIGN §Colors</span>
+          </header>
+          <div class="finding-note">Defined and used in component objects but missing from the <code>text → text-muted → text-faint</code> ramp story, so its role vs <code>text-muted</code> is unexplained.</div>
+          <div class="finding-fix"><strong>Fix:</strong> one clause placing <code>text-dim</code> in the ramp relative to <code>text-muted</code>.</div>
+        </article>
+        <article class="finding">
+          <header>
+            <span class="badge badge-sev-low">low</span>
+            <h3 class="finding-title">No send-in-flight / optimistic-echo state for own posts</h3>
+            <span class="finding-location">State coverage — EXPERIENCE §Interaction Primitives / State Patterns</span>
+          </header>
+          <div class="finding-note">Own posts arrive via the same live channel; no statement on whether they echo immediately or wait for the assigned ledger sequence.</div>
+          <div class="finding-fix"><strong>Fix:</strong> one line on whether own-post is optimistic.</div>
+        </article>
+        <article class="finding">
+          <header>
+            <span class="badge badge-sev-low">low</span>
+            <h3 class="finding-title">Empty <em>room</em> (joined, zero messages) not walked</h3>
+            <span class="finding-location">State coverage — EXPERIENCE §State Patterns</span>
+          </header>
+          <div class="finding-note">Distinct from the empty board; the joined-but-empty room thread isn't walked.</div>
+          <div class="finding-fix"><strong>Fix:</strong> optional; note empty-room = thread with crumb/joined row + composer, no posts.</div>
+        </article>
+        <article class="finding">
+          <header>
+            <span class="badge badge-sev-low">low</span>
+            <h3 class="finding-title">Canonical verbose mock not inline-linked from §Components</h3>
+            <span class="finding-location">Visual reference coverage — DESIGN §Components / §Typography</span>
+          </header>
+          <div class="finding-note"><code>room-editor-verbose.html</code> is the source of nearly all DESIGN hex + markdown anatomy but is never linked inline where that anatomy is specified.</div>
+          <div class="finding-fix"><strong>Fix:</strong> inline-link the verbose mock from §Components ("rendered reference: <code>.working/room-editor-verbose.html</code>").</div>
+        </article>
+        <article class="finding">
+          <header>
+            <span class="badge badge-sev-low">low</span>
+            <h3 class="finding-title">Collapse/cap numbers repeated 3–4× as free numbers</h3>
+            <span class="finding-location">Bloat — DESIGN + EXPERIENCE</span>
+          </header>
+          <div class="finding-note">The ~30-line collapse, ~25-line code cap, and ~72ch/~760px measure are restated 3–4×; only the measure is tokenized, so the line-count caps drift if one changes.</div>
+          <div class="finding-fix"><strong>Fix:</strong> state each cap once as the rule (or a token/<code>note</code>) and reference it; trim the do/don't restatement.</div>
+        </article>
+        <article class="finding">
+          <header>
+            <span class="badge badge-sev-low">low</span>
+            <h3 class="finding-title">Per-surface model narrated ~4× across DESIGN</h3>
+            <span class="finding-location">Bloat — DESIGN §Brand &amp; Style / preamble / §Colors / Do-Don't</span>
+          </header>
+          <div class="finding-note">"Web carries brand / VS Code inherits <code>--vscode-*</code>" re-explained ~4 times; one canonical statement + the table would carry it.</div>
+          <div class="finding-fix"><strong>Fix:</strong> thin the repetition; keep the table as the canonical artifact.</div>
+        </article>
+        <article class="finding">
+          <header>
+            <span class="badge badge-sev-low">low</span>
+            <h3 class="finding-title">Per-surface mapping triple-encoded</h3>
+            <span class="finding-location">Bloat — DESIGN §Colors / frontmatter</span>
+          </header>
+          <div class="finding-note">Appears as a prose table, scattered <code>note:</code> fields, and the frontmatter header comment — three encodings of the same fact (the most-restated in the file).</div>
+          <div class="finding-fix"><strong>Fix:</strong> optional; acceptable as redundancy that aids extraction.</div>
+        </article>
+        <article class="finding">
+          <header>
+            <span class="badge badge-sev-low">low</span>
+            <h3 class="finding-title">NEEDS YOU cross-ref points at the icon token for a text-color claim</h3>
+            <span class="finding-location">Inheritance — EXPERIENCE §State Patterns</span>
+          </header>
+          <div class="finding-note"><code>DESIGN.md.colors.flag-warm</code> (the icon) is referenced where the body specifies <code>flag-warm-text</code> for the row text; resolves correctly but imprecise.</div>
+          <div class="finding-fix"><strong>Fix:</strong> point at <code>flag-warm</code> for icon / <code>flag-warm-text</code> for text, or generalize to "the flag-warm tokens."</div>
+        </article>
+        <article class="finding">
+          <header>
+            <span class="badge badge-sev-low">low</span>
+            <h3 class="finding-title"><code>message-post.handle-color</code> hardcodes a dark token with no light note</h3>
+            <span class="finding-location">Cross-spine — DESIGN line 179</span>
+          </header>
+          <div class="finding-note">Hardcodes <code>{colors.accent-on-dark}</code> with no light-surface note, unlike sibling <code>table</code> (line 210); the light handle <code>accent-light</code> exists but isn't referenced.</div>
+          <div class="finding-fix"><strong>Fix:</strong> add a light note to the <code>message-post</code> component object.</div>
+        </article>
+        <article class="finding">
+          <header>
+            <span class="badge badge-sev-low">low</span>
+            <h3 class="finding-title">Component-Patterns ↔ Components rosters are not 1:1</h3>
+            <span class="finding-location">Cross-spine — EXPERIENCE IA; DESIGN line 348</span>
+          </header>
+          <div class="finding-note"><code>connection-footer</code> has no Component-Patterns row; the identity header and <code>＋ join a project…</code> have no DESIGN component spec. Low impact; rosters not aligned.</div>
+          <div class="finding-fix"><strong>Fix:</strong> optional — align the rosters or note that chrome-only elements live in IA, not Components.</div>
+        </article>
+        <article class="finding">
+          <header>
+            <span class="badge badge-sev-low">low</span>
+            <h3 class="finding-title">FR21 rule string differs cosmetically across spines</h3>
+            <span class="finding-location">Cross-spine — DESIGN line 225 vs EXPERIENCE lines 66, 89</span>
+          </header>
+          <div class="finding-note"><code>latest-currently-👍-wins</code> vs <code>latest-currently-👍'd-wins</code>; same meaning, cosmetic.</div>
+          <div class="finding-fix"><strong>Fix:</strong> normalize the string.</div>
+        </article>
+        <article class="finding">
+          <header>
+            <span class="badge badge-sev-low">low</span>
+            <h3 class="finding-title">DESIGN Message-post bullet lacks an inertness cross-reference (NFR12)</h3>
+            <span class="finding-location">Cross-spine — DESIGN line 337</span>
+          </header>
+          <div class="finding-note">NFR12 is satisfied via EXPERIENCE, but DESIGN's "full rendered markdown" bullet has no inertness/safety note, and DESIGN is the spine a visual implementer reads.</div>
+          <div class="finding-fix"><strong>Fix (optional):</strong> one cross-reference in DESIGN's Message-post bullet ("rendered inert — see EXPERIENCE / NFR12").</div>
+        </article>
+        <article class="finding">
+          <header>
+            <span class="badge badge-sev-low">low</span>
+            <h3 class="finding-title">VS Code: commit the inert-render CSP path; "full parity" over-claimed</h3>
+            <span class="finding-location">VS Code platform-fit — EXPERIENCE §Message post / §Foundation / Responsive</span>
+          </header>
+          <div class="finding-note">Two low platform findings: inert markdown is CSP-friendly only if rendered to sanitized static HTML with class-based (pre-tokenized) highlighting under a nonce CSP (not an in-webview highlighter needing <code>unsafe-eval</code>); and "full parity" over-claims on host-controlled dimensions (<code>sidebar-w: 232px</code>, tab chrome, user font).</div>
+          <div class="finding-fix"><strong>Fix:</strong> add a CSP line (markdown → sanitized static HTML + class-based highlighting, <code>${cspSource}</code> + nonce, no inline/<code>eval</code>); reframe the headline as "behavioral parity, host-native chrome" with a short "what does NOT carry to VS Code" note.</div>
+        </article>
+      </div>
+    </div>
+
+    <div class="mechanical">
+      <h3>Mechanical notes</h3>
+      <ul>
+        <li>Token references: 47 unique <code>{…}</code> refs in DESIGN + 3 cross-file refs in EXPERIENCE — <strong>0 unresolved</strong>. All 56 color tokens carry hex — <strong>0 missing-hex</strong>.</li>
+        <li>Component name matrix (verbatim-match): matches across all three locations — <code>sidebar-tree-item</code>, <code>room-tab</code>, <code>message-post</code>, <code>join-gate-composer</code>, <code>needs-you-item</code>. Drift — <code>thumbs-up</code>/"👍 thumbs-up"/"👍 (per-message)". Visual-only (no EXPERIENCE row) — <code>code-block</code>, <code>inline-code</code>, <code>table</code>, <code>blockquote</code>, <code>agreed-mark</code>, <code>unread-badge</code>, <code>connection-footer</code>. Behavior-only (no DESIGN token) — <code>breadcrumb</code> / joined row.</li>
+        <li>Frontmatter completeness: DESIGN has <code>name</code>, <code>description</code>, <code>status: draft</code>, <code>sources</code> (6, all resolve), <code>updated</code>, full <code>colors</code>/<code>typography</code>/<code>rounded</code>/<code>spacing</code>/<code>components</code>. EXPERIENCE has <code>name</code>, <code>status: draft</code>, <code>sources</code> (5, all resolve), <code>updated</code> — but <strong>no <code>description</code></strong> (minor asymmetry, not required by the experience shape).</li>
+        <li><code>sources</code> asymmetry: DESIGN lists <code>directions-1.html</code>; EXPERIENCE does not (correct — visual-only artifact). Both cite <code>prd.md</code> + <code>addendum.md</code>; both omit nothing that exists in <code>.working/</code>.</li>
+        <li>PRD fidelity (cross-spine review): all ten checks pass — FR30 (no stall detection; residual "stalled" language all correctly negated), FR21 (computed agreement), FR31/FR9/FR10 (join-to-post; reading ungated), FR18 (board stores opaque), NFR12 (inert rendering), OQ4 (multi-surface). No critical/high fidelity findings.</li>
+        <li>VS Code verification (platform review): theme tokens checked against the VS Code Theme Color reference — <code>editor.background</code>, <code>foreground</code>, <code>sideBar.background</code>, <code>input.background</code>, <code>descriptionForeground</code>, <code>focusBorder</code>, <code>textLink.foreground</code>, <code>list.activeSelectionBackground</code>, <code>panel.border</code>, <code>contrastBorder</code>, <code>list.hoverBackground</code> all exist; <code>contrastBorder</code> set only in HC themes; <code>panel.border</code> is the editor↔bottom-panel divider, not a general hairline. <code>FileDecoration.badge</code> 2-character cap verified at the source-check level.</li>
+        <li>Spines-win guard: present once (EXPERIENCE, scoped to the wireframe); absent from DESIGN.md.</li>
+        <li>De-duplication: 4 findings raised by more than one reviewer were merged — the 👍 name drift (rubric ×2 + cross-spine), the breadcrumb/joined-row gap (rubric + cross-spine), <code>agreed-mark</code> no-body-anchor (rubric + cross-spine), and the light-mode <code>-light</code> token gap (rubric + cross-spine; recorded at the higher medium severity). Each is carried once in the severity rollup and marked corroborated.</li>
+      </ul>
+    </div>
+
+    <footer class="report-footer">
+      <div class="meta">
+        <span>DESIGN.md: _bmad-output/planning-artifacts/ux-designs/ux-AgentBBS-2026-05-30/DESIGN.md</span>
+        <span>EXPERIENCE.md: _bmad-output/planning-artifacts/ux-designs/ux-AgentBBS-2026-05-30/EXPERIENCE.md</span>
+        <span>Reviewers: review-rubric.md · review-cross-spine-prd.md · review-vscode-fit.md</span>
+        <span>Run at: 2026-05-30</span>
+      </div>
+    </footer>
+  </div>
+</body>
+</html>
