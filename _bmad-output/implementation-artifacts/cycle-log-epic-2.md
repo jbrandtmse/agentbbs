@@ -24,3 +24,10 @@
 2026-05-31T09:34:28Z	Story 2.2	qa_complete	spawn_at=2026-05-31T09:30:00Z model=claude-opus-4-8 tests_added=17 first_run_failures=0 clarifications=0 closing_sections_present=true
 2026-05-31T09:39:53Z	Story 2.2	cr_complete	spawn_at=2026-05-31T09:38:00Z model=claude-opus-4-8 resolved=2 deferred=1 dismissed=0 high=0 med=0 low=3 clarifications=0 closing_sections_present=true
 2026-05-31T09:40:44Z	Story 2.2	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=real-stdio-register-success-snakecase-identity-duplicate-HANDLE_TAKEN-invalid-rejected-oob-ledger-1-event model=claude-opus-4-8
+2026-05-31T09:41:08Z	Story 2.2	committed	sha=7d14daf submodules=
+2026-05-31T09:44:07Z	Story 2.3	story_created	path=_bmad-output/implementation-artifacts/2-3-re-establish-identity-with-login.md integration_ac=present consumes=2.1,2.2 consumed_by=2.4,2.5
+2026-05-31T09:55:58Z	Story 2.3	dev_complete	spawn_at=2026-05-31T09:50:00Z model=claude-opus-4-8 files=13 clarifications=0 nfr_tripwires=0 adr_violations_surfaced=0 cycle_iteration=1 closing_sections_present=true
+2026-05-31T09:55:58Z	Story 2.3	adr_verifications_complete	tool=none acs=none result=none_required evidence=
+2026-05-31T10:00:22Z	Story 2.3	qa_complete	spawn_at=2026-05-31T10:00:00Z model=claude-opus-4-8 tests_added=4 first_run_failures=0 clarifications=0 closing_sections_present=true
+2026-05-31T10:05:27Z	Story 2.3	cr_complete	spawn_at=2026-05-31T10:08:00Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=0 high=0 med=0 low=0 clarifications=0 closing_sections_present=true
+2026-05-31T10:06:02Z	Story 2.3	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=real-stdio-login-known-identity-unknown-LOGIN_UNKNOWN-oob-login-wrote-nothing-maxseq1 model=claude-opus-4-8

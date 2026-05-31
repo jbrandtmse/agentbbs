@@ -460,3 +460,82 @@ No NFR tripwire (no NFR work in this story). `docs/adr/` confirmed absent — no
 - None. QA gate satisfied with the existing 99-test suite as the regression guard. No code or
   test files were modified by this stage (only this summary + the story's QA Results section).
   Lead commits after the per-story smoke gate.
+
+---
+
+# Test Automation Summary — Story 2.3
+
+**Story:** 2.3 — Re-establish identity with `login`
+**Stage:** `bmad-qa-generate-e2e-tests` (epic-cycle QA) · 2026-05-31 · branch `AGENTBBS-1-epic2`
+**Framework:** Vitest 4.1.7 (single root runner) + the typecheck gate.
+
+## Outcome: 4 real-runtime session-holder gap tests added; dev coverage otherwise strong
+
+The dev suite was assessed critically against the QA brief's priorities. It is genuinely
+strong — `core.login` (hit/miss/case-insensitive/appends-nothing) is well unit-tested
+(`login.test.ts`), validate-before-core is exhaustively pinned with a spying DataAccess +
+a meaningful valid control (`login.qa.test.ts`), and the real-ledger wire shape + happy
+paths are covered (`login.integration.test.ts`). Four residual gaps in the NEW
+mechanism — the per-connection session-identity holder (first consumed by Story 2.4) —
+were found and closed. All are REAL-RUNTIME (Rule 3): real `Client`↔`McpServer` over
+`InMemoryTransport`, real `createDataAccess` (better-sqlite3) against a SQLite file under
+`os.tmpdir()` — nothing mocked. Temp DBs never touch the repo's real `.agentbbs/`.
+
+## Test file
+
+- `packages/mcp-server/src/tools/login.session.qa.test.ts` (**QA-added**) — 4 tests
+  closing session-state-transition gaps the dev suite did not assert.
+
+## QA-added coverage (4 tests, all real-runtime)
+
+### Session-holder semantics (the new mechanism)
+- [x] **A FAILED login does NOT clobber an already-established session.** The dev test only
+  proved `null → (unknown login) → null`. The load-bearing case is established-as-`ada` →
+  (unknown `ghost` login → `LOGIN_UNKNOWN`) → session is **STILL `ada`** (not nulled, not
+  set to the unknown handle). A handler that mutated the holder before/regardless of
+  resolution would silently change the acting actor here — exactly the bug 2.4/2.5 inherit.
+- [x] **A second SUCCESSFUL login REPLACES the session handle** — register `ada`+`bob`, login
+  `ada` (session `ada`), then login `bob` ⇒ session moves to `bob` (holder replaced, not
+  pinned to the first login).
+- [x] **Two independent `createBoardServer` instances have INDEPENDENT sessions** — a
+  register/login on server 1 never bleeds into server 2's holder (no shared/global state
+  leak; the factory defaults a fresh holder per server). Both share the same real ledger,
+  so the identities resolve cross-server, but the session actors stay isolated (`ada` vs `bob`).
+
+### Error contract completeness
+- [x] **`LOGIN_UNKNOWN` carries the full `{ code, message }` contract** — not just the code;
+  asserts `message` is a present, non-empty string (the dev integration test asserted only
+  `code`).
+
+## Why these are non-redundant
+- `login.integration.test.ts` proves register-sets-session, login-sets-session, and a fresh
+  unknown-login leaves a `null` session `null` — but never the established→failed-login→
+  unchanged transition, the A→B replacement, or cross-server isolation.
+- `session.test.ts` pins the bare `createSessionIdentity()` factory (independent holders at
+  the unit level) — but not two full `createBoardServer` servers over the real transport.
+
+## Gate runs (clean tree, all exit 0)
+
+| Command | Result |
+| --- | --- |
+| `pnpm test` | Test Files 33 passed (33) · Tests **207 passed (207)** (was 32/203; +1 file, +4 tests) |
+| `pnpm run typecheck` | `tsc --noEmit -p tsconfig.typecheck.json` — exit 0 (covers the new `*.test.ts`) |
+| `pnpm run lint` (`eslint .`) | clean |
+| `pnpm run format` (`prettier --check .`) | "All matched files use Prettier code style!" |
+
+## Rule 8 (discoverability)
+
+Single runner. The new file (`*.test.ts` naming, under `packages/mcp-server/src/tools/`,
+matched by the root `vitest.config.ts` include glob `packages/*/src/**/*.test.{ts,tsx}`,
+under no ignore path) was auto-discovered: the default `pnpm test` went 32→33 files /
+203→207 tests after it was added. No second runner, no opt-out tag.
+
+## Rule 5 / Rule 6
+
+No NFR tripwire (login is implementable exactly as worded; session model works with no
+SDK obstruction). `docs/adr/` confirmed absent — no ADR constraints to honor.
+
+## Next Steps
+- Story 2.4 (`update_focus`): the FIRST consumer of the session holder — its integration
+  AC should assert the appended `identity.focus_updated` event's actor IS the session
+  handle these tests prove is correctly established/replaced/isolated.

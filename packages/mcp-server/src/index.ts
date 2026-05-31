@@ -12,6 +12,10 @@
 export { createBoardServer, SERVER_NAME, SERVER_VERSION } from './server.js';
 export type { BoardServerDeps } from './server.js';
 
+// --- Session-identity holder: per-connection acting handle (Story 2.3) ---
+export { createSessionIdentity } from './session.js';
+export type { SessionIdentity } from './session.js';
+
 // --- Tool-registration helper: validate -> delegate -> map (Story 2.1, AC #1/#2) ---
 export { registerCoreTool } from './register-tool.js';
 export type {

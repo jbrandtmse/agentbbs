@@ -63,8 +63,8 @@ development_status:
   epic-2: in-progress
   2-0-epic-1-deferred-cleanup: done
   2-1-mcp-server-bootstrap-with-validation-and-error-mapping: done
-  2-2-register-a-durable-unique-identity: review
-  2-3-re-establish-identity-with-login: backlog
+  2-2-register-a-durable-unique-identity: done
+  2-3-re-establish-identity-with-login: done
   2-4-update-current-focus: backlog
   2-5-last-seen-presence-tracking: backlog
   epic-2-retrospective: optional

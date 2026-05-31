@@ -24,61 +24,23 @@ import { register } from '@agentbbs/core';
 import { z } from 'zod';
 
 import { registerCoreTool } from '../register-tool.js';
+import { handleSchema, identityToWire } from './identity-shared.js';
 
+import type { SessionIdentity } from '../session.js';
 import type { DataAccess, Identity } from '@agentbbs/core';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 
 /**
- * The canonical handle charset + form (architecture.md#Identifiers): lowercase
- * `[a-z0-9._@-]`, one or more chars. Uppercase and out-of-charset input is
- * rejected by this pattern at the boundary (AC #3). Anchored so the WHOLE string
- * must match (no partial/embedded match).
- */
-const HANDLE_PATTERN = /^[a-z0-9._@-]+$/;
-
-/**
- * Max handle length — a defensive upper bound so a pathologically long handle is
- * rejected at the boundary rather than stored. Generous for `persona@project`
- * handles; not a product constraint beyond sanity.
- */
-const HANDLE_MAX_LENGTH = 128;
-
-/**
  * The `register` tool input schema — snake_case wire params (the MCP boundary
- * casing). `handle` enforces the canonical charset/form (AC #3); `current_focus`
- * is any non-empty string. The SDK validates against this and rejects invalid
- * calls BEFORE the delegate runs.
+ * casing). `handle` enforces the canonical charset/form (AC #3, shared with
+ * `login`); `current_focus` is any non-empty string. The SDK validates against
+ * this and rejects invalid calls BEFORE the delegate runs.
  */
 const REGISTER_INPUT_SCHEMA = {
-  handle: z
-    .string()
-    .min(1)
-    .max(HANDLE_MAX_LENGTH)
-    .regex(
-      HANDLE_PATTERN,
-      'handle must be lowercase and use only [a-z0-9._@-]',
-    ),
+  handle: handleSchema,
   current_focus: z.string().min(1),
 } as const;
-
-/** The snake_case identity payload returned on the wire (camelCase mapped here). */
-interface IdentityWire {
-  handle: string;
-  current_focus: string;
-  created_at: string;
-  last_seen: string;
-}
-
-/** Map the camelCase core {@link Identity} to its snake_case wire object. */
-function identityToWire(identity: Identity): IdentityWire {
-  return {
-    handle: identity.handle,
-    current_focus: identity.currentFocus,
-    created_at: identity.createdAt,
-    last_seen: identity.lastSeen,
-  };
-}
 
 /**
  * Build the success {@link CallToolResult} for a registered identity. Carries the
@@ -96,18 +58,25 @@ function successResult(identity: Identity): CallToolResult {
 
 /**
  * Register the `register` tool on the given board server, closing over the
- * injected `DataAccess`. Follows the Story 2.1 thin-tool pattern via
- * `registerCoreTool`: validate (Zod) → delegate to `core.register` → map result
- * (camelCase identity → snake_case wire); a thrown `BoardError` is routed through
- * `error-map.ts` by the helper.
+ * injected `DataAccess` and the per-connection {@link SessionIdentity} holder.
+ * Follows the Story 2.1 thin-tool pattern via `registerCoreTool`: validate (Zod) →
+ * delegate to `core.register` → map result (camelCase identity → snake_case wire);
+ * a thrown `BoardError` is routed through `error-map.ts` by the helper.
+ *
+ * On success it ALSO records the new handle as the session identity (Story 2.3): a
+ * freshly-registered agent is "established" for the session too (FR2/FR37
+ * "register-or-login"). This is a minimal session-state write in the SERVER layer —
+ * it does NOT change the tool's result shape and adds no board logic.
  *
  * @param server The board `McpServer` to register on.
  * @param dataAccess The persistence port the delegate hands to `core.register`.
+ * @param session The per-connection session-identity holder to set on success.
  * @returns The SDK's `RegisteredTool` handle.
  */
 export function registerRegisterTool(
   server: McpServer,
   dataAccess: DataAccess,
+  session: SessionIdentity,
 ): ReturnType<McpServer['registerTool']> {
   return registerCoreTool(
     server,
@@ -124,6 +93,9 @@ export function registerRegisterTool(
         handle: args.handle,
         currentFocus: args.current_focus,
       });
+      // Establish the session as the newly-registered identity (Story 2.3). Only
+      // reached on success — a thrown BoardError skips this and is mapped instead.
+      session.handle = identity.handle;
       return successResult(identity);
     },
   );
