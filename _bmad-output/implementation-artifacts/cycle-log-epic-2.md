@@ -49,3 +49,4 @@
 2026-05-31T11:06:22Z	Epic 2	epic_summary	stories=6 total_high=0 total_med=0 total_low=7 total_smoke_defects=0 rework_events=0 opus_stage_count=all tests_final=259 first=2026-05-31T08:08:23Z last=2026-05-31T11:06:22Z
 2026-05-31T14:21:32Z	Epic 2	retrospective_complete	path=_bmad-output/implementation-artifacts/epic-2-retro-2026-05-31.md rules_codified=2,3 action_items=6
 2026-05-31T14:26:30Z	Epic 2	epic_merge_skipped	reason=user_hold mcp_user_install=kept board_db=C:/Users/Josh/.agentbbs/board.db
+2026-05-31T14:31:07Z	Epic 2	epic_merged_to_feature	repos=. feature_sha=57f9ef3 merge_sha=57f9ef3 submodules=
