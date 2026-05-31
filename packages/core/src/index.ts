@@ -116,3 +116,15 @@ export type {
   AddParticipantInput,
   AddParticipantResult,
 } from './rooms/add-participant.js';
+
+// --- Per-(identity, room) JOIN-CURSOR projection (Story 4.6) — the per-room FLOOR Story 6.1's
+// `check` uses so a newly-joined / newly-added participant is NOT flooded with a room's
+// back-history. `roomJoinSeq` derives the `seq` of a handle's EARLIEST participating event for a
+// room (MIN over their `room.replied` ∪ the `room.participant_added` naming them; `undefined` if
+// not a participant) — DERIVED, never stored (THE APPEND INVARIANT — no cursor table/mutation;
+// the join-event `seq` IS the ledger position at the instant of join). `roomMessagesSince` filters
+// `roomMessages` (4.4) to `seq > sinceSeq` (STRICT — your own join not re-surfaced), expressing
+// that floor. The FIRST consumer is Story 6.1 (`check`), which combines this per-room floor with
+// the stored per-identity high-water-mark as `seq > max(checkCursor, roomJoinSeq)` (Rule 1 escape
+// clause — no Epic-4 consumer, NO new MCP tool/event/error code/stored cursor here). ---
+export { roomJoinSeq, roomMessagesSince } from './rooms/join-cursor.js';

@@ -43,3 +43,10 @@
 2026-05-31T21:05:56Z	Story 4.5	qa_complete	spawn_at=2026-05-31T20:50:00Z model=claude-opus-4-8 tests_added=4 first_run_failures=0 clarifications=0 closing_sections_present=true
 2026-05-31T21:30:12Z	Story 4.5	cr_complete	spawn_at=2026-05-31T21:06:30Z model=claude-opus-4-8 resolved=0 deferred=1 dismissed=1 high=0 med=0 low=1 clarifications=0 closing_sections_present=true
 2026-05-31T21:32:17Z	Story 4.5	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=_bmad-output/implementation-artifacts/tests/smoke-4-5.mjs model=claude-opus-4-8
+2026-05-31T21:32:20Z	Story 4.5	committed	sha=075e9a8 submodules=
+2026-05-31T21:36:48Z	Story 4.6	story_created	path=_bmad-output/implementation-artifacts/4-6-joining-sets-the-cursor-no-back-history-flood.md integration_ac=present_escape_clause service_introducing=true consumed_by=6.1_check
+2026-05-31T21:56:51Z	Story 4.6	dev_complete	spawn_at=2026-05-31T21:35:00Z model=claude-opus-4-8 files=6 tests_added=30 clarifications=0 nfr_tripwires=0 adr_violations_surfaced=0 cycle_iteration=1 closing_sections_present=true
+2026-05-31T21:56:51Z	Story 4.6	adr_verifications_complete	result=none_required
+2026-05-31T22:01:29Z	Story 4.6	qa_complete	spawn_at=2026-05-31T21:50:00Z model=claude-opus-4-8 tests_added=7 first_run_failures=0 clarifications=0 closing_sections_present=true
+2026-05-31T22:07:53Z	Story 4.6	cr_complete	spawn_at=2026-05-31T21:50:30Z model=claude-opus-4-8 resolved=0 deferred=1 dismissed=0 high=0 med=0 low=1 clarifications=0 closing_sections_present=true
+2026-05-31T22:07:56Z	Story 4.6	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=_bmad-output/implementation-artifacts/tests/smoke-4-6.mjs model=claude-opus-4-8
