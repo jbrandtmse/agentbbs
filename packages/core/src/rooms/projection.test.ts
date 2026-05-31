@@ -1,10 +1,15 @@
-// Rooms-projection unit tests (Story 4.1, Task 4 / AC #1).
+// Rooms-projection unit tests (Story 4.1, Task 4 / AC #1; activation read-model: Story 4.2).
 //
 // Pins the pure fold of `announcement.posted` into proto-room records: the record shape
 // (roomId / projectId / subject / body / postedBy / seq / active=false), `findRoom`
 // miss → undefined, multiple rooms keyed by roomId in `seq` order, and that NON-room or
 // non-announcement events are ignored (only `announcement.posted` mints a record). No
 // I/O — a pure fold over a hand-built, `seq`-ordered Event stream.
+//
+// Story 4.2 adds the ACTIVATION read-model coverage: a `room.replied` flips its room's
+// `active` to `true` (existence-of-reply); a room with no reply stays `false`; multiple
+// replies keep it active (idempotent); a `room.replied` for an unknown room is ignored
+// (mints no phantom room, flips nothing).
 
 import { describe, expect, it } from 'vitest';
 
@@ -38,6 +43,22 @@ function reg(seq: number, handle: string): Event {
     actor: handle,
     createdAt: `2026-05-31T00:00:0${seq}.000Z`,
     payload: { handle, currentFocus: 'x' },
+  };
+}
+
+/** Build a room.replied Event (the activating reply — Story 4.2 folds its existence). */
+function replied(
+  seq: number,
+  actor: string,
+  roomId: string,
+  body: string,
+): Event {
+  return {
+    seq,
+    type: 'room.replied',
+    actor,
+    createdAt: `2026-05-31T00:00:0${seq}.000Z`,
+    payload: { roomId, body },
   };
 }
 
@@ -140,5 +161,72 @@ describe('findRoom — single lookup (AC #1)', () => {
 
   it('returns undefined from an empty stream', () => {
     expect(findRoom([], 'anything')).toBeUndefined();
+  });
+});
+
+describe('foldRooms — activation read-model (Story 4.2, AC #1)', () => {
+  it('a room with a folded room.replied is active (active=true)', () => {
+    const events = [
+      posted(
+        1,
+        'ada',
+        'board-a',
+        'calling-interface',
+        'Calling Interface',
+        'need a hand',
+      ),
+      replied(2, 'bob', 'calling-interface', 'on it'),
+    ];
+    const room = findRoom(events, 'calling-interface');
+    expect(room?.active).toBe(true);
+    // Activation does NOT disturb the announcement-derived fields (subject/body/postedBy/seq).
+    expect(room).toMatchObject({
+      roomId: 'calling-interface',
+      subject: 'Calling Interface',
+      body: 'need a hand',
+      postedBy: 'ada',
+      seq: 1,
+    });
+  });
+
+  it('a room with no reply stays inactive (active=false)', () => {
+    const events = [
+      posted(1, 'ada', 'board-a', 'proto', 'Proto', 'x'),
+      // A reply to a DIFFERENT room must not activate this one.
+      posted(2, 'bob', 'board-a', 'other', 'Other', 'y'),
+      replied(3, 'cleo', 'other', 'activating other'),
+    ];
+    expect(findRoom(events, 'proto')?.active).toBe(false);
+    expect(findRoom(events, 'other')?.active).toBe(true);
+  });
+
+  it('multiple replies keep the room active (idempotent flip)', () => {
+    const events = [
+      posted(
+        1,
+        'ada',
+        'board-a',
+        'calling-interface',
+        'Calling Interface',
+        'x',
+      ),
+      replied(2, 'bob', 'calling-interface', 'first reply'),
+      replied(3, 'cleo', 'calling-interface', 'second reply'),
+      replied(4, 'ada', 'calling-interface', 'third reply'),
+    ];
+    expect(findRoom(events, 'calling-interface')?.active).toBe(true);
+  });
+
+  it('a room.replied for an unknown room is ignored (mints no phantom, flips nothing)', () => {
+    const events = [
+      posted(1, 'ada', 'board-a', 'real-room', 'Real Room', 'x'),
+      // No announcement for "ghost-room" was ever folded — the reply is defensively ignored.
+      replied(2, 'bob', 'ghost-room', 'reply to a non-existent room'),
+    ];
+    const dir = foldRooms(events);
+    // No phantom room minted; the only record is the real proto-room, still inactive.
+    expect([...dir.keys()]).toEqual(['real-room']);
+    expect(dir.get('real-room')?.active).toBe(false);
+    expect(findRoom(events, 'ghost-room')).toBeUndefined();
   });
 });

@@ -1,5 +1,5 @@
 # generated: 2026-05-31
-# last_updated: 2026-05-30
+# last_updated: 2026-05-31
 # project: AgentBBS
 # project_key: NOKEY
 # tracking_system: file-system
@@ -37,6 +37,8 @@
 
 generated: 2026-05-31
 last_updated: 2026-05-31
+# story 4-2 code-review: done (2026-05-31) — APPROVED; 0 HIGH/MED/defer; 1 LOW auto-resolved inline (stale RoomWire.active doc comment in room-shared.ts — rewrote to the 4.2 activation read-model; comment-only). All 4 ACs + all 8 directive items independently re-verified: append-invariant/module-boundary lint-enforced (reads only, active DERIVED in foldRooms never stored, seq-order, core→port only); AC#1 disjoint split proven via QA interleaved-ledger test (active subset not a ledger suffix; annIds∩roomIds=∅, all rooms once); AC#2 open read (no membership call leaked — grep-clean; non-member sees full list over real surface); AC#3 BOARD_NOT_FOUND both layers + distinguished from announced-but-empty (→empty arrays, both core+real-surface); AC#4 real Client↔McpServer↔SQLite (nothing mocked; port-seeded room.replied = legit read-tool testing per Design decision 4, not a missing-consumer gap); activation read-model idempotent (multi-reply→1 room emitted once) + unknown-roomId ignored (no phantom) + min-seq activator correctly deferred to 4.3/4.4; no new error code/event type (BOARD_NOT_FOUND/NO_IDENTITY/room.replied reused). Honest gate green: lint / build 7-7 / typecheck / test 375 (57 files) / format --check. QA-reported 375/57 confirmed (dev 371 + QA 4)
+# story 4-2: review (2026-05-31) — dev complete; the two browse tools (list_announcements/list_rooms) + the rooms activation read-model. foldRooms room.replied→active=true branch (existence-of-reply, idempotent) + listAnnouncements/listRooms core read ops (findProject existence-check + fold/filter/seq-sort, no append, session-agnostic) + the two MCP tools (NO_IDENTITY gate, NO membership — open read FR9, BOARD_NOT_FOUND for unknown board, roomToWire envelopes). 375 tests (57 files) post-QA+CR; no new tool-registration-count error/event/error-code beyond the two tools; reuses BOARD_NOT_FOUND/NO_IDENTITY/room.replied. Full gate green
 # story 4-1 code-review: done (2026-05-31) — CLEAN; 0 HIGH/MED/defer; 5 dismissed. All 6 ACs independently re-verified against the changeset: gate-first membership (AC#2/#3 nothing-appended), exactly-one append.posted (AC#1), disambiguator 1-based ordinal + sound 10k bound (AC#4), room fallback (AC#5), real MCP↔SQLite round-trip + snake_case at-rest (AC#6, Rule 1+3 satisfied). AC#4 cross-process race GENUINE (8 forked OS procs, IPC start barrier, exact {base..base-8} set, distinct seqs/bodies, retry-under-real-contention — not sequential). projectId additive (both mapping dirs + EventPayloadMap totality + all-10 round-trip byte-identical, project_id on disk); no new error code (NOT_A_MEMBER/BOARD_NOT_FOUND reused; 16k cap = plain Zod .max, not BODY_TOO_LARGE; Rule 5 = planned Epic-5 boundary). Append invariant + module boundary lint-enforced + meta-tested. Honest gate green: lint / build 7-7 / typecheck / test 353 (55 files) / format --check
 # story 4-1: review (2026-05-31) — dev complete; first Epic 4 service surface (post_announcement) — post_announcement MCP tool + postAnnouncement core op + rooms projection + room-id helper; projectId added to announcement.posted (additive, never-written). 353 tests (55 files) post-QA+CR (dev 347/54 + QA cross-process race test/worker + integration gap-fills); no new error code (NOT_A_MEMBER/BOARD_NOT_FOUND reused); 256KB body cap deferred to Epic 5. Full gate green
 # story 4-0 code-review: done (2026-05-31) — CLEAN; 0 HIGH/MED/defer; 0 dismissed. All 4 ACs independently re-verified: no-dist typecheck GREEN + traceResolution→src (AC#1); paths typecheck-config-only (not in base/pkg configs); no-baseUrl validated vs installed TS 6.0.3 (TS5101/TS5090 probe, Rule 3); sentinel grep clean + no-dist pnpm test 322 GREEN + 0 in core/dist (AC#2); deferred-work reconciled exact (AC#3); honest gate lint/build7-7/typecheck/test322/format all 0, −2 = retired 2 alias-proof cases only (AC#4). QA 0-tests SOUND (no runtime surface; AC#1 untestable in Vitest by design)
@@ -100,8 +102,8 @@ development_status:
   # Epic 4: Announcements, rooms & multi-party negotiation (MCP)
   epic-4: in-progress
   4-0-epic-3-deferred-cleanup: done
-  4-1-post-an-announcement-proto-room: review
-  4-2-list-announcements-and-rooms: backlog
+  4-1-post-an-announcement-proto-room: done
+  4-2-list-announcements-and-rooms: done
   4-3-first-reply-activates-the-room: backlog
   4-4-read-a-rooms-full-ordered-history: backlog
   4-5-pull-a-participant-into-a-room: backlog

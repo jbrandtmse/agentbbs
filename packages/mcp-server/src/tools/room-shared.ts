@@ -67,7 +67,10 @@ export interface RoomWire {
   posted_by: string;
   /** `seq` of the announcement.posted event (deterministic order key). */
   seq: number;
-  /** Whether the room is active (a reply exists). Always `false` until Story 4.3. */
+  /**
+   * Whether the room is active — `true` iff ≥1 reply exists (the Story 4.2 activation
+   * read-model, derived in `foldRooms`); a still-proto room (no reply yet) is `false`.
+   */
   active: boolean;
 }
 

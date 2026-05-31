@@ -18,8 +18,10 @@ import type { DataAccess } from '@agentbbs/core';
 import { createSessionIdentity } from './session.js';
 import { registerAnnounceProjectTool } from './tools/announce-project.js';
 import { registerJoinBoardTool } from './tools/join-board.js';
+import { registerListAnnouncementsTool } from './tools/list-announcements.js';
 import { registerListMembersTool } from './tools/list-members.js';
 import { registerListProjectsTool } from './tools/list-projects.js';
+import { registerListRoomsTool } from './tools/list-rooms.js';
 import { registerLoginTool } from './tools/login.js';
 import { registerPostAnnouncementTool } from './tools/post-announcement.js';
 import { registerRegisterTool } from './tools/register.js';
@@ -114,6 +116,13 @@ export function createBoardServer(deps: BoardServerDeps): McpServer {
   //     globally-unique room id (subject slug + disambiguator on collision — a
   //     same-subject post never fails, it gets a distinct id). Consumed by Stories 4.2
   //     (list) / 4.3 (reply activates) / 4.4 (read history).
+  //   - list_announcements / list_rooms (Story 4.2): the two BOARD READ browse tools —
+  //     SESSION-REQUIRED (established identity required, rejects NO_IDENTITY if unset) but
+  //     NO membership: a non-member can browse (FR9 board-wide open read). Each takes a
+  //     project_id and returns the board's rooms SPLIT by activation — list_announcements
+  //     the still-proto rooms (no reply yet), list_rooms the activated rooms (≥1 reply) —
+  //     both seq-ordered. Reject an unknown project_id with BOARD_NOT_FOUND. Reads only
+  //     (the activation read-model is folded from room.replied; the reply WRITE-op is 4.3).
   registerRegisterTool(server, deps.dataAccess, sessionIdentity);
   registerLoginTool(server, deps.dataAccess, sessionIdentity);
   registerUpdateFocusTool(server, deps.dataAccess, sessionIdentity);
@@ -122,6 +131,8 @@ export function createBoardServer(deps: BoardServerDeps): McpServer {
   registerJoinBoardTool(server, deps.dataAccess, sessionIdentity);
   registerListMembersTool(server, deps.dataAccess, sessionIdentity);
   registerPostAnnouncementTool(server, deps.dataAccess, sessionIdentity);
+  registerListAnnouncementsTool(server, deps.dataAccess, sessionIdentity);
+  registerListRoomsTool(server, deps.dataAccess, sessionIdentity);
 
   return server;
 }

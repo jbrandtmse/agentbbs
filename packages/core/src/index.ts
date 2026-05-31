@@ -66,8 +66,9 @@ export type { AnnounceProjectInput } from './projects/announce-project.js';
 export { listProjects } from './projects/list-projects.js';
 export { joinBoard } from './projects/join-board.js';
 
-// --- Rooms projection + room-id derivation (Story 4.1) — proto-rooms folded from
-// `announcement.posted`; `active` derives in Story 4.3. ---
+// --- Rooms projection + room-id derivation (Story 4.1; activation read-model Story 4.2)
+// — proto-rooms folded from `announcement.posted`; `active` derives from `room.replied`
+// (existence-of-reply). ---
 export { findRoom, foldRooms } from './rooms/projection.js';
 export type { Room } from './rooms/projection.js';
 export { roomIdBase } from './rooms/room-id.js';
@@ -76,3 +77,8 @@ export { roomIdBase } from './rooms/room-id.js';
 // Story 3.5 membership write-gate; opens a globally-unique proto-room. ---
 export { postAnnouncement } from './rooms/post-announcement.js';
 export type { PostAnnouncementInput } from './rooms/post-announcement.js';
+
+// --- Room browse read operations (Story 4.2) — split the rooms projection for a board
+// into proto-rooms (listAnnouncements, active=false) vs activated rooms (listRooms,
+// active=true), both `seq`-ordered; BOARD_NOT_FOUND for an unknown board. Open reads. ---
+export { listAnnouncements, listRooms } from './rooms/list-rooms.js';
