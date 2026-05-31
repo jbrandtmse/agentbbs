@@ -60,3 +60,5 @@ TAB-separated, append-only. Fields: `<UTC> TAB <Story <id> | Epic N> TAB <stage>
 2026-05-31T11:38:00Z	Story 1.7	cr_complete	spawn_at=2026-05-31T11:21:00Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=4 high=0 med=0 low=0 clarifications=0 closing_sections_present=true verdict=approved note=clean;ledger_impl_untouched_baseline;ac2_contention_genuine;10x_nonflaky;all_gates_exit0
 2026-05-31T11:44:00Z	Story 1.7	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=clean_build+typecheck+lint+format+test_99of99_15files_incl_concurrency_all_exit0+no_repo_agentbbs model=claude-opus-4-8
 2026-05-31T11:45:00Z	Story 1.7	committed	sha=6c5ce91 submodules=
+2026-05-31T12:10:00Z	Epic 1	epic_merged_to_feature	repos=. feature_sha=ac0452b merge_sha=ac0452b submodules=
+2026-05-31T12:10:30Z	Epic 1	epic_summary	stories=7 total_high=0 total_med=0 total_low=4 total_smoke_defects=0 rework_events=1 opus_stage_count=all model=claude-opus-4-8 note=toolchain_provisioned_node24_pnpm11.3;rule9_added;deferrals_carried_to_epic2_story2.0
