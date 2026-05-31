@@ -1,54 +1,32 @@
-# Test Automation Summary — Story 3.4 (list_members)
+# Test Automation Summary — Story 3.5 (Board-wide read with join-to-post gating)
 
-QA stage of `/epic-cycle`. Judged the dev-authored coverage for Story 3.4
-(`list_members` tool + `core.boardDirectory` — the projects-membership ⋈ identity
-projection join, returning each member's `{ handle, current_focus, last_seen }`) and
-closed the one genuine gap. No padding added.
+QA stage of the `/epic-cycle` for Story 3.5. The dev stage already shipped strong coverage; this QA pass judged it and added ONE genuine gap (no padding).
 
-## Verdict
+## Dev-stage tests judged (kept as-is, all real-runtime)
 
-Coverage was strong across every scrutiny point. The dev suite (4 core unit + 4
-mcp-server integration) covers AC #1–#4 + the AC #5 real-runtime round-trip, with the
-integration test running real-runtime (real `Client`↔`McpServer` over
-`InMemoryTransport`, real `createDataAccess` SQLite ledger, nothing mocked) and
-discoverable per Rule 8. One distinctness assertion (AC #2) was missing and was added.
+### Core unit — `packages/core/src/projects/membership.test.ts` (6 tests)
+- `isMember` true for announcer (auto-joined) + joined non-announcer; false for registered-not-joined + unregistered (pure, matches `Project.members`).
+- `requireMembership`: member → resolves (announcer + joined non-announcer); non-member of an EXISTING board → `NOT_A_MEMBER`; unknown board → `BOARD_NOT_FOUND`; **BOARD_NOT_FOUND precedence over NOT_A_MEMBER** (the distinction is explicitly locked).
+- Fake DataAccess mutators all throw, so reaching a `BoardError` proves the gate appends nothing (pure authorization).
 
-## Coverage map (scrutiny checklist)
+### Integration (real Client↔McpServer + InMemoryTransport + real createDataAccess) — `packages/mcp-server/src/tools/board-read-open.fr9.integration.test.ts`
+- FR9 read-open lock-in: non-member B reads BOTH `list_projects` AND `list_members` over the real transport; B provably NOT a member yet reads succeed.
+- Gate-agrees-with-real-ledger: `requireMembership` run against the SAME ledger the tools wrote — member `ada` authorized, non-member `bob` → `NOT_A_MEMBER`, unknown board → `BOARD_NOT_FOUND`.
 
-| Point | Status | Evidence |
-|---|---|---|
-| AC #1 join order announcer-FIRST then join order (not alphabetical / identity-fold order) | covered | `board-directory.test.ts` — registration order `[bob, ada]` deliberately DISAGREES with join order `[ada, bob]`; `toEqual` pins `[ada, bob]`. Integration: `members.map(handle)` `toEqual(['ada','bob'])` |
-| AC #2 distinguishable last_seen — two members with DIFFERENT last_seen | covered + **gap closed** | integration NOW pins each member's `last_seen` to that member's OWN latest identity event `created_at` read out-of-band from the real ledger (`eventsByActor`), + monotonic `bob >= ada`. Previously only asserted each was a valid ISO string |
-| AC #2 NO `stale` boolean emitted (DECISION 1) | covered | unit `expect(directory[0]).not.toHaveProperty('stale')`; integration `expect(m).not.toHaveProperty('stale')` per member |
-| AC #1 current_focus = LATEST focus (not registration focus) | covered | unit focus-update test (`reviewing pr` replaces `announcing`); integration A+B both `update_focus` after register and the LATEST value is asserted |
-| AC #3 unknown board → BOARD_NOT_FOUND, nothing appended | covered | unit (fake DA whose mutators throw → reaching BOARD_NOT_FOUND proves no append) + integration over real ledger |
-| AC #4 THIRD identity (member of neither) reads successfully | covered | integration: `cleo` (member of neither board) reads both A+B; asserts cleo not in directory |
-| AC #4 NO_IDENTITY with no session | covered | integration: fresh session `handle` null → `NO_IDENTITY` |
-| Integration real-runtime, no SDK mock | confirmed | real `createDataAccess` (better-sqlite3) + `InMemoryTransport`, real register/announce/join/update_focus/list_members tools, core ops + both projections + ledger |
-| Rule 8 discoverability | confirmed | both files `packages/*/src/**/*.test.ts`, matched by root vitest `include`, ran in the default 49-file suite |
+## QA-added test (the one genuine gap)
 
-## Gap closed (only genuine addition — no new test cases)
+### `packages/mcp-server/src/tools/board-read-open.fr9.integration.test.ts` (+1 test)
+- **Join-via-real-tool flips the gate verdict.** The dev integration cases only proved the gate authorizes the ANNOUNCER (auto-joined). The membership-acquisition path Epic 4 actually depends on — "you became a member by JOINING, so the gate now lets you post" — was untested over the real ledger. New test: B registers (gate rejects B `NOT_A_MEMBER`), B joins via the **real `join_board` tool** (appends a real `board.joined`), then `requireMembership` for the SAME handle on the SAME real ledger now **resolves**. Locks in NOT_A_MEMBER → authorized purely from a real tool-written join — the precise Epic 4 contract.
 
-The story's AC #2 / AC #5 require the two members' `last_seen` to be DISTINGUISHABLE
-("each last_seen reflecting that member's latest identity event (distinct…)"). The dev
-integration test asserted each `last_seen` was a valid ISO string and carried no `stale`
-flag, but never pinned the values as per-member distinct — a regression collapsing
-`last_seen` to one shared timestamp (e.g. the board announce time) would have passed.
-
-Strengthened the existing AC #5 round-trip `it` in `list-members.integration.test.ts`:
-read each actor's latest identity event `created_at` out-of-band via the real
-`dataAccess.eventsByActor(...)` and assert `members[0].last_seen === adaLatest`,
-`members[1].last_seen === bobLatest`, plus the monotonic `bobLastSeen >= adaLastSeen`
-(deterministic — no same-millisecond flake). This deterministically proves the directory
-surfaces DISTINCT, per-member derived `last_seen` values reflecting each member's LATEST
-identity event. No new `it` blocks — an existing real-runtime case strengthened in place.
+## Coverage assessment
+- Gate's three outcomes (member→resolve / non-member→NOT_A_MEMBER / unknown→BOARD_NOT_FOUND): covered, incl. the BOARD_NOT_FOUND-vs-NOT_A_MEMBER distinction.
+- Announcer auto-member / joined non-announcer / never-joined: covered (unit + integration, incl. join-via-real-tool).
+- FR9 read-open over real transport (both read tools, non-member reader): covered.
+- Gate verdict agrees with the real ledger: covered.
+- `isMember` pure + matches `Project.members`: covered.
+- Real-runtime (no SDK mock): all integration tests use real `createBoardServer` + `InMemoryTransport` + real `createDataAccess` (better-sqlite3). Rule 8 (discoverability): both files are co-located `*.test.ts`, matched by the root vitest glob `packages/*/src/**/*.test.{ts,tsx}`, not excluded.
+- No post tool to test end-to-end (correctly deferred to Epic 4) — none invented.
 
 ## Result
-
-- Full workspace suite: **315 passed (49 files)** — count unchanged (assertions
-  strengthened in an existing case, no new file/case).
-- Target files green in isolation: 4 core unit + 4 mcp-server integration = 8.
-
-## Next steps
-
-- Lead per-story smoke gate, then commit (QA does not commit).
+- Full suite: 51 files / **324 tests pass** (+1 from the 323 dev baseline).
+- Typecheck clean; ESLint clean on the modified file.
