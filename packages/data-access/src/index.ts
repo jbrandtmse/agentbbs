@@ -9,8 +9,12 @@
 //
 // Story 1.5 adds the WRITE half of the seam: the append-only `events` schema, the
 // forward-only idempotent migration, the transactional `append` (write half), and
-// the WRITE-direction wire mapping. Read queries + the READ-direction mapping land
-// in Story 1.6; the full composed DataAccess follows there.
+// the WRITE-direction wire mapping.
+//
+// Story 1.6 adds the READ half + completes the seam: the `seq`-ordered read
+// queries, the READ-direction wire mapping, and `createDataAccess` — the composed
+// object implementing the full `@agentbbs/core` `DataAccess` port. This barrel is
+// the package's ONLY public surface; better-sqlite3 never escapes it.
 
 // --- DB path discovery (AC1, AR6) ---
 export {
@@ -44,6 +48,19 @@ export { migrate } from './sqlite/migrate.js';
 // --- Transactional append: the WRITE half of the seam (Story 1.5, AC2) ---
 export { createAppend } from './sqlite/append.js';
 
-// --- Wire mapping, WRITE direction (Story 1.5; READ direction lands in 1.6) ---
-export { newEventToRow, payloadToWire } from './mapping.js';
-export type { EventRowInput } from './mapping.js';
+// --- Read queries: the READ half of the seam (Story 1.6, AC1) ---
+export { createReadQueries } from './sqlite/queries.js';
+export type { ReadQueries } from './sqlite/queries.js';
+
+// --- Wire mapping (Story 1.5 WRITE direction + Story 1.6 READ direction) ---
+export {
+  newEventToRow,
+  payloadToWire,
+  rowToEvent,
+  wireToPayload,
+} from './mapping.js';
+export type { EventRowInput, StoredEventRow } from './mapping.js';
+
+// --- Composed DataAccess: the full @agentbbs/core port (Story 1.6, AC1/AC2) ---
+export { createDataAccess, fromConnection } from './data-access.js';
+export type { DataAccessHandle } from './data-access.js';

@@ -275,3 +275,49 @@ after the QA file was added — auto-discovered, not opted out. No second runner
 - Story 1.7: the multi-process N×M concurrency proof drives this retry path under real
   cross-process contention (the dev's intra-process `SQLITE_BUSY` induction is the
   library-level proxy until then).
+
+# Test Automation Summary — Story 1.6
+
+**Story:** 1.6 — Read-query path and wire/internal mapping
+**Stage:** `bmad-qa-generate-e2e-tests` (epic-cycle QA) · 2026-05-30 · branch `AGENTBBS-1-epic1`
+
+## Outcome: 2 real-runtime gap tests added; CI format gate fixed
+
+The dev suite already covered AC1 (seq-ordered camelCase reads, single mapping boundary)
+and AC2 (core depends only on the port, lint-guarded), plus the maxSeq empty sentinel,
+the `eventsSince(k)` seq>k boundary, filtered reads, and the composed `createDataAccess`
+end-to-end. Two genuine gaps were found and closed (Rule 3 real-runtime, Rule 8
+discoverable, temp DBs under `os.tmpdir()` only):
+
+### `packages/data-access/src/sqlite/queries.test.ts` (extended)
+
+- **Ordering by `seq`, never `created_at`** — inserts rows (raw connection, real schema)
+  with strictly DESCENDING `created_at` while `seq` ascends, then reads through the
+  composed `fromConnection` DataAccess and asserts `eventsSince`/`eventsByType` return
+  seq-ascending. Pins THE APPEND INVARIANT at the runtime, not just the lint guard.
+- **All-10-type real-runtime write→read round-trip** — appends one event of every
+  closed-vocabulary type through real SQLite; asserts each camelCase payload survives,
+  no snake_case key surfaces, each type is independently retrievable via `eventsByType`,
+  and the multi-word keys (`project_id`/`current_focus`/`message_seq`) are snake_case on
+  disk via a raw read-only connection.
+
+## Gates (all exit 0)
+
+- `pnpm -r build` — 7/7 Done
+- `pnpm run typecheck` — clean
+- `pnpm run lint` — clean
+- `pnpm test` — **97 passed** (was 95; +2)
+- `pnpm run format` — clean
+
+## CI format gate — fixed
+
+`pnpm run format` (`prettier --check .`) was RED on entry: three Story 1.5 files
+(`append.qa.test.ts`, `append.test.ts`, `migrate.test.ts`) were dirty (prettier's
+`.get() as { n: number }` brace-wrap). The dev had flagged these as "pre-existing
+warnings"; since CI enforces `--check`, they were CI-breaking. Ran `pnpm run format:write`
+(touched exactly those 3 files + the new `queries.test.ts`). Before: 3 dirty, exit 1.
+After: "All matched files use Prettier code style!", exit 0.
+
+## Next Steps
+- Story 1.7: the multi-process N×M concurrency proof drives this append→read round-trip
+  under real cross-process contention to prove total-order agreement across readers.

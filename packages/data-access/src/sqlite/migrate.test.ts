@@ -154,9 +154,9 @@ describe('migrate — forward-only idempotency (AC1)', () => {
     // Re-migrate; the row must survive (proves IF NOT EXISTS, not DROP+CREATE).
     migrate(db);
 
-    const count = db
-      .prepare('SELECT COUNT(*) AS n FROM events')
-      .get() as { n: number };
+    const count = db.prepare('SELECT COUNT(*) AS n FROM events').get() as {
+      n: number;
+    };
     expect(count.n).toBe(1);
   });
 });

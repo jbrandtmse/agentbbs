@@ -84,9 +84,9 @@ describe('append — sequence integrity across rollback (AC2 / NFR10)', () => {
     await expect(append([seen('c'), bad, seen('d')])).rejects.toThrow();
 
     // The rollback persisted nothing: still exactly the 2 committed rows.
-    const count = db
-      .prepare('SELECT COUNT(*) AS n FROM events')
-      .get() as { n: number };
+    const count = db.prepare('SELECT COUNT(*) AS n FROM events').get() as {
+      n: number;
+    };
     expect(count.n).toBe(2);
 
     // 3) A subsequent good append continues STRICTLY ABOVE the last committed seq.

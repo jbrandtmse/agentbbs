@@ -48,6 +48,12 @@ const NO_BETTER_SQLITE3 = {
 
 const NO_CLIENT_FROM_CORE = {
   group: [
+    // data-access is the concrete storage ADAPTER behind the DataAccess port
+    // (Story 1.6, AC2): core depends ONLY on its own `ports.ts` interface, never
+    // on the adapter. Banning the barrel (not just `better-sqlite3`) makes AC2
+    // provably enforced rather than incidentally true.
+    '@agentbbs/data-access',
+    '@agentbbs/data-access/*',
     '@agentbbs/mcp-server',
     '@agentbbs/mcp-server/*',
     '@agentbbs/cli',
@@ -60,7 +66,7 @@ const NO_CLIENT_FROM_CORE = {
     '@agentbbs/vscode-extension/*',
   ],
   message:
-    'core must not import from any client/app package. core depends only on its own ports (the DataAccess interface); dependencies flow client -> core, never the reverse.',
+    'core must not import from any client/app package OR from @agentbbs/data-access (the concrete storage adapter). core depends only on its own ports (the DataAccess interface); dependencies flow client/adapter -> core, never the reverse.',
 };
 
 /**

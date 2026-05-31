@@ -75,10 +75,13 @@ describe('import-boundary lint enforcement (AC1)', () => {
     expect(ruleIds).toContain('no-restricted-imports');
   });
 
-  it('ALLOWS a barrel import from core (no boundary error)', async () => {
+  it('ALLOWS data-access importing the core barrel (the permitted adapter -> port direction)', async () => {
+    // Dependencies flow adapter -> core. data-access legitimately imports the
+    // @agentbbs/core barrel (for the DataAccess type, Event shapes, etc.); a
+    // non-deep barrel import in that direction must NOT trip the boundary rule.
     const ruleIds = await lint(
-      `import { DATA_ACCESS_PACKAGE } from '@agentbbs/data-access';\nexport const x = DATA_ACCESS_PACKAGE;\n`,
-      coreFilePath,
+      `import { EVENT_TYPES } from '@agentbbs/core';\nexport const x = EVENT_TYPES;\n`,
+      dataAccessFilePath,
     );
     expect(ruleIds).not.toContain('no-restricted-imports');
   });
@@ -99,6 +102,48 @@ describe('import-boundary lint enforcement (AC1)', () => {
       mcpServerFilePath,
     );
     expect(ruleIds).toContain('no-restricted-imports');
+  });
+});
+
+// Story 1.6, AC2 — "core depends only on the port": core imports the DataAccess
+// interface from its own ports.ts and NEVER imports @agentbbs/data-access (the
+// concrete adapter) or better-sqlite3 directly. These assertions make AC2
+// PROVABLY guarded by the lint, not merely incidentally true — if a future change
+// relaxes the boundary rule, this fails.
+describe('AC2 — core depends only on the DataAccess port (Story 1.6)', () => {
+  it('rejects core importing the @agentbbs/data-access adapter barrel', async () => {
+    const ruleIds = await lint(
+      `import { createDataAccess } from '@agentbbs/data-access';\nexport const x = createDataAccess;\n`,
+      coreFilePath,
+    );
+    expect(ruleIds).toContain('no-restricted-imports');
+  });
+
+  it('rejects core importing a deep path into @agentbbs/data-access', async () => {
+    const ruleIds = await lint(
+      `import { rowToEvent } from '@agentbbs/data-access/src/mapping';\nexport const x = rowToEvent;\n`,
+      coreFilePath,
+    );
+    expect(ruleIds).toContain('no-restricted-imports');
+  });
+
+  it('rejects core importing better-sqlite3 directly', async () => {
+    const ruleIds = await lint(
+      `import Database from 'better-sqlite3';\nexport const x = Database;\n`,
+      coreFilePath,
+    );
+    expect(ruleIds).toContain('no-restricted-imports');
+  });
+
+  it('ALLOWS core importing its own DataAccess port (the only persistence dependency)', async () => {
+    // The permitted shape: core depends on its OWN ports.ts, a relative import
+    // within the package — never on the adapter package. This proves the guard
+    // does not over-reach and ban core's legitimate self-import.
+    const ruleIds = await lint(
+      `import type { DataAccess } from './ports.js';\nexport type X = DataAccess;\n`,
+      coreFilePath,
+    );
+    expect(ruleIds).not.toContain('no-restricted-imports');
   });
 });
 

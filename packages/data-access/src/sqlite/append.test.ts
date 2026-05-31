@@ -74,9 +74,9 @@ describe('append — N rows, monotonic seq in input order (AC2)', () => {
     const seqs = await append(seenEvents(handles));
 
     // Exactly N rows.
-    const count = db
-      .prepare('SELECT COUNT(*) AS n FROM events')
-      .get() as { n: number };
+    const count = db.prepare('SELECT COUNT(*) AS n FROM events').get() as {
+      n: number;
+    };
     expect(count.n).toBe(handles.length);
 
     // N seqs, unique, strictly increasing.
@@ -111,9 +111,9 @@ describe('append — N rows, monotonic seq in input order (AC2)', () => {
     const seqs = await append([]);
     expect(seqs).toEqual([]);
 
-    const count = db
-      .prepare('SELECT COUNT(*) AS n FROM events')
-      .get() as { n: number };
+    const count = db.prepare('SELECT COUNT(*) AS n FROM events').get() as {
+      n: number;
+    };
     expect(count.n).toBe(0);
   });
 });
@@ -136,16 +136,24 @@ describe('append — atomic multi-event append (AC2)', () => {
 
     await expect(
       append([
-        { type: 'identity.seen', actor: 'good-1', payload: { handle: 'good-1' } },
+        {
+          type: 'identity.seen',
+          actor: 'good-1',
+          payload: { handle: 'good-1' },
+        },
         bad,
-        { type: 'identity.seen', actor: 'good-2', payload: { handle: 'good-2' } },
+        {
+          type: 'identity.seen',
+          actor: 'good-2',
+          payload: { handle: 'good-2' },
+        },
       ]),
     ).rejects.toThrow();
 
     // Atomicity: the whole transaction rolled back — zero rows.
-    const count = db
-      .prepare('SELECT COUNT(*) AS n FROM events')
-      .get() as { n: number };
+    const count = db.prepare('SELECT COUNT(*) AS n FROM events').get() as {
+      n: number;
+    };
     expect(count.n).toBe(0);
   });
 });
