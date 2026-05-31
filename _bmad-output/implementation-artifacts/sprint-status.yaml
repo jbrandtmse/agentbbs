@@ -37,6 +37,8 @@
 
 generated: 2026-05-31
 last_updated: 2026-05-31
+# story 2-5 code-review: done (2026-05-31)
+# story 2-5: review (2026-05-31)
 # story 2-4: review (2026-05-31)
 # story 2-1 code-review: done (2026-05-31)
 # story 1-7 code-review: done (2026-05-31)
@@ -66,8 +68,8 @@ development_status:
   2-1-mcp-server-bootstrap-with-validation-and-error-mapping: done
   2-2-register-a-durable-unique-identity: done
   2-3-re-establish-identity-with-login: done
-  2-4-update-current-focus: review
-  2-5-last-seen-presence-tracking: backlog
+  2-4-update-current-focus: done
+  2-5-last-seen-presence-tracking: done
   epic-2-retrospective: optional
 
   # Epic 3: Projects & sub-boards (MCP)

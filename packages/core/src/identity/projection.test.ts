@@ -195,14 +195,133 @@ describe('foldIdentities — identity.focus_updated (Story 2.4, AC #1)', () => {
   });
 });
 
+describe('foldIdentities — identity.seen (Story 2.5, AC #1)', () => {
+  it('advances lastSeen to the seen event createdAt WITHOUT changing currentFocus or createdAt', () => {
+    const dir = foldIdentities([
+      reg(1, 'ada', 'my focus', '2026-05-31T00:00:01.000Z'),
+      seen(2, 'ada', '2026-05-31T00:05:00.000Z'),
+    ]);
+
+    const ada = dir.get('ada');
+    // Presence advanced; focus + registration time are untouched (the seen branch
+    // is presence-only — it does NOT touch currentFocus).
+    expect(ada?.lastSeen).toBe('2026-05-31T00:05:00.000Z');
+    expect(ada?.currentFocus).toBe('my focus');
+    expect(ada?.createdAt).toBe('2026-05-31T00:00:01.000Z');
+  });
+
+  it('keeps the LATEST seen across multiple sequential pings (folded in seq order)', () => {
+    const dir = foldIdentities([
+      reg(1, 'ada', 'focus', '2026-05-31T00:00:01.000Z'),
+      seen(2, 'ada', '2026-05-31T00:01:00.000Z'),
+      seen(3, 'ada', '2026-05-31T00:02:00.000Z'),
+      seen(4, 'ada', '2026-05-31T00:03:00.000Z'),
+    ]);
+
+    const ada = dir.get('ada');
+    // lastSeen is the latest-by-seq seen event's createdAt; focus/createdAt pinned.
+    expect(ada?.lastSeen).toBe('2026-05-31T00:03:00.000Z');
+    expect(ada?.currentFocus).toBe('focus');
+    expect(ada?.createdAt).toBe('2026-05-31T00:00:01.000Z');
+  });
+
+  it('interleaves registered → focus_updated → seen and folds the correct latest lastSeen AND latest currentFocus', () => {
+    // The three identity event types co-fold: the focus_updated sets currentFocus,
+    // a LATER seen advances lastSeen past it without reverting the focus. Proves the
+    // seen branch advances presence only and the shared lastSeen advancement carries
+    // the latest-by-seq event regardless of which identity type it was.
+    const dir = foldIdentities([
+      reg(1, 'ada', 'focus-0', '2026-05-31T00:00:01.000Z'),
+      focus(2, 'ada', 'focus-1', '2026-05-31T00:02:00.000Z'),
+      seen(3, 'ada', '2026-05-31T00:09:00.000Z'),
+    ]);
+
+    const ada = dir.get('ada');
+    // currentFocus is the focus_updated value (the seen ping did not change it).
+    expect(ada?.currentFocus).toBe('focus-1');
+    // lastSeen advanced to the LATER seen event, past the focus update's time.
+    expect(ada?.lastSeen).toBe('2026-05-31T00:09:00.000Z');
+    expect(ada?.createdAt).toBe('2026-05-31T00:00:01.000Z');
+  });
+
+  it('a seen AFTER a focus update does not revert the focus; a focus update AFTER a seen keeps the advanced lastSeen', () => {
+    // Order both ways to prove the branches are independent: a trailing focus_updated
+    // both sets focus AND advances lastSeen (it is an identity event too), so the
+    // earlier seen does not "pin" lastSeen below it.
+    const dir = foldIdentities([
+      reg(1, 'ada', 'focus-0', '2026-05-31T00:00:01.000Z'),
+      seen(2, 'ada', '2026-05-31T00:03:00.000Z'),
+      focus(3, 'ada', 'focus-2', '2026-05-31T00:07:00.000Z'),
+    ]);
+
+    const ada = dir.get('ada');
+    expect(ada?.currentFocus).toBe('focus-2');
+    // The trailing focus_updated is the latest-by-seq identity event → its createdAt.
+    expect(ada?.lastSeen).toBe('2026-05-31T00:07:00.000Z');
+  });
+
+  it('orders by seq NOT createdAt — when registered and seen share a createdAt, the higher-seq seen still wins lastSeen (QA)', () => {
+    // The append invariant forbids createdAt as an ordering key. Here the
+    // registration and a later seen carry the IDENTICAL createdAt (a realistic
+    // same-millisecond collision); the fold trusts seq order (1 then 2), so the
+    // seen (seq=2) is the last folded event and its createdAt is lastSeen — decided
+    // by seq, never by a timestamp comparison.
+    const sharedTs = '2026-05-31T00:05:00.000Z';
+    const dir = foldIdentities([
+      reg(1, 'ada', 'focus', sharedTs),
+      seen(2, 'ada', sharedTs),
+    ]);
+
+    const ada = dir.get('ada');
+    expect(ada?.lastSeen).toBe(sharedTs);
+    expect(ada?.createdAt).toBe(sharedTs);
+    expect(ada?.currentFocus).toBe('focus');
+  });
+
+  it('does NOT mint a phantom identity for an identity.seen with no prior registration (IGNORE stance, same as 2.4)', () => {
+    // Only identity.registered mints a directory entry. A presence ping for a handle
+    // with no registration is IGNORED by the fold (defensive — unreachable in V1,
+    // since recordSeen is only called for an established/registered identity).
+    // Stance: ignore, do not mint — pinned exactly as Story 2.4 did for focus_updated.
+    const dir = foldIdentities([seen(1, 'ghost', '2026-05-31T00:00:01.000Z')]);
+    expect(dir.size).toBe(0);
+    expect(dir.get('ghost')).toBeUndefined();
+  });
+
+  it('folds a seen for one handle without polluting another identity', () => {
+    const dir = foldIdentities([
+      reg(1, 'ada', 'ada-focus', '2026-05-31T00:00:01.000Z'),
+      reg(2, 'bob', 'bob-focus', '2026-05-31T00:00:02.000Z'),
+      seen(3, 'ada', '2026-05-31T00:03:00.000Z'),
+    ]);
+
+    // ada's presence advanced; bob is untouched by ada's ping.
+    expect(dir.get('ada')?.lastSeen).toBe('2026-05-31T00:03:00.000Z');
+    expect(dir.get('ada')?.currentFocus).toBe('ada-focus');
+    expect(dir.get('bob')?.lastSeen).toBe('2026-05-31T00:00:02.000Z');
+    expect(dir.get('bob')?.currentFocus).toBe('bob-focus');
+  });
+
+  it('findIdentity reflects the folded presence ping for a single handle', () => {
+    const events = [
+      reg(1, 'ada', 'focus', '2026-05-31T00:00:01.000Z'),
+      seen(2, 'ada', '2026-05-31T00:09:00.000Z'),
+    ];
+    const ada = findIdentity(events, 'ada');
+    expect(ada?.lastSeen).toBe('2026-05-31T00:09:00.000Z');
+    expect(ada?.currentFocus).toBe('focus');
+  });
+});
+
 describe('foldIdentities — lastSeen is derived from the stream, never stored', () => {
-  it('this story (2.2): lastSeen === createdAt; identity.seen is NOT yet a directory event (Story 2.5 wires that)', () => {
-    // SCOPE PIN: in Story 2.2 only identity.registered is an identity-directory
-    // event. A later identity.seen for the same handle does NOT yet advance
-    // lastSeen — that folding lands in Story 2.5, which adds 'identity.seen' to
-    // IDENTITY_EVENT_TYPES + a reducer branch. Here lastSeen stays at createdAt.
-    // (This test guards the boundary: if 2.5's change accidentally lands early or
-    // 2.2's scope creeps, it flips and is reviewed deliberately.)
+  it('Story 2.5 (FLIPPED from the 2.2 scope-pin): identity.seen IS now a directory event — a later seen advances lastSeen while createdAt stays put', () => {
+    // DELIBERATE FLIP: the 2.2 scope-pin test asserted the OPPOSITE (identity.seen
+    // did NOT yet advance lastSeen, because 2.2 had not added it to
+    // IDENTITY_EVENT_TYPES). Its own comment said "if 2.5's change lands, it flips
+    // and is reviewed deliberately." This is that review: Story 2.5 adds
+    // 'identity.seen' to IDENTITY_EVENT_TYPES + a presence-only reducer branch, so a
+    // later identity.seen NOW advances lastSeen to its createdAt while createdAt
+    // (registration time) and currentFocus stay pinned.
     const dir = foldIdentities([
       reg(1, 'ada', 'focus', '2026-05-31T00:00:01.000Z'),
       seen(4, 'ada', '2026-05-31T00:05:00.000Z'),
@@ -210,7 +329,10 @@ describe('foldIdentities — lastSeen is derived from the stream, never stored',
 
     const ada = dir.get('ada');
     expect(ada?.createdAt).toBe('2026-05-31T00:00:01.000Z');
-    expect(ada?.lastSeen).toBe('2026-05-31T00:00:01.000Z');
+    // lastSeen advanced to the identity.seen event's createdAt (presence tracking).
+    expect(ada?.lastSeen).toBe('2026-05-31T00:05:00.000Z');
+    // currentFocus is untouched by a presence ping (only registration set it here).
+    expect(ada?.currentFocus).toBe('focus');
   });
 
   it('lastSeen tracks the latest-seq folded identity event (spec: max createdAt across the identity events), not a stored constant', () => {

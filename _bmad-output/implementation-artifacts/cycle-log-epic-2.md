@@ -38,3 +38,10 @@
 2026-05-31T10:29:38Z	Story 2.4	qa_complete	spawn_at=2026-05-31T10:33:00Z model=claude-opus-4-8 tests_added=13 first_run_failures=0 clarifications=0 closing_sections_present=true
 2026-05-31T10:35:39Z	Story 2.4	cr_complete	spawn_at=2026-05-31T10:40:00Z model=claude-opus-4-8 resolved=0 deferred=1 dismissed=0 high=0 med=0 low=1 clarifications=0 closing_sections_present=true
 2026-05-31T10:36:22Z	Story 2.4	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=real-stdio-update_focus-derived-NEW-lastseen-advanced-no_session-NO_IDENTITY-oob-append-only-old-registered-retained model=claude-opus-4-8
+2026-05-31T10:36:38Z	Story 2.4	committed	sha=b8d080c submodules=
+2026-05-31T10:40:08Z	Story 2.5	story_created	path=_bmad-output/implementation-artifacts/2-5-last-seen-presence-tracking.md integration_ac=present-real-ledger rule1_escape=no_consumer_yet_first=6.1 consumes=2.2
+2026-05-31T10:51:54Z	Story 2.5	dev_complete	spawn_at=2026-05-31T10:55:00Z model=claude-opus-4-8 files=6 clarifications=0 nfr_tripwires=0 adr_violations_surfaced=0 cycle_iteration=1 closing_sections_present=true
+2026-05-31T10:51:54Z	Story 2.5	adr_verifications_complete	tool=none acs=none result=none_required evidence=
+2026-05-31T10:58:43Z	Story 2.5	qa_complete	spawn_at=2026-05-31T11:05:00Z model=claude-opus-4-8 tests_added=5 first_run_failures=0 clarifications=0 closing_sections_present=true
+2026-05-31T11:03:39Z	Story 2.5	cr_complete	spawn_at=2026-05-31T11:12:00Z model=claude-opus-4-8 resolved=0 deferred=1 dismissed=0 high=0 med=0 low=1 clarifications=0 closing_sections_present=true
+2026-05-31T11:04:53Z	Story 2.5	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=real-ledger-recordSeen-lastseen-advances-append-only-2seen-derived-no-last_seen-column model=claude-opus-4-8

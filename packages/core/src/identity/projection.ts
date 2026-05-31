@@ -67,8 +67,12 @@ const IDENTITY_EVENT_TYPES: ReadonlySet<EventType> = new Set<EventType>([
   'identity.registered',
   // Story 2.4: a focus update's actor IS the subject identity, so folding one
   // advances that identity's lastSeen (and the reducer branch below overwrites
-  // currentFocus). Story 2.5 adds 'identity.seen' here next.
+  // currentFocus).
   'identity.focus_updated',
+  // Story 2.5: a presence ping's actor IS the subject identity, so folding one
+  // advances that identity's lastSeen (the shared advancement below). Its reducer
+  // branch is presence-only — it does NOT touch currentFocus.
+  'identity.seen',
 ]);
 
 /** True for an event whose `actor` is the subject identity (see the set above). */
@@ -121,8 +125,15 @@ export function foldIdentities(events: Event[]): Map<string, Identity> {
         if (existing) existing.currentFocus = event.payload.currentFocus;
         break;
       }
-      // Story 2.5 (identity.seen → presence-only) adds its branch here. It must add
-      // its type to IDENTITY_EVENT_TYPES above for this switch to receive it.
+      case 'identity.seen': {
+        // Story 2.5: a presence ping advances lastSeen ONLY — it deliberately does
+        // NOT touch currentFocus (contrast focus_updated above). The shared lastSeen
+        // advancement below carries this event's createdAt, so there is nothing to do
+        // in this branch beyond documenting the presence-only intent: it mints no
+        // phantom (only identity.registered creates a record) and leaves currentFocus
+        // and createdAt pinned to their existing folded values.
+        break;
+      }
       default:
         break;
     }

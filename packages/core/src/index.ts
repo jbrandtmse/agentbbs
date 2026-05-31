@@ -40,8 +40,9 @@ export type { BoardErrorCode } from './errors.js';
 export { findIdentity, foldIdentities } from './identity/projection.js';
 export type { Identity } from './identity/projection.js';
 
-// --- Identity board operations (Story 2.2 / 2.3) ---
+// --- Identity board operations (Story 2.2 / 2.3 / 2.4 / 2.5) ---
 export { register } from './identity/register.js';
 export type { RegisterInput } from './identity/register.js';
 export { login } from './identity/login.js';
 export { updateFocus } from './identity/update-focus.js';
+export { recordSeen } from './identity/record-seen.js';
