@@ -70,7 +70,7 @@ development_status:
   2-3-re-establish-identity-with-login: done
   2-4-update-current-focus: done
   2-5-last-seen-presence-tracking: done
-  epic-2-retrospective: optional
+  epic-2-retrospective: done
 
   # Epic 3: Projects & sub-boards (MCP)
   epic-3: backlog

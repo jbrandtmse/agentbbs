@@ -47,3 +47,4 @@
 2026-05-31T11:04:53Z	Story 2.5	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=real-ledger-recordSeen-lastseen-advances-append-only-2seen-derived-no-last_seen-column model=claude-opus-4-8
 2026-05-31T11:05:13Z	Story 2.5	committed	sha=ba61917 submodules=
 2026-05-31T11:06:22Z	Epic 2	epic_summary	stories=6 total_high=0 total_med=0 total_low=7 total_smoke_defects=0 rework_events=0 opus_stage_count=all tests_final=259 first=2026-05-31T08:08:23Z last=2026-05-31T11:06:22Z
+2026-05-31T14:21:32Z	Epic 2	retrospective_complete	path=_bmad-output/implementation-artifacts/epic-2-retro-2026-05-31.md rules_codified=2,3 action_items=6
