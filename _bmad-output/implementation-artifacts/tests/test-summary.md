@@ -396,3 +396,67 @@ untouched. `docs/adr/` confirmed absent — no ADR constraints.
 ## Next Steps
 - None for this story. The correctness gate passes; deliverable verified genuine, strict,
   non-flaky. Epic 1's ledger is licensed for downstream projections on `seq`.
+
+---
+
+# Test Automation Summary — Story 2.0
+
+**Story:** 2.0 — Epic 1 Deferred Cleanup (housekeeping / internal-tooling)
+**Stage:** `bmad-qa-generate-e2e-tests` (epic-cycle QA) · 2026-05-31 · branch `AGENTBBS-1-epic2`
+**Framework:** Vitest 4.1.7 (single root runner) + the typecheck gate.
+
+## Outcome: NO new test added (Rule 3 exemption); existing 99-test suite re-verified as the regression guard
+
+Story 2.0 adds `.gitattributes` (`* text=auto eol=lf`), removes the unused
+`eslint-plugin-boundaries` dev-dependency (manifest + catalog + lockfile), and reconciles
+`deferred-work.md`. It introduces no service, module, API, CLI, or UI surface and no new
+feature code, so per **skill-rules Rule 3** it is **exempt** from real-runtime test evidence.
+No synthetic test was manufactured for a no-behavior change.
+
+## Per-AC test rationale
+
+- **AC #1** (`.gitattributes` / LF normalization) — a Git-tooling guarantee, not an
+  app-runtime behavior. Verified by inspection: `git check-attr text eol -- package.json` →
+  `text: auto`, `eol: lf` (attribute active); `git ls-files --eol | grep w/crlf` → **zero**
+  tracked text files carry CRLF in the working tree (tree re-normalized to LF). Not
+  test-eligible in the app tier.
+- **AC #2** (remove `eslint-plugin-boundaries`; boundary rules still fire) — the only AC with
+  an assertable behavioral guarantee, and it is **already covered** by the pre-existing
+  discoverable test `packages/core/src/boundary-enforcement.test.ts`, which runs ESLint
+  programmatically against the repo's real flat config and asserts `no-restricted-imports` /
+  `no-restricted-syntax` fire. The boundary rules were always implemented with
+  `no-restricted-imports` (never the removed plugin), so this test **is** the regression guard
+  proving the removal was safe; it passed this stage (part of the 99). A second test for the
+  same guarantee would duplicate it — none added.
+- **AC #3 / #4** (reconcile `deferred-work.md`) — Markdown ledger edits have no executable
+  behavior to assert; verified by reading the reconciled ledger (1.2 RESOLVED / 1.4 RESOLVED /
+  1.5 OPEN / 1.6 OPEN, resolved items retained with citations).
+
+## Rule 8 (discoverability)
+
+No new test file created → nothing new to assess for naming/ignore/tag opt-out. The existing
+regression guard `boundary-enforcement.test.ts` remains fully discoverable: `*.test.ts` naming,
+under `packages/core/src/` (matched by `vitest.config.ts` `projects` include glob
+`packages/*/src/**/*.test.{ts,tsx}`), under no ignore path, ran in the default `pnpm test`.
+
+## Gate runs (full re-run, all exit 0)
+
+| Command | Result |
+| --- | --- |
+| `pnpm run lint` (`eslint .`) | exit 0 — config valid + boundary rules fire with the plugin removed |
+| `pnpm test` | Test Files 15 passed (15) · Tests **99 passed (99)** (baseline intact) |
+| `pnpm run typecheck` | `tsc --noEmit -p tsconfig.typecheck.json` — exit 0 |
+| `pnpm run format` (`prettier --check .`) | "All matched files use Prettier code style!" |
+| `pnpm -r build` | 7 packages `tsc -b` Done |
+
+`eslint-plugin-boundaries`: **0 occurrences** across `package.json`, `pnpm-workspace.yaml`,
+`pnpm-lock.yaml` (was 1 / 1 / 4).
+
+## Rule 5 / Rule 6
+
+No NFR tripwire (no NFR work in this story). `docs/adr/` confirmed absent — no ADR constraints.
+
+## Next Steps
+- None. QA gate satisfied with the existing 99-test suite as the regression guard. No code or
+  test files were modified by this stage (only this summary + the story's QA Results section).
+  Lead commits after the per-story smoke gate.

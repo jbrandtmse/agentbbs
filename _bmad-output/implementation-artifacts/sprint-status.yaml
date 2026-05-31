@@ -59,7 +59,8 @@ development_status:
   epic-1-retrospective: done
 
   # Epic 2: Agent identity & presence (MCP)
-  epic-2: backlog
+  epic-2: in-progress
+  2-0-epic-1-deferred-cleanup: done
   2-1-mcp-server-bootstrap-with-validation-and-error-mapping: backlog
   2-2-register-a-durable-unique-identity: backlog
   2-3-re-establish-identity-with-login: backlog
