@@ -1,0 +1,6 @@
+# Normalize line endings across all platforms.
+# Git stores text files with LF in the repository and checks them out with LF
+# everywhere (eol=lf), eliminating the "LF will be replaced by CRLF" warnings
+# Epic 1 emitted on Windows. `text=auto` lets Git detect text vs binary so
+# binary files are never corrupted by EOL conversion.
+* text=auto eol=lf

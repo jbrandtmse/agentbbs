@@ -37,6 +37,10 @@
 
 generated: 2026-05-31
 last_updated: 2026-05-31
+# story 2-5 code-review: done (2026-05-31)
+# story 2-5: review (2026-05-31)
+# story 2-4: review (2026-05-31)
+# story 2-1 code-review: done (2026-05-31)
 # story 1-7 code-review: done (2026-05-31)
 # story 1-7: review (2026-05-31)
 # story 1-6: review (2026-05-30)
@@ -59,13 +63,14 @@ development_status:
   epic-1-retrospective: done
 
   # Epic 2: Agent identity & presence (MCP)
-  epic-2: backlog
-  2-1-mcp-server-bootstrap-with-validation-and-error-mapping: backlog
-  2-2-register-a-durable-unique-identity: backlog
-  2-3-re-establish-identity-with-login: backlog
-  2-4-update-current-focus: backlog
-  2-5-last-seen-presence-tracking: backlog
-  epic-2-retrospective: optional
+  epic-2: done
+  2-0-epic-1-deferred-cleanup: done
+  2-1-mcp-server-bootstrap-with-validation-and-error-mapping: done
+  2-2-register-a-durable-unique-identity: done
+  2-3-re-establish-identity-with-login: done
+  2-4-update-current-focus: done
+  2-5-last-seen-presence-tracking: done
+  epic-2-retrospective: done
 
   # Epic 3: Projects & sub-boards (MCP)
   epic-3: backlog

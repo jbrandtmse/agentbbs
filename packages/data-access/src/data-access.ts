@@ -12,6 +12,7 @@
 // "implements the port" claim — no runtime assertion needed).
 
 import { createAppend } from './sqlite/append.js';
+import { createAppendGuarded } from './sqlite/append-guarded.js';
 import { openDatabase } from './sqlite/connection.js';
 import { migrate } from './sqlite/migrate.js';
 import { createReadQueries } from './sqlite/queries.js';
@@ -60,10 +61,12 @@ export function createDataAccess(
  */
 export function fromConnection(db: DatabaseInstance): DataAccessHandle {
   const append = createAppend(db);
+  const appendGuarded = createAppendGuarded(db);
   const reads = createReadQueries(db);
 
   const dataAccess = {
     append,
+    appendGuarded,
     eventsSince: reads.eventsSince,
     eventsByType: reads.eventsByType,
     eventsByActor: reads.eventsByActor,

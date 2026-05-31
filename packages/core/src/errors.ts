@@ -26,6 +26,12 @@ export const BOARD_ERROR_CODES = [
   'ROOM_NOT_FOUND',
   /** Message body exceeds the configured size cap. */
   'BODY_TOO_LARGE',
+  /**
+   * The action requires an established identity (register or login first); none
+   * is set for this session. Reusable by every session-required tool (Story 2.4
+   * `update_focus` is its first consumer; Epics 3–6 tools reuse it).
+   */
+  'NO_IDENTITY',
 ] as const;
 
 /**

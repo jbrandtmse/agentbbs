@@ -11,14 +11,20 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "agentbbs-mcp-server": "./dist/main.js"
+  },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsc -b tsconfig.json"
+    "build": "tsc -b tsconfig.json",
+    "start": "node ./dist/main.js"
   },
   "dependencies": {
     "@agentbbs/core": "workspace:*",
-    "@agentbbs/data-access": "workspace:*"
+    "@agentbbs/data-access": "workspace:*",
+    "@modelcontextprotocol/sdk": "catalog:",
+    "zod": "catalog:"
   }
 }
