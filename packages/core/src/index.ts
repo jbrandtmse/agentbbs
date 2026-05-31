@@ -89,3 +89,14 @@ export { listAnnouncements, listRooms } from './rooms/list-rooms.js';
 // an unknown room. The activator is the read-side min-`seq` derivation (rooms projection). ---
 export { reply } from './rooms/reply.js';
 export type { ReplyInput } from './rooms/reply.js';
+
+// --- Room message-history projection + read op (Story 4.4) — a room's COMPLETE ordered
+// history: the seeding `announcement.posted` as message #1 (kind='announcement'), then every
+// `room.replied` by `seq` (kind='reply'); a "message" is identified by its `seq` (Epic 5's
+// react/current-contract consume these by seq). `readRoom` resolves the room (ROOM_NOT_FOUND
+// for an unknown one) + returns `{ room, messages }` (RoomHistory). An OPEN read (FR9 — no
+// membership). Pure fold; derived, never stored; ordered by `seq`, never `createdAt`. ---
+export { roomMessages } from './rooms/room-history.js';
+export type { RoomMessage, RoomMessageKind } from './rooms/room-history.js';
+export { readRoom } from './rooms/read-room.js';
+export type { RoomHistory } from './rooms/read-room.js';

@@ -29,3 +29,10 @@
 2026-05-31T19:59:31Z	Story 4.3	qa_complete	spawn_at=2026-05-31T19:51:40Z model=claude-opus-4-8 tests_added=4 first_run_failures=0 clarifications=0 closing_sections_present=true
 2026-05-31T20:09:06Z	Story 4.3	cr_complete	spawn_at=2026-05-31T19:59:55Z model=claude-opus-4-8 resolved=0 deferred=2 dismissed=0 high=0 med=0 low=2 clarifications=0 closing_sections_present=true
 2026-05-31T20:10:27Z	Story 4.3	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=_bmad-output/implementation-artifacts/tests/smoke-4-3.mjs model=claude-opus-4-8
+2026-05-31T20:10:30Z	Story 4.3	committed	sha=21c3db9 submodules=
+2026-05-31T20:12:15Z	Story 4.4	story_created	path=_bmad-output/implementation-artifacts/4-4-read-a-rooms-full-ordered-history.md integration_ac=present service_introducing=true consumed_by=epic5_react_contract,ui
+2026-05-31T20:26:02Z	Story 4.4	dev_complete	spawn_at=2026-05-31T20:14:30Z model=claude-opus-4-8 files=10 tests_added=28 clarifications=0 nfr_tripwires=0 adr_violations_surfaced=0 cycle_iteration=1 closing_sections_present=true
+2026-05-31T20:26:02Z	Story 4.4	adr_verifications_complete	result=none_required
+2026-05-31T20:29:15Z	Story 4.4	qa_complete	spawn_at=2026-05-31T20:32:00Z model=claude-opus-4-8 tests_added=6 first_run_failures=0 clarifications=0 closing_sections_present=true
+2026-05-31T20:37:23Z	Story 4.4	cr_complete	spawn_at=2026-05-31T20:32:40Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=2 high=0 med=0 low=0 clarifications=0 closing_sections_present=true
+2026-05-31T20:37:26Z	Story 4.4	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=_bmad-output/implementation-artifacts/tests/smoke-4-4.mjs model=claude-opus-4-8

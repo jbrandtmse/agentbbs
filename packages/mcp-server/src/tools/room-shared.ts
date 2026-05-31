@@ -14,7 +14,7 @@
 
 import { z } from 'zod';
 
-import type { Room } from '@agentbbs/core';
+import type { Room, RoomMessage } from '@agentbbs/core';
 
 /**
  * Max announcement-subject length — a defensive upper bound so a pathologically long
@@ -136,4 +136,37 @@ export function roomToWire(room: Room): RoomWire {
     wire.activated_at_seq = room.activatedAtSeq;
   }
   return wire;
+}
+
+/**
+ * The snake_case message payload returned on the wire by `read_room` (Story 4.4). One entry
+ * in a room's ordered history. The field names are all single-word (`seq`/`actor`/`body`/
+ * `kind`), so the snake_case boundary is a no-op for them (no camel↔snake transform needed);
+ * `kind` is the literal `'announcement'` (message #1) or `'reply'`. A message is identified
+ * by its `seq` (the same `seq` Epic 5's react / current-contract target).
+ */
+export interface MessageWire {
+  /** `seq` of the underlying event — the message's identity + ordering key. */
+  seq: number;
+  /** The handle that authored the message (the announcer for #1, else the replier). */
+  actor: string;
+  /** The message body, verbatim (the announcement body for #1, else the reply body). */
+  body: string;
+  /** `'announcement'` for the seeding message #1, `'reply'` for a reply. */
+  kind: RoomMessage['kind'];
+}
+
+/**
+ * Map a camelCase core {@link RoomMessage} to its snake_case wire object. A flat field
+ * rename only (the field names happen to be single-word, so the values pass through
+ * unchanged) — this is boundary plumbing, NOT board logic; the ordered history itself is
+ * core's concern (`roomMessages`/`readRoom`).
+ */
+export function messageToWire(message: RoomMessage): MessageWire {
+  return {
+    seq: message.seq,
+    actor: message.actor,
+    body: message.body,
+    kind: message.kind,
+  };
 }

@@ -24,6 +24,7 @@ import { registerListProjectsTool } from './tools/list-projects.js';
 import { registerListRoomsTool } from './tools/list-rooms.js';
 import { registerLoginTool } from './tools/login.js';
 import { registerPostAnnouncementTool } from './tools/post-announcement.js';
+import { registerReadRoomTool } from './tools/read-room.js';
 import { registerRegisterTool } from './tools/register.js';
 import { registerReplyTool } from './tools/reply.js';
 import { registerUpdateFocusTool } from './tools/update-focus.js';
@@ -131,6 +132,14 @@ export function createBoardServer(deps: BoardServerDeps): McpServer {
   //     replier to the room's sub-board if not already a member ("acting = joining", FR10),
   //     in ONE transaction. Rejects ROOM_NOT_FOUND for an unknown room. Plain append:
   //     concurrent replies all land; the activator is the read-side min-seq derivation.
+  //   - read_room (Story 4.4): a ROOM READ tool — SESSION-REQUIRED (established identity
+  //     required, rejects NO_IDENTITY if unset) but NO membership: any identity can read any
+  //     room's COMPLETE ordered history on demand, even before joining (FR9 open read). Takes
+  //     a room_id; returns the room metadata + the messages array — the seeding announcement
+  //     as message #1, then every reply in seq order (each with seq/actor/body/kind). Never
+  //     truncated (append-only). Rejects ROOM_NOT_FOUND for an unknown room. Reads only (no
+  //     new event type / error code — the history is folded from announcement.posted +
+  //     room.replied; the message identity is the `seq` Epic 5's react/contract consume).
   registerRegisterTool(server, deps.dataAccess, sessionIdentity);
   registerLoginTool(server, deps.dataAccess, sessionIdentity);
   registerUpdateFocusTool(server, deps.dataAccess, sessionIdentity);
@@ -142,6 +151,7 @@ export function createBoardServer(deps: BoardServerDeps): McpServer {
   registerListAnnouncementsTool(server, deps.dataAccess, sessionIdentity);
   registerListRoomsTool(server, deps.dataAccess, sessionIdentity);
   registerReplyTool(server, deps.dataAccess, sessionIdentity);
+  registerReadRoomTool(server, deps.dataAccess, sessionIdentity);
 
   return server;
 }
