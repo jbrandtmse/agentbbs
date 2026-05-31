@@ -1,6 +1,37 @@
 // @agentbbs/core — board logic, event vocabulary, the DataAccess port, and the
-// error model. Populated by Story 1.3+. This barrel is the package's ONLY
-// public surface; consumers import from "@agentbbs/core", never deep paths.
+// error model. This barrel is the package's ONLY public surface; consumers import
+// from "@agentbbs/core", never deep paths. No default exports (lint).
+//
+// Story 1.3 populates the contract surface: the closed event vocabulary + payload
+// types, the folded/append event shapes, the DataAccess port (the NFR2 seam), and
+// the BoardError + closed code set.
 
-/** Package name marker; replaced by real exports in Story 1.3. */
-export const CORE_PACKAGE = '@agentbbs/core';
+// --- Event vocabulary (AC1) ---
+export { EVENT_TYPES } from './events/types.js';
+export type { EventType } from './events/types.js';
+
+// --- Event payloads (AC1) ---
+export type {
+  AnnouncementPostedPayload,
+  BoardJoinedPayload,
+  EventPayloadMap,
+  IdentityFocusUpdatedPayload,
+  IdentityRegisteredPayload,
+  IdentitySeenPayload,
+  MessageReactedPayload,
+  MessageUnreactedPayload,
+  PayloadOf,
+  ProjectAnnouncedPayload,
+  RoomParticipantAddedPayload,
+  RoomRepliedPayload,
+} from './events/payloads.js';
+
+// --- Event shapes (AC1) ---
+export type { Event, EventOf, NewEvent, NewEventOf } from './events/event.js';
+
+// --- DataAccess port — the NFR2 seam (AC2) ---
+export type { DataAccess } from './ports.js';
+
+// --- Error model (AC3) ---
+export { BOARD_ERROR_CODES, BoardError } from './errors.js';
+export type { BoardErrorCode } from './errors.js';

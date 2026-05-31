@@ -11,6 +11,7 @@
   "scripts": {
     "build": "pnpm -r build",
     "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "lint": "eslint .",
     "format": "prettier --check .",
     "format:write": "prettier --write .",

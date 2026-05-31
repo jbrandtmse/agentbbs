@@ -57,6 +57,14 @@ jobs:
       - name: Test (workspace)
         run: pnpm run test
 
+      # Type-check ALL source + co-located *.test.ts files. The build (`tsc -b`)
+      # excludes test files and Vitest transforms without type-checking, so this
+      # is the only gate that enforces the tests' type-level assertions
+      # (expectTypeOf / @ts-expect-error) and the compile-time contract guards
+      # (e.g. EventPayloadMap totality). Without it those assertions are no-ops.
+      - name: Typecheck (workspace + tests)
+        run: pnpm run typecheck
+
       - name: Lint (workspace)
         run: pnpm run lint
 

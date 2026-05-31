@@ -97,3 +97,92 @@ discoverable Vitest suite, which is the correct verification surface here.
 ## Next Steps
 - When real SQL lands in Story 1.4, tighten the append-invariant lint patterns against
   the actual queries and extend this suite with the data-access read/append paths.
+
+---
+
+# Test Automation Summary — Story 1.3
+
+**Story:** 1.3 — Event vocabulary, DataAccess port, and error model
+**Stage:** `bmad-qa-generate-e2e-tests` (epic-cycle QA) · 2026-05-30 · branch `AGENTBBS-1-epic1`
+**Framework:** Vitest 4.1.7 + TypeScript `tsc --noEmit` (new typecheck gate, see below).
+
+## Rule 3 exemption (noted)
+
+Non-user-facing **core contract** code (event vocabulary, the `DataAccess` interface,
+the `BoardError` + code model) — no UI / CLI / API runtime surface. Per skill-rules
+Rule 3 the real-runtime requirement does NOT apply; unit + type tests are the correct
+verification surface. The dev's 5 co-located suites are the deliverable under QA review.
+
+## Critical finding: type-level assertions were VACUOUS in the default suite (now fixed)
+
+The dev's tests rely heavily on `expectTypeOf(...)` and `@ts-expect-error`. Investigation
+confirmed these were **runtime no-ops** in the default gate, providing a false sense of
+coverage:
+
+- `tsconfig.base.json` **excludes `**/*.test.ts`** from every package build, so
+  `pnpm -r build` (`tsc -b`) never type-checked the test files.
+- `pnpm test` (Vitest) transforms via esbuild **without** type-checking and had **no
+  `typecheck` runner** configured (`grep typecheck` → no matches).
+
+**Proof:** changing `expectTypeOf(err.code).toEqualTypeOf<BoardErrorCode>()` to
+`...<number>()` — a blatantly false assertion — still produced **38 passed, exit 0** under
+`pnpm test`. The dev's one-off manual `tsc --noEmit` (cited in the Dev Agent Record) was
+never wired into the suite or CI, so it gave no ongoing protection.
+
+This affected one of the four load-bearing guarantees directly:
+**(4) every `EventType` has an `EventPayloadMap` entry** is enforced ONLY by the
+compile-time `extends Record<EventType, object>` constraint — there is no runtime
+registry to assert against — so with no typecheck in the gate, totality was unguarded.
+
+## Fix: wired a real typecheck gate (the minimal, correct closure)
+
+Rather than fabricate runtime equivalents for inherently compile-time guarantees, the
+type assertions were made load-bearing by adding a workspace typecheck gate:
+
+- **`tsconfig.typecheck.json`** (new, root) — non-composite `noEmit` pass that type-checks
+  ALL `packages/*/src` + `apps/*/src` source **and** `*.test.ts` files (overrides the base
+  `exclude` so tests ARE checked; `types: ["node"]` for the Story 1.2 boundary test).
+- **`typecheck` script** in root `package.json` → `tsc --noEmit -p tsconfig.typecheck.json`.
+- **CI step** "Typecheck (workspace + tests)" added to `.github/workflows/ci.yml` between
+  the test and lint gates (hard, non-zero-fails gate).
+
+**Validated the gate genuinely catches regressions** (each reverted after):
+- False `expectTypeOf<number>()` → **TS2344**, exit 2.
+- Misused `@ts-expect-error` (no error beneath) → **TS2578**, exit 2.
+- 11th event type added without a payload → **TS2741** (totality broken), exit 2 — confirms
+  guarantee (4) is now enforced.
+
+## Coverage of the four load-bearing guarantees
+
+| # | Guarantee | Coverage kind | Status |
+| - | --------- | ------------- | ------ |
+| 1 | `EVENT_TYPES` is EXACTLY the 10 values (count + exact membership/order + no dupes + shape) | **Runtime** (`types.test.ts`) | Genuine, solid |
+| 2 | `BoardError` throwable/catchable via `instanceof`, exposes `code`+`message` | **Runtime** (`errors.test.ts`) | Genuine, solid |
+| 3 | `BOARD_ERROR_CODES` contains the required closed set (×6 `toContain` + no dupes) | **Runtime** (`errors.test.ts`) | Genuine, solid |
+| 4 | Every `EventType` has an `EventPayloadMap` entry (totality) | **Compile-time only** (no runtime registry); now enforced by the typecheck gate + a secondary runtime witness cross-check | Now genuinely enforced |
+
+No new test FILES were added — the dev's runtime assertions for (1)–(3) are sound, and (4)
+is inherently a type-level property. The gap was the missing *enforcement* of the type
+layer, now closed by the typecheck gate. Adding redundant runtime tests would be
+gold-plating.
+
+## Gate runs (clean tree, all exit 0)
+
+| Command | Result |
+| --- | --- |
+| `pnpm test` | Test Files 6 passed (6) · Tests 38 passed (38) |
+| `pnpm run typecheck` (NEW) | `tsc --noEmit -p tsconfig.typecheck.json` — exit 0 |
+| `pnpm run lint` (`eslint .`) | clean |
+| `pnpm -r build` | 7 packages `tsc -b` Done |
+| `pnpm run format` (`prettier --check .`) | all files conform |
+
+## Rule 8 (discoverability)
+
+All 6 `*.test.ts` files on disk are picked up by the default `pnpm test` (6 test files
+reported), matched by `packages/*/src/**/*.test.{ts,tsx}`. The new typecheck gate covers
+the same files plus future ones via its glob. No second test runner introduced.
+
+## Next Steps
+- Story 1.4/1.6: when `data-access` implements `DataAccess`, add the producer↔consumer
+  integration test (real append → seq, ordered reads) that this contract-only story defers.
+- Keep the `typecheck` gate green as new packages add co-located type tests.

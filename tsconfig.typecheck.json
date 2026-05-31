@@ -1,0 +1,50 @@
+// Workspace type-check config (Story 1.3 QA — closes the type-assertion gap).
+//
+// WHY THIS EXISTS:
+//   The production build (`pnpm -r build` → per-package `tsc -b`) and the test
+//   runner (`pnpm test` → Vitest/esbuild) BOTH skip type-checking the co-located
+//   `*.test.ts` files:
+//     - tsconfig.base.json `exclude`s `**/*.test.ts` from every package build, so
+//       `tsc -b` never sees them.
+//     - Vitest transforms via esbuild WITHOUT type-checking and has no `typecheck`
+//       runner configured, so `expectTypeOf(...)` / `@ts-expect-error` in tests are
+//       runtime NO-OPS — a deliberately wrong type assertion still passes.
+//   Result: every type-level guarantee asserted in a test (e.g. EventPayloadMap
+//   totality — that every EventType has a payload — which is enforced ONLY by the
+//   compile-time `extends Record<EventType, object>` constraint, and the
+//   `@ts-expect-error` closed-vocabulary / closed-error-code guards) was VACUOUS in
+//   the default suite and in CI.
+//
+// WHAT THIS DOES:
+//   A single, non-composite, `noEmit` pass that type-checks ALL workspace source
+//   AND test files (it does NOT inherit the base `exclude`, so tests ARE checked).
+//   Driven by the root `typecheck` script and wired as a hard CI gate, so the
+//   test files' type assertions finally fail the run when they are wrong.
+//
+//   Kept as a SEPARATE config (not folded into the package builds) so the shipped
+//   `dist` stays test-free and the "packages never redefine the root config"
+//   convention is preserved — this is one root config, like vitest.config.ts.
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    // Node globals (`import.meta.url`, `node:*` builtins) are used by some test
+    // files (e.g. the Story 1.2 boundary-enforcement test). Vitest's
+    // expectTypeOf/assertType helpers resolve from the explicit `vitest` import,
+    // so they need no ambient types entry here.
+    "types": ["node"]
+  },
+  // Override the base `exclude` (which drops **/*.test.ts) so test files ARE
+  // type-checked here. Only skip dependencies / build output.
+  "exclude": ["**/node_modules/**", "**/dist/**"],
+  "include": [
+    "packages/*/src/**/*.ts",
+    "packages/*/src/**/*.tsx",
+    "apps/*/src/**/*.ts",
+    "apps/*/src/**/*.tsx"
+  ]
+}

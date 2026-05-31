@@ -24,3 +24,10 @@ TAB-separated, append-only. Fields: `<UTC> TAB <Story <id> | Epic N> TAB <stage>
 2026-05-31T05:00:00Z	Story 1.2	qa_complete	spawn_at=2026-05-31T04:46:00Z model=claude-opus-4-8 tests_added=4 first_run_failures=0 clarifications=0 closing_sections_present=true note=extended_boundary_enforcement_test_11to15_all_gates_exit0
 2026-05-31T05:12:00Z	Story 1.2	cr_complete	spawn_at=2026-05-31T05:01:00Z model=claude-opus-4-8 resolved=0 deferred=1 dismissed=0 high=0 med=0 low=1 clarifications=0 closing_sections_present=true verdict=approved note=rule5_amendment_verified_correct;low_unused_boundaries_dep_deferred
 2026-05-31T05:18:00Z	Story 1.2	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=frozen_install+clean_build+lint+test_15of15_all_exit0 model=claude-opus-4-8
+2026-05-31T05:19:00Z	Story 1.2	committed	sha=efe7164 submodules=
+2026-05-31T05:22:00Z	Story 1.3	story_created	path=_bmad-output/implementation-artifacts/1-3-event-vocabulary-dataaccess-port-and-error-model.md
+2026-05-31T05:45:00Z	Story 1.3	dev_complete	spawn_at=2026-05-31T05:23:00Z model=claude-opus-4-8 files=6 tests=5 clarifications=0 nfr_tripwires=0 adr_violations_surfaced=0 cycle_iteration=1 closing_sections_present=true note=async_dataaccess_nfr2;eventpayloadmap_total_coverage;exactly10_types_test
+2026-05-31T05:45:10Z	Story 1.3	adr_verifications_complete	result=none_required acs=ac1,ac2,ac3 model=claude-opus-4-8
+2026-05-31T06:05:00Z	Story 1.3	qa_complete	spawn_at=2026-05-31T05:46:00Z model=claude-opus-4-8 tests_added=0 first_run_failures=0 clarifications=0 closing_sections_present=true note=found_vacuous_typelevel_assertions+wired_tsconfig.typecheck+typecheck_script+ci_gate;38_tests_6_files_all_gates_exit0
+2026-05-31T06:20:00Z	Story 1.3	cr_complete	spawn_at=2026-05-31T06:06:00Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=5 high=0 med=0 low=0 clarifications=0 closing_sections_present=true verdict=approved note=typecheck_gate_proven_loadbearing_ts2741
+2026-05-31T06:26:00Z	Story 1.3	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=clean_build+typecheck+lint+test_38of38_all_exit0 model=claude-opus-4-8
