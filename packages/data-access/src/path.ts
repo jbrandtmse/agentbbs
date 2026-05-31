@@ -37,6 +37,21 @@ export interface ResolveDbPathOptions {
   startDir?: string;
   /** Environment to read the override from. Defaults to `process.env`. */
   env?: Record<string, string | undefined>;
+  /**
+   * Highest directory the walk-up may inspect. Markers at or below it are
+   * honoured; nothing above it is searched. Defaults to the filesystem root
+   * (search the whole ancestry). Bounds discovery so an invocation deep under a
+   * boundary cannot pick up an unrelated `.agentbbs/` higher in the tree (e.g. a
+   * user-level board at `~/.agentbbs`), and keeps tests hermetic regardless of
+   * what markers exist above `os.tmpdir()`.
+   */
+  stopDir?: string;
+}
+
+/** Options for {@link findProjectRoot}. */
+export interface FindProjectRootOptions {
+  /** See {@link ResolveDbPathOptions.stopDir}. */
+  stopDir?: string;
 }
 
 function isDir(path: string): boolean {
@@ -50,22 +65,33 @@ function isDir(path: string): boolean {
 /**
  * Find the project root by walking up from `startDir`. Returns the first dir
  * matching a marker (existing `.agentbbs/`, then `pnpm-workspace.yaml`, then
- * `.git`), or `startDir` itself if no marker is found before the filesystem root.
+ * `.git`), or `startDir` itself if no marker is found before the boundary.
+ *
+ * The walk stops at `options.stopDir` (inclusive) when given — markers at or
+ * below it are honoured, nothing above it is searched — otherwise at the
+ * filesystem root.
  */
-export function findProjectRoot(startDir: string): string {
-  let current = resolve(startDir);
+export function findProjectRoot(
+  startDir: string,
+  options: FindProjectRootOptions = {},
+): string {
+  const start = resolve(startDir);
+  const boundary =
+    options.stopDir !== undefined ? resolve(options.stopDir) : undefined;
+  let current = start;
 
   for (;;) {
     if (isDir(join(current, AGENTBBS_DIR))) return current;
     if (existsSync(join(current, 'pnpm-workspace.yaml'))) return current;
     if (existsSync(join(current, '.git'))) return current;
 
+    if (boundary !== undefined && current === boundary) break; // do not search above the boundary
     const parent = dirname(current);
     if (parent === current) break; // reached the filesystem root
     current = parent;
   }
 
-  return resolve(startDir);
+  return start;
 }
 
 /**
@@ -86,7 +112,7 @@ export function resolveDbPath(options: ResolveDbPathOptions = {}): string {
   }
 
   const startDir = options.startDir ?? process.cwd();
-  const root = findProjectRoot(startDir);
+  const root = findProjectRoot(startDir, { stopDir: options.stopDir });
   return join(root, AGENTBBS_DIR, DB_FILENAME);
 }
 

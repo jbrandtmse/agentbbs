@@ -70,7 +70,9 @@ describe('resolveDbPath — walk-up discovery (AC1)', () => {
     const nested = join(root, 'a', 'b');
     mkdirSync(nested, { recursive: true });
 
-    expect(findProjectRoot(nested)).toBe(root);
+    // stopDir bounds the walk at the temp root so a marker in a real ancestor
+    // (e.g. a user-level ~/.agentbbs above os.tmpdir()) can't shadow this case.
+    expect(findProjectRoot(nested, { stopDir: root })).toBe(root);
   });
 
   it('prefers an existing .agentbbs/ over higher-up markers', () => {
@@ -86,8 +88,23 @@ describe('resolveDbPath — walk-up discovery (AC1)', () => {
   it('falls back to the start dir when no marker is found', () => {
     const lonely = join(root, 'no', 'markers', 'here');
     mkdirSync(lonely, { recursive: true });
-    // root is a fresh mkdtemp dir with no .git/workspace above it inside tmp.
-    expect(findProjectRoot(lonely)).toBe(lonely);
+    // No marker within [lonely, root]; stopDir bounds the walk at the temp root
+    // so it cannot escape to a real ancestor marker (e.g. a user-level
+    // ~/.agentbbs above os.tmpdir()) and must fall back to the start dir.
+    expect(findProjectRoot(lonely, { stopDir: root })).toBe(lonely);
+  });
+
+  it('does not search above stopDir — a marker in an ancestor is ignored', () => {
+    // Marker sits ABOVE the boundary; the walk must stop at stopDir and fall
+    // back to the start dir rather than discovering the higher-up marker.
+    mkdirSync(join(root, '.git'), { recursive: true });
+    const boundary = join(root, 'project');
+    const nested = join(boundary, 'a', 'b');
+    mkdirSync(nested, { recursive: true });
+
+    expect(findProjectRoot(nested, { stopDir: boundary })).toBe(nested);
+    // Without the boundary it would find root's .git (sanity check).
+    expect(findProjectRoot(nested)).toBe(root);
   });
 });
 
