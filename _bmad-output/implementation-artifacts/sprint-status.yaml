@@ -37,6 +37,8 @@
 
 generated: 2026-05-31
 last_updated: 2026-05-31
+# story 4-0 code-review: done (2026-05-31) — CLEAN; 0 HIGH/MED/defer; 0 dismissed. All 4 ACs independently re-verified: no-dist typecheck GREEN + traceResolution→src (AC#1); paths typecheck-config-only (not in base/pkg configs); no-baseUrl validated vs installed TS 6.0.3 (TS5101/TS5090 probe, Rule 3); sentinel grep clean + no-dist pnpm test 322 GREEN + 0 in core/dist (AC#2); deferred-work reconciled exact (AC#3); honest gate lint/build7-7/typecheck/test322/format all 0, −2 = retired 2 alias-proof cases only (AC#4). QA 0-tests SOUND (no runtime surface; AC#1 untestable in Vitest by design)
+# story 4-0: review (2026-05-31) — dev complete; Epic 3 deferred cleanup. tsconfig.typecheck.json paths mapping (E3-typecheck-dist RESOLVED, no-dist typecheck green) + retired alias-proof fixture/test (3.0-a RESOLVED, no-dist pnpm test green); deferred-work.md reconciled. Full gate green; 322 tests (50 files) = 324−2 retired alias-proof cases; no new tool/event/error-code; no docs/adr
 # story 3-5 code-review: done (2026-05-31) — CLEAN; 0 HIGH/MED/defer; 2 dismissed; Rule 1 escape clause genuine (Epic 4 4.1/4.3/4.5 named, no Epic-3 post tool), Rule 3 real-runtime gate-vs-real-ledger green; touched-file vitest 2 files/9 tests + typecheck clean
 # story 3-5: review (2026-05-31) — dev complete, 323 tests green (+8: 6 core unit + 2 integration); membership write-gate primitive (isMember/requireMembership) + FR9 read-open lock-in; no new tool/event/error-code; AC #4 + post consumer forward-declared for Epic 4 (Rule 1 escape clause)
 # story 3-4 code-review: done (2026-05-31) — CLEAN; 0 HIGH/MED/defer; 3 dismissed; Rule 1+3 integration green (membership ⋈ identity round-trip); build 7/7 + targeted 14 tests green
@@ -94,7 +96,8 @@ development_status:
   epic-3-retrospective: done
 
   # Epic 4: Announcements, rooms & multi-party negotiation (MCP)
-  epic-4: backlog
+  epic-4: in-progress
+  4-0-epic-3-deferred-cleanup: done
   4-1-post-an-announcement-proto-room: backlog
   4-2-list-announcements-and-rooms: backlog
   4-3-first-reply-activates-the-room: backlog

@@ -65,11 +65,3 @@ export { announceProject } from './projects/announce-project.js';
 export type { AnnounceProjectInput } from './projects/announce-project.js';
 export { listProjects } from './projects/list-projects.js';
 export { joinBoard } from './projects/join-board.js';
-
-// --- Cross-package Vitest `src`-alias proof fixture (Story 3.0, AC #1) ---
-// Test-only sentinel: proves cross-package specifiers resolve to `src` via the
-// root vitest `resolve.alias` (not stale `dist`). See cross-package-alias-proof.ts.
-export {
-  CROSS_PACKAGE_ALIAS_PROOF,
-  crossPackageAliasProof,
-} from './cross-package-alias-proof.js';

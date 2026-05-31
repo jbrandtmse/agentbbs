@@ -24,6 +24,37 @@
 //   Kept as a SEPARATE config (not folded into the package builds) so the shipped
 //   `dist` stays test-free and the "packages never redefine the root config"
 //   convention is preserved — this is one root config, like vitest.config.ts.
+//
+// --- Cross-package `src` resolution via `paths` (Story 4.0, AC #1) ---
+//   The `paths` block below maps each `@agentbbs/<pkg>` specifier to that package's
+//   `src/index.ts` (live TypeScript SOURCE) — mirroring EXACTLY the Story 3.0 Vitest
+//   `resolve.alias` in vitest.config.ts (same five package roots). Without it, this
+//   single non-composite pass resolved cross-package specifiers through each package's
+//   `exports` → built `dist/*.d.ts`, so a freshly-added cross-package `core` export
+//   tripped `TS2307`/`TS2305` until `pnpm run build` was run first (the recurring
+//   Epic 2/3 build-first papercut — deferred-work E3-typecheck-dist). With the mapping,
+//   `pnpm run typecheck` resolves cross-package exports from `src` and no longer needs
+//   a prior build. (Verified against the installed TS 6.0.3 from a no-`dist` state:
+//   `--traceResolution` shows `@agentbbs/core` → `packages/core/src/index.ts`.)
+//
+//   NO `baseUrl` (intentional): the installed TypeScript is 6.0.3, where `baseUrl` is
+//   DEPRECATED (`TS5101`, removed in TS 7.0). TS 4.1+ permits `paths` WITHOUT `baseUrl`
+//   — the only constraint the 6.0 compiler enforces is that each path TARGET be
+//   relative (a leading `./`, else `TS5090` "Non-relative paths are not allowed when
+//   'baseUrl' is not set"); when `baseUrl` is omitted, targets resolve relative to THIS
+//   config file's directory (the repo root), which is exactly what we want. So the
+//   targets are written `./packages/<pkg>/src/index.ts`. This is future-proof past
+//   TS 7.0 and avoids the deprecation diagnostic entirely (no `ignoreDeprecations`).
+//
+//   BUILD-MODE HONESTY: this `paths` block is TYPECHECK-CONFIG-ONLY by design — it
+//   MUST NOT be added to tsconfig.base.json (which the per-package production builds
+//   extend), or the shipped `dist` would resolve cross-package imports to source and
+//   the build-honesty guard would be lost. `pnpm run build` (`pnpm -r build` →
+//   per-package `tsc -b`) still compiles each package against the real `exports`/`dist`
+//   and stays in the gate as the shipped-artifact guard, so this mapping does not mask
+//   a broken barrel `exports`. Package ROOTS only (object key = exact specifier match);
+//   no deep `@agentbbs/<pkg>/<subpath>` specifier is imported by any source/test
+//   (grep-verified, as Story 3.0 confirmed for the Vitest alias).
 {
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
@@ -36,7 +67,17 @@
     // files (e.g. the Story 1.2 boundary-enforcement test). Vitest's
     // expectTypeOf/assertType helpers resolve from the explicit `vitest` import,
     // so they need no ambient types entry here.
-    "types": ["node"]
+    "types": ["node"],
+    // Resolve cross-package `@agentbbs/*` specifiers to each package's `src` barrel
+    // (see header). No `baseUrl` (deprecated in TS 6.0); targets are RELATIVE to this
+    // config's directory (repo root) and so must carry a leading `./`.
+    "paths": {
+      "@agentbbs/core": ["./packages/core/src/index.ts"],
+      "@agentbbs/data-access": ["./packages/data-access/src/index.ts"],
+      "@agentbbs/mcp-server": ["./packages/mcp-server/src/index.ts"],
+      "@agentbbs/cli": ["./packages/cli/src/index.ts"],
+      "@agentbbs/ui-shared": ["./packages/ui-shared/src/index.ts"]
+    }
   },
   // Override the base `exclude` (which drops **/*.test.ts) so test files ARE
   // type-checked here. Only skip dependencies / build output.

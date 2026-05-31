@@ -19,9 +19,14 @@
 // was invisible to `mcp-server`/`cli`/`ui-shared` tests until `core` was rebuilt
 // (the Epic 2 "stale-dist `INTERNAL_ERROR`" papercut — deferred-work 2.4 /
 // superseded project-rules Rule 2). Intra-package tests were never affected; only
-// cross-package consumers saw the stale surface. Proven by
-// packages/mcp-server/src/cross-package-alias.proof.test.ts (a fresh `core` export
-// seen across the boundary from a stale-`dist` state).
+// cross-package consumers saw the stale surface. The standing proof is now the body
+// of Epic 3's mcp-server tests themselves: they import REAL `core` exports
+// (`announceProject`/`PROJECT_EXISTS`, `joinBoard`, `boardDirectory`,
+// `requireMembership`, …) through the `@agentbbs/core` specifier and run green from a
+// no-`dist` state — every one is a live cross-package `src`-alias exercise. (The
+// dedicated synthetic proof fixture + test — `cross-package-alias-proof.ts` /
+// `cross-package-alias.proof.test.ts` — were retired in Story 4.0 once those real
+// exports made them redundant; see deferred-work 3.0-a.)
 //
 // BUILD-MODE HONESTY: tests now run against `src`, so the shipped `dist`/`exports`
 // artifact is NOT validated by the test run. The `pnpm run build` step (kept in the
