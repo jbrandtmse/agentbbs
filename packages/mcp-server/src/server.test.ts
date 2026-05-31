@@ -35,6 +35,7 @@ function fakeDataAccess(): DataAccess {
   };
   return {
     append: unused('append'),
+    appendGuarded: unused('appendGuarded'),
     eventsSince: unused('eventsSince'),
     eventsByType: unused('eventsByType'),
     eventsByActor: unused('eventsByActor'),

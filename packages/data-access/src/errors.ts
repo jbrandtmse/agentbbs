@@ -49,3 +49,47 @@ export class StoreBusyError extends Error {
     this.cause = cause;
   }
 }
+
+/** Stable discriminant on {@link UniquenessConflictError} (SCREAMING_SNAKE). */
+export const UNIQUENESS_CONFLICT = 'UNIQUENESS_CONFLICT';
+
+/**
+ * Thrown by `appendGuarded` when a uniqueness guard is violated: an existing
+ * event of the guard's `type` already carries the guarded `value` in its payload
+ * `field`, so the conditional append must NOT proceed. The guarded transaction
+ * rolls back (nothing is inserted) and this typed error surfaces instead.
+ *
+ * DECISION — like {@link StoreBusyError}, this is a data-access-LOCAL typed error,
+ * NOT a `BoardError` code. The data-access seam owns storage outcomes, not board
+ * vocabulary: it knows a uniqueness predicate tripped but not whether that maps
+ * to `HANDLE_TAKEN`, `PROJECT_EXISTS`, or `ROOM_NOT_FOUND` — that DOMAIN mapping
+ * is `core`'s job (the SAME guard primitive serves all of them). `core` catches
+ * this at its boundary and throws the right `BoardError`; the closed public code
+ * set stays free of a storage-layer signal, and a raw SQLite error never escapes
+ * the seam. The carried {@link guard} lets the catcher see exactly which
+ * predicate failed when an append declares more than one.
+ *
+ * `instanceof UniquenessConflictError` is reliable: native `class extends Error`
+ * under the project's ES2023 target wires the prototype chain, and the explicit
+ * `Object.setPrototypeOf` is a defensive guard mirroring {@link StoreBusyError}.
+ */
+export class UniquenessConflictError extends Error {
+  /** Stable discriminant for callers mapping at their boundary. */
+  readonly code: typeof UNIQUENESS_CONFLICT;
+  /**
+   * The guard that tripped (the `{ type, field, value }` predicate), so a caller
+   * with multiple guards on one append can tell which precondition failed.
+   */
+  readonly guard: { type: string; field: string; value: string };
+
+  constructor(
+    message: string,
+    guard: { type: string; field: string; value: string },
+  ) {
+    super(message);
+    Object.setPrototypeOf(this, UniquenessConflictError.prototype);
+    this.name = 'UniquenessConflictError';
+    this.code = UNIQUENESS_CONFLICT;
+    this.guard = guard;
+  }
+}

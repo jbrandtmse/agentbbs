@@ -37,6 +37,7 @@ function fakeDataAccess(): DataAccess {
   };
   return {
     append: unused('append'),
+    appendGuarded: unused('appendGuarded'),
     eventsSince: unused('eventsSince'),
     eventsByType: unused('eventsByType'),
     eventsByActor: unused('eventsByActor'),
@@ -87,23 +88,24 @@ describe('createBoardServer bootstrap over a real in-memory transport', () => {
     });
   });
 
-  it('the bare bootstrap registers NO tools, so tools/list is not yet served (literal Story 2.1 state)', async () => {
-    // Story 2.1 is bootstrap-only: createBoardServer adds no board tools (the
-    // identity tools arrive in 2.2–2.5). The SDK's McpServer only wires the
-    // `tools/list` handler + advertises the `tools` capability once the first
-    // tool is registered — so on the bare server the capability is absent and a
-    // `listTools` call is rejected as an unknown method (-32601). Pinning this
-    // makes any future change to the bootstrap's advertised surface visible.
+  it('the bootstrap now serves tools/list and advertises the tools capability (Story 2.2 registered `register`)', async () => {
+    // Story 2.1 shipped a bare bootstrap with NO tools (capability absent,
+    // listTools → -32601). Story 2.2 registers the first board tool (`register`)
+    // inside createBoardServer, so the SDK now wires the `tools/list` handler and
+    // advertises the `tools` capability. This pins the post-2.2 advertised
+    // surface so any future change to the bootstrap's tool set stays visible.
     const server = createBoardServer({ dataAccess: fakeDataAccess() });
     const client = await connect(server);
 
-    expect(client.getServerCapabilities()?.tools).toBeUndefined();
-    await expect(client.listTools()).rejects.toMatchObject({ code: -32601 });
+    expect(client.getServerCapabilities()?.tools).toBeDefined();
+    const { tools } = await client.listTools();
+    expect(tools.map((t) => t.name)).toContain('register');
   });
 
-  it('once a tool is registered through registerCoreTool, a real Client can listTools and discover it', async () => {
+  it('once an extra tool is registered through registerCoreTool, a real Client can listTools and discover it alongside `register`', async () => {
     const server = createBoardServer({ dataAccess: fakeDataAccess() });
-    // The SAME production path the identity tools (2.2–2.5) will use.
+    // The SAME production path the identity tools use (register itself, plus
+    // login/focus/seen in 2.3–2.5). Register one more representative tool on top.
     registerCoreTool(
       server,
       'representative',
@@ -119,12 +121,13 @@ describe('createBoardServer bootstrap over a real in-memory transport', () => {
     expect(client.getServerCapabilities()?.tools).toBeDefined();
 
     const { tools } = await client.listTools();
-    expect(tools).toHaveLength(1);
-    const tool = tools[0];
-    expect(tool.name).toBe('representative');
-    expect(tool.description).toBe(
+    // The representative is discoverable next to the built-in `register` tool.
+    const tool = tools.find((t) => t.name === 'representative');
+    expect(tool).toBeDefined();
+    expect(tool?.description).toBe(
       'A representative tool that proves the bootstrap pattern.',
     );
+    expect(tools.map((t) => t.name)).toContain('register');
   });
 
   it('the listed input schema exposes the snake_case param names on the wire (discovery surface)', async () => {
@@ -141,7 +144,9 @@ describe('createBoardServer bootstrap over a real in-memory transport', () => {
     const client = await connect(server);
 
     const { tools } = await client.listTools();
-    const schema = tools[0].inputSchema;
+    const representative = tools.find((t) => t.name === 'representative');
+    expect(representative).toBeDefined();
+    const schema = representative!.inputSchema;
 
     // JSON-Schema object with the snake_case property names the project mandates
     // at the MCP boundary (NOT camelCase) — observable on the discovery surface,
@@ -162,7 +167,28 @@ describe('createBoardServer bootstrap over a real in-memory transport', () => {
     expect(schema.properties).not.toHaveProperty('currentFocus');
   });
 
-  it('two tools registered through the helper are both discoverable', async () => {
+  it('the built-in `register` tool advertises snake_case params on the discovery surface', async () => {
+    // The real Story-2.2 tool (not a representative) must expose `handle` +
+    // `current_focus` (snake_case) — never camelCase — on the wire schema.
+    const server = createBoardServer({ dataAccess: fakeDataAccess() });
+    const client = await connect(server);
+
+    const { tools } = await client.listTools();
+    const registerTool = tools.find((t) => t.name === 'register');
+    expect(registerTool).toBeDefined();
+    const schema = registerTool!.inputSchema;
+    expect(schema.type).toBe('object');
+    expect(Object.keys(schema.properties ?? {}).sort()).toEqual([
+      'current_focus',
+      'handle',
+    ]);
+    expect(schema.required).toEqual(
+      expect.arrayContaining(['handle', 'current_focus']),
+    );
+    expect(schema.properties).not.toHaveProperty('currentFocus');
+  });
+
+  it('extra tools registered through the helper are all discoverable alongside `register`', async () => {
     const server = createBoardServer({ dataAccess: fakeDataAccess() });
     registerCoreTool(
       server,
@@ -179,6 +205,11 @@ describe('createBoardServer bootstrap over a real in-memory transport', () => {
     const client = await connect(server);
 
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(['alpha', 'beta']);
+    // The two representatives plus the built-in `register`.
+    expect(tools.map((t) => t.name).sort()).toEqual([
+      'alpha',
+      'beta',
+      'register',
+    ]);
   });
 });

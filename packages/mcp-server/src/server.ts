@@ -15,6 +15,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { DataAccess } from '@agentbbs/core';
 
+import { registerRegisterTool } from './tools/register.js';
+
 /** The MCP server identity (mirrors `package.json` name/version). */
 export const SERVER_NAME = 'agentbbs';
 /** The server version reported to clients. Kept in sync with `package.json`. */
@@ -42,18 +44,16 @@ export interface BoardServerDeps {
  * @param deps The injected dependencies (the `DataAccess` port).
  */
 export function createBoardServer(deps: BoardServerDeps): McpServer {
-  // Referenced so the seam is wired now; the identity tools (Stories 2.2–2.5)
-  // close over this handle when they register through `registerCoreTool`.
-  void deps.dataAccess;
-
   const server = new McpServer({
     name: SERVER_NAME,
     version: SERVER_VERSION,
   });
 
-  // Identity tools are registered here by Stories 2.2–2.5, e.g.:
-  //   registerCoreTool(server, 'register', { description, inputSchema }, delegate)
-  // where each delegate calls core with deps.dataAccess. No board tools in 2.1.
+  // V1 identity tool surface. Each tool registers through `registerCoreTool` and
+  // closes over `deps.dataAccess`, delegating to core (no board logic here).
+  //   - register (Story 2.2): claim a unique handle → durable identity.
+  // login / update-focus / seen land in Stories 2.3–2.5 as sibling registrations.
+  registerRegisterTool(server, deps.dataAccess);
 
   return server;
 }
