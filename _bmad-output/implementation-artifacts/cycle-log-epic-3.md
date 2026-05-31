@@ -46,3 +46,4 @@
 2026-05-31T16:53:58Z	Story 3.5	committed	sha=a92f268 submodules=
 2026-05-31T17:32:35Z	Epic 3	epic_merge_skipped	reason=user_held_the_merge
 2026-05-31T17:32:35Z	Epic 3	epic_summary	stories=6 total_high=0 total_med=1 total_low=2 total_smoke_defects=0 rework_events=0 opus_stage_count=18 sonnet_stage_count=0 haiku_stage_count=0 tests_final=324
+2026-05-31T17:44:48Z	Epic 3	epic_merged_to_feature	repos=. feature_sha=8ad579f merge_sha=8ad579f submodules=
