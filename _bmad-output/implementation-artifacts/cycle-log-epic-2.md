@@ -10,3 +10,10 @@
 2026-05-31T08:22:35Z	Story 2.0	qa_complete	spawn_at=2026-05-31T08:15:00Z model=claude-opus-4-8 tests_added=0 first_run_failures=0 clarifications=0 closing_sections_present=true
 2026-05-31T08:26:59Z	Story 2.0	cr_complete	spawn_at=2026-05-31T08:19:00Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=0 high=0 med=0 low=0 clarifications=0 closing_sections_present=true
 2026-05-31T08:28:08Z	Story 2.0	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=gate-all-green-99-tests-gitattributes-active-boundaries-removed model=claude-opus-4-8
+2026-05-31T08:28:31Z	Story 2.0	committed	sha=7941143 submodules=
+2026-05-31T08:33:54Z	Story 2.1	story_created	path=_bmad-output/implementation-artifacts/2-1-mcp-server-bootstrap-with-validation-and-error-mapping.md integration_ac=present consumed_by=2.2,2.3,2.4,2.5
+2026-05-31T08:47:48Z	Story 2.1	dev_complete	spawn_at=2026-05-31T08:33:00Z model=claude-opus-4-8 files=9 clarifications=0 nfr_tripwires=0 adr_violations_surfaced=0 cycle_iteration=1 closing_sections_present=true
+2026-05-31T08:47:48Z	Story 2.1	adr_verifications_complete	tool=none acs=none result=none_required evidence=
+2026-05-31T08:53:30Z	Story 2.1	qa_complete	spawn_at=2026-05-31T08:47:00Z model=claude-opus-4-8 tests_added=17 first_run_failures=0 clarifications=0 closing_sections_present=true
+2026-05-31T08:59:25Z	Story 2.1	cr_complete	spawn_at=2026-05-31T08:53:00Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=2 high=0 med=0 low=2 clarifications=0 closing_sections_present=true
+2026-05-31T08:59:25Z	Story 2.1	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=real-stdio-spawn-initialize-handshake-serverInfo-agentbbs-real-sqlite-ledger-created model=claude-opus-4-8
