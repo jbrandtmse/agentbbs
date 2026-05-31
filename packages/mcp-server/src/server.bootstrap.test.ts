@@ -212,7 +212,8 @@ describe('createBoardServer bootstrap over a real in-memory transport', () => {
     // membership-write tool), `list_members` (Story 3.4 — the sub-board directory
     // READ tool), `post_announcement` (Story 4.1 — the first room tool),
     // `list_announcements` + `list_rooms` (Story 4.2 — the two room browse tools:
-    // proto-rooms vs activated rooms).
+    // proto-rooms vs activated rooms), `reply` (Story 4.3 — the keystone room WRITE
+    // tool: a reply activates a proto-room and auto-joins the replier).
     expect(tools.map((t) => t.name).sort()).toEqual([
       'alpha',
       'announce_project',
@@ -225,6 +226,7 @@ describe('createBoardServer bootstrap over a real in-memory transport', () => {
       'login',
       'post_announcement',
       'register',
+      'reply',
       'update_focus',
     ]);
   });

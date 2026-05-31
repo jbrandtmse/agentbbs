@@ -25,6 +25,7 @@ import { registerListRoomsTool } from './tools/list-rooms.js';
 import { registerLoginTool } from './tools/login.js';
 import { registerPostAnnouncementTool } from './tools/post-announcement.js';
 import { registerRegisterTool } from './tools/register.js';
+import { registerReplyTool } from './tools/reply.js';
 import { registerUpdateFocusTool } from './tools/update-focus.js';
 
 import type { SessionIdentity } from './session.js';
@@ -123,6 +124,13 @@ export function createBoardServer(deps: BoardServerDeps): McpServer {
   //     the still-proto rooms (no reply yet), list_rooms the activated rooms (≥1 reply) —
   //     both seq-ordered. Reject an unknown project_id with BOARD_NOT_FOUND. Reads only
   //     (the activation read-model is folded from room.replied; the reply WRITE-op is 4.3).
+  //   - reply (Story 4.3): the keystone room WRITE tool — SESSION-REQUIRED (actor = session
+  //     handle, rejects NO_IDENTITY if unset). Unlike post_announcement it does NOT require
+  //     membership — it GRANTS it: replying appends one room.replied (activating the
+  //     proto-room into a live room) plus a conditional board.joined that auto-joins the
+  //     replier to the room's sub-board if not already a member ("acting = joining", FR10),
+  //     in ONE transaction. Rejects ROOM_NOT_FOUND for an unknown room. Plain append:
+  //     concurrent replies all land; the activator is the read-side min-seq derivation.
   registerRegisterTool(server, deps.dataAccess, sessionIdentity);
   registerLoginTool(server, deps.dataAccess, sessionIdentity);
   registerUpdateFocusTool(server, deps.dataAccess, sessionIdentity);
@@ -133,6 +141,7 @@ export function createBoardServer(deps: BoardServerDeps): McpServer {
   registerPostAnnouncementTool(server, deps.dataAccess, sessionIdentity);
   registerListAnnouncementsTool(server, deps.dataAccess, sessionIdentity);
   registerListRoomsTool(server, deps.dataAccess, sessionIdentity);
+  registerReplyTool(server, deps.dataAccess, sessionIdentity);
 
   return server;
 }

@@ -16,10 +16,17 @@
 // is ACTIVE iff ≥1 `room.replied` for it has been folded (architecture.md line 251). The
 // `room.replied` branch sets the flag idempotently (a second reply keeps it active). This
 // is the read-model `list_rooms` (activated) vs `list_announcements` (still-proto)
-// consume. It is a BOOLEAN existence derivation ONLY: WHICH reply is the activator (the
-// MIN-`seq` one) and the announcement-as-message-#1 seeding are Story 4.3 (the reply
-// WRITE-op, which appends `room.replied` + auto-joins the replier) / 4.4 (the ordered
-// read) concerns — NOT computed here.
+// consume.
+//
+// ACTIVATOR READ-MODEL (Story 4.3): alongside the boolean `active`, the same `room.replied`
+// branch derives the ACTIVATOR — the MIN-`seq` reply for the room — exposed as
+// `activatedBy` (the activating reply's actor) + `activatedAtSeq` (its `seq`), both
+// `undefined` for a proto-room. Because the fold consumes events in `seq` order, the FIRST
+// `room.replied` seen for a room IS the min-`seq` one: the branch sets the activator ONCE
+// and a later (higher-`seq`) reply never overwrites it. This is the read model the reply
+// WRITE-op (Story 4.3, which appends `room.replied` + auto-joins the replier) and 4.4's
+// "announcement is message #1, then replies by `seq`" build on. The announcement-as-
+// message-#1 ordered read itself is still a 4.4 concern — only the activator is derived here.
 //
 // ADDITIVE-by-design (Stories 4.3 / 4.4 / 4.5): the fold has extension seams the later
 // room events slot into without reshaping the record — participants (4.5) and the message
@@ -36,8 +43,9 @@ import type { Event } from '../events/event.js';
  * `projectId` is the sub-board the announcement was posted to (the board scope, added to
  * the payload in Story 4.1). `postedBy` is the actor of the `announcement.posted` event.
  * `seq` is that event's `seq` — the deterministic ordering key (Story 4.2) and the value
- * `postAnnouncement` returns. `active` is DERIVED (existence-of-reply, Story 4.2); it is
- * NOT a stored column.
+ * `postAnnouncement` returns. `active` is DERIVED (existence-of-reply, Story 4.2);
+ * `activatedBy`/`activatedAtSeq` are DERIVED (the min-`seq` reply, Story 4.3). None is a
+ * stored column.
  */
 export interface Room {
   /** Globally-unique slug id of the room (subject slug + disambiguator) — directory key. */
@@ -56,10 +64,23 @@ export interface Room {
    * Whether the room is ACTIVE — derived (existence-of-reply), never stored. A
    * proto-room (announcement with no reply yet) is INACTIVE (`false`); folding any
    * `room.replied` for the room flips it to `true` (Story 4.2's activation read-model;
-   * idempotent — a second reply keeps it active). It is a boolean derivation, NOT the
-   * activator identity (the min-`seq` activator + message-#1 read are Story 4.3/4.4).
+   * idempotent — a second reply keeps it active). It is a boolean derivation; the
+   * activator IDENTITY is `activatedBy`/`activatedAtSeq` below.
    */
   active: boolean;
+  /**
+   * The handle that ACTIVATED the room — the actor of the MIN-`seq` `room.replied` for
+   * it (Story 4.3's activator read-model). Derived, never stored; `undefined` for a
+   * proto-room (no reply yet). Set ONCE from the first reply seen in `seq` order and
+   * never overwritten by a later reply.
+   */
+  activatedBy?: string;
+  /**
+   * `seq` of the activating reply (the MIN-`seq` `room.replied` for the room). Derived,
+   * never stored; `undefined` for a proto-room. Paired with {@link activatedBy}; set
+   * once from the first reply in `seq` order.
+   */
+  activatedAtSeq?: number;
 }
 
 /**
@@ -109,15 +130,25 @@ export function foldRooms(events: Event[]): Map<string, Room> {
       case 'room.replied': {
         // Activation read-model (Story 4.2): a room is ACTIVE iff ≥1 reply exists for
         // it. Flip the existing record's `active` to `true` (idempotent — a second
-        // reply re-asserts the same flag). Existence-of-reply ONLY: the activator
-        // identity (min-`seq`) is a Story 4.3/4.4 concern, not derived here. A reply for
-        // an unknown room (no minted announcement) is defensively ignored — it never
-        // mints a phantom room (unreachable: a reply targets an existing announcement
-        // with a lower `seq`, already folded).
+        // reply re-asserts the same flag).
+        //
+        // Activator read-model (Story 4.3): the MIN-`seq` reply is the activator. The
+        // fold runs in `seq` order, so the FIRST reply seen for a room is the min-`seq`
+        // one — record it ONCE (when `activatedBy` is still unset) and let later
+        // (higher-`seq`) replies keep the room active WITHOUT overwriting the activator.
+        //
+        // A reply for an unknown room (no minted announcement) is defensively ignored —
+        // it never mints a phantom room (unreachable: a reply targets an existing
+        // announcement with a lower `seq`, already folded).
         const { roomId } = event.payload;
         const room = directory.get(roomId);
         if (room) {
           room.active = true;
+          if (room.activatedBy === undefined) {
+            // First reply in `seq` order = the activator. Set once, never overwritten.
+            room.activatedBy = event.actor;
+            room.activatedAtSeq = event.seq;
+          }
         }
         break;
       }

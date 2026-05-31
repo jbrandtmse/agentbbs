@@ -82,3 +82,10 @@ export type { PostAnnouncementInput } from './rooms/post-announcement.js';
 // into proto-rooms (listAnnouncements, active=false) vs activated rooms (listRooms,
 // active=true), both `seq`-ordered; BOARD_NOT_FOUND for an unknown board. Open reads. ---
 export { listAnnouncements, listRooms } from './rooms/list-rooms.js';
+
+// --- Reply room operation (Story 4.3) — the keystone: a reply activates a proto-room into
+// a live room. Plain append of `room.replied` ALWAYS + a conditional `board.joined`
+// (idempotent auto-join — "acting = joining", FR10) in ONE transaction; ROOM_NOT_FOUND for
+// an unknown room. The activator is the read-side min-`seq` derivation (rooms projection). ---
+export { reply } from './rooms/reply.js';
+export type { ReplyInput } from './rooms/reply.js';

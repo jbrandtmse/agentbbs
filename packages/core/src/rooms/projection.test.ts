@@ -10,6 +10,12 @@
 // `active` to `true` (existence-of-reply); a room with no reply stays `false`; multiple
 // replies keep it active (idempotent); a `room.replied` for an unknown room is ignored
 // (mints no phantom room, flips nothing).
+//
+// Story 4.3 adds the ACTIVATOR read-model coverage: the MIN-`seq` `room.replied` for a
+// room is its activator, exposed as `activatedBy`/`activatedAtSeq` (undefined for a
+// proto-room). Because the fold consumes events in `seq` order, the FIRST reply seen sets
+// the activator once and a later (higher-`seq`) reply never overwrites it — even when the
+// stream interleaves replies across rooms.
 
 import { describe, expect, it } from 'vitest';
 
@@ -228,5 +234,78 @@ describe('foldRooms — activation read-model (Story 4.2, AC #1)', () => {
     expect([...dir.keys()]).toEqual(['real-room']);
     expect(dir.get('real-room')?.active).toBe(false);
     expect(findRoom(events, 'ghost-room')).toBeUndefined();
+  });
+});
+
+describe('foldRooms — activator read-model (Story 4.3, AC #1, #4)', () => {
+  it('a proto-room (no reply) has activatedBy/activatedAtSeq undefined', () => {
+    const events = [
+      posted(1, 'ada', 'board-a', 'proto', 'Proto', 'need a hand'),
+    ];
+    const room = findRoom(events, 'proto');
+    expect(room?.active).toBe(false);
+    expect(room?.activatedBy).toBeUndefined();
+    expect(room?.activatedAtSeq).toBeUndefined();
+  });
+
+  it('the first reply sets the activator to that reply (handle + its seq)', () => {
+    const events = [
+      posted(
+        1,
+        'ada',
+        'board-a',
+        'calling-interface',
+        'Calling Interface',
+        'x',
+      ),
+      replied(2, 'bob', 'calling-interface', 'on it'),
+    ];
+    const room = findRoom(events, 'calling-interface');
+    expect(room?.active).toBe(true);
+    expect(room?.activatedBy).toBe('bob');
+    expect(room?.activatedAtSeq).toBe(2);
+  });
+
+  it('a second (higher-seq) reply leaves the activator unchanged (still the first), room stays active', () => {
+    const events = [
+      posted(
+        1,
+        'ada',
+        'board-a',
+        'calling-interface',
+        'Calling Interface',
+        'x',
+      ),
+      replied(2, 'bob', 'calling-interface', 'first reply (the activator)'),
+      replied(3, 'cleo', 'calling-interface', 'second reply'),
+      replied(4, 'ada', 'calling-interface', 'third reply'),
+    ];
+    const room = findRoom(events, 'calling-interface');
+    expect(room?.active).toBe(true);
+    // The MIN-seq reply is the activator; later replies never overwrite it.
+    expect(room?.activatedBy).toBe('bob');
+    expect(room?.activatedAtSeq).toBe(2);
+  });
+
+  it('the activator is the LOWEST-seq reply even when replies interleave across rooms', () => {
+    // A single seq-ordered stream with two rooms whose replies are interleaved. Each
+    // room's activator must be its own MIN-seq reply, independent of the other room.
+    const events = [
+      posted(1, 'ada', 'board-a', 'room-a', 'Room A', 'a'),
+      posted(2, 'ada', 'board-a', 'room-b', 'Room B', 'b'),
+      // room-b is replied to FIRST (seq 3), then room-a (seq 4), then more, interleaved.
+      replied(3, 'bob', 'room-b', 'b activator'),
+      replied(4, 'cleo', 'room-a', 'a activator'),
+      replied(5, 'dave', 'room-b', 'b second'),
+      replied(6, 'erin', 'room-a', 'a second'),
+    ];
+    const a = findRoom(events, 'room-a');
+    const b = findRoom(events, 'room-b');
+    expect(a?.activatedBy).toBe('cleo');
+    expect(a?.activatedAtSeq).toBe(4);
+    expect(b?.activatedBy).toBe('bob');
+    expect(b?.activatedAtSeq).toBe(3);
+    expect(a?.active).toBe(true);
+    expect(b?.active).toBe(true);
   });
 });

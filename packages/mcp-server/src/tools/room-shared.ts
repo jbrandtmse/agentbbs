@@ -51,11 +51,38 @@ export const announcementSubjectSchema = z
  * The shared Zod validator for a `body` wire param: a non-empty, length-bounded string
  * (see {@link ANNOUNCEMENT_BODY_MAX_LENGTH} — the formal 256 KB cap is deferred to Epic 5).
  * The SDK validates against this and rejects a missing/empty body BEFORE the delegate runs.
+ * REUSED by `reply` (Story 4.3) for its reply `body` — the interim cap is shared across the
+ * room write tools, and Epic 5 Story 5.1 replaces it with the formal 256 KB / BODY_TOO_LARGE.
  */
 export const announcementBodySchema = z
   .string()
   .min(1)
   .max(ANNOUNCEMENT_BODY_MAX_LENGTH);
+
+/**
+ * Max room-id length — a defensive boundary so a pathologically long id is rejected at the
+ * boundary rather than scanned against the ledger. Mirrors the project-id/subject caps.
+ */
+export const ROOM_ID_MAX_LENGTH = 200;
+
+/**
+ * The shared Zod validator for a `room_id` wire param (Story 4.3, `reply` is its first
+ * consumer): a non-empty, length-bounded string in the slug charset. A `roomId` is a slug
+ * the post op allocates (subject slug + disambiguator) — lowercase ASCII alphanumerics
+ * joined by single hyphens — so it matches `^[a-z0-9]+(?:-[a-z0-9]+)*$` (identical to the
+ * `project_id` shape; a room id and a project id share the slug charset). The SDK validates
+ * against this and rejects an invalid id (empty, uppercase, leading/trailing/double hyphen,
+ * non-slug characters) BEFORE the delegate runs, so core only ever sees a well-formed id —
+ * an unknown-but-well-formed id is the ROOM_NOT_FOUND case core owns.
+ */
+export const roomIdSchema = z
+  .string()
+  .min(1)
+  .max(ROOM_ID_MAX_LENGTH)
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, {
+    message:
+      'room_id must be a slug: lowercase alphanumerics separated by single hyphens',
+  });
 
 /** The snake_case room payload returned on the wire (camelCase mapped here). */
 export interface RoomWire {
@@ -72,11 +99,28 @@ export interface RoomWire {
    * read-model, derived in `foldRooms`); a still-proto room (no reply yet) is `false`.
    */
   active: boolean;
+  /**
+   * The handle that ACTIVATED the room — the actor of the MIN-`seq` reply (the Story 4.3
+   * activator read-model, derived in `foldRooms`). OMITTED (absent) for a still-proto
+   * room (no reply yet) rather than carried as `null`/`undefined`, so its presence on the
+   * wire mirrors `active === true`.
+   */
+  activated_by?: string;
+  /**
+   * `seq` of the activating reply (the MIN-`seq` reply). Paired with {@link activated_by};
+   * OMITTED for a still-proto room (no reply yet).
+   */
+  activated_at_seq?: number;
 }
 
-/** Map the camelCase core {@link Room} to its snake_case wire object. */
+/**
+ * Map the camelCase core {@link Room} to its snake_case wire object. The derived activator
+ * fields (`activated_by`/`activated_at_seq`, Story 4.3) are OMITTED when the room is still
+ * a proto-room (the core `Room` carries them as `undefined`), so a proto-room's wire object
+ * does not carry empty activator keys — they appear exactly when the room is active.
+ */
 export function roomToWire(room: Room): RoomWire {
-  return {
+  const wire: RoomWire = {
     room_id: room.roomId,
     project_id: room.projectId,
     subject: room.subject,
@@ -85,4 +129,11 @@ export function roomToWire(room: Room): RoomWire {
     seq: room.seq,
     active: room.active,
   };
+  if (room.activatedBy !== undefined) {
+    wire.activated_by = room.activatedBy;
+  }
+  if (room.activatedAtSeq !== undefined) {
+    wire.activated_at_seq = room.activatedAtSeq;
+  }
+  return wire;
 }
