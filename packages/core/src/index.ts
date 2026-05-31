@@ -133,3 +133,22 @@ export type {
 // the stored per-identity high-water-mark as `seq > max(checkCursor, roomJoinSeq)` (Rule 1 escape
 // clause — no Epic-4 consumer, NO new MCP tool/event/error code/stored cursor here). ---
 export { roomJoinSeq, roomMessagesSince } from './rooms/join-cursor.js';
+
+// --- Reactions projection + react/unreact ops (Story 5.2) — LIVE 👍 state DERIVED by
+// latest-react-wins per actor (an actor is live iff their latest message.reacted/unreacted for a
+// messageSeq is a react), NEVER stored (THE APPEND INVARIANT). `liveReactors`/`hasLiveReaction`
+// project the live set; `findMessage` resolves the event at a `seq` to a message (its roomId) or
+// undefined (→ MESSAGE_NOT_FOUND). `react`/`unreact` resolve the message (MESSAGE_NOT_FOUND),
+// gate the actor on participating in its room (NOT_A_MEMBER — reacting REQUIRES participation, it
+// does NOT grant it: only reply/add_participant are "acting = joining"), then PLAIN-append a
+// message.reacted / message.unreacted { messageSeq } (idempotent no-op if already live / not
+// live). Cannot-retract-another is INHERENT (unreact appends only the actor's own event; liveness
+// is per-actor). This is the message-reaction surface Story 5.3's current-contract computes from. ---
+export {
+  findMessage,
+  hasLiveReaction,
+  liveReactors,
+} from './rooms/reactions.js';
+export type { ResolvedMessage } from './rooms/reactions.js';
+export { react, unreact } from './rooms/react.js';
+export type { ReactResult } from './rooms/react.js';

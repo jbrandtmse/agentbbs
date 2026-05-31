@@ -6,9 +6,11 @@
 //   - MESSAGE #1: the room's seeding `announcement.posted` (`kind: 'announcement'`), and
 //   - then every `room.replied` for that room (`kind: 'reply'`),
 // each carrying its `seq` (the message identity Epic 5's `message.reacted.messageSeq`
-// targets), its `actor`, and its `body`. There is NO separate `message.posted` event type
-// in the closed vocabulary — posting a message to a room IS `room.replied` (Story 4.3); so
-// the history folds exactly `announcement.posted` (msg #1) + the `room.replied`(s).
+// targets), its `actor`, its `body`, and (Story 5.2) its LIVE 👍 `reactions` (the handles
+// holding a live reaction on it, DERIVED by latest-react-wins via `liveReactors`). There is NO
+// separate `message.posted` event type in the closed vocabulary — posting a message to a room IS
+// `room.replied` (Story 4.3); so the history folds exactly `announcement.posted` (msg #1) + the
+// `room.replied`(s), each annotated with its live reactors.
 //
 // Ordering: ascending by `seq` — the authoritative total order (`seq`, NEVER `createdAt`).
 // The announcement that MINTS a room always has a strictly lower `seq` than any reply to it
@@ -26,6 +28,8 @@
 // `body` is the announcement body. Session-agnostic (no `actor` param) — the only identity
 // precondition (an established identity; this is an OPEN read, FR9 — NO membership) is
 // enforced at the MCP tool, not here.
+
+import { liveReactors } from './reactions.js';
 
 import type { Event } from '../events/event.js';
 
@@ -52,6 +56,13 @@ export interface RoomMessage {
   body: string;
   /** Whether this message is the seeding announcement (#1) or a reply. */
   kind: RoomMessageKind;
+  /**
+   * The handles holding a LIVE 👍 on this message (Story 5.2) — DERIVED by latest-react-wins per
+   * actor (`liveReactors`), NEVER stored (THE APPEND INVARIANT). Ordered by each live reactor's
+   * current react `seq`; `[]` for an un-reacted message. This is the observable surface for
+   * react/unreact (and the input Story 5.3's current-contract reads).
+   */
+  reactions: string[];
 }
 
 /**
@@ -91,6 +102,10 @@ export function roomMessages(events: Event[], roomId: string): RoomMessage[] {
             actor: event.actor,
             body: event.payload.body,
             kind: 'announcement',
+            // LIVE 👍 reactors for this message (Story 5.2), DERIVED from the full stream by
+            // latest-react-wins. `[]` until someone reacts. The fold sees the whole `events`
+            // stream, so each message's reactions are computed against every reaction in it.
+            reactions: liveReactors(events, event.seq),
           });
         }
         break;
@@ -104,6 +119,8 @@ export function roomMessages(events: Event[], roomId: string): RoomMessage[] {
             actor: event.actor,
             body: event.payload.body,
             kind: 'reply',
+            // LIVE 👍 reactors for this reply (Story 5.2), DERIVED from the full stream.
+            reactions: liveReactors(events, event.seq),
           });
         }
         break;

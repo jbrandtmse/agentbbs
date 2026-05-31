@@ -139,18 +139,21 @@ describe('readRoom — activated room → metadata + ordered history (AC #1)', (
         actor: 'ada',
         body: 'looking for a second pair of eyes',
         kind: 'announcement',
+        reactions: [],
       },
       {
         seq: room.activatedAtSeq,
         actor: 'bob',
         body: 'I can take a look',
         kind: 'reply',
+        reactions: [],
       },
       {
         seq: room.activatedAtSeq! + 1,
         actor: 'cleo',
         body: 'me too',
         kind: 'reply',
+        reactions: [],
       },
     ]);
     // Message #1 is the announcement, identified by the room's announcement seq.
@@ -181,7 +184,13 @@ describe('readRoom — proto-room → single-message history, active=false (AC #
 
     // Exactly one message: the seeding announcement (its body, kind=announcement).
     expect(messages).toEqual([
-      { seq: room.seq, actor: 'ada', body: 'seed body', kind: 'announcement' },
+      {
+        seq: room.seq,
+        actor: 'ada',
+        body: 'seed body',
+        kind: 'announcement',
+        reactions: [],
+      },
     ]);
   });
 });

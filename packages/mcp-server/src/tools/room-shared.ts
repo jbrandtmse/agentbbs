@@ -76,6 +76,15 @@ export const roomIdSchema = z
       'room_id must be a slug: lowercase alphanumerics separated by single hyphens',
   });
 
+/**
+ * The shared Zod validator for a `message_seq` wire param (Story 5.2; `react`/`unreact` are its
+ * consumers): a positive integer. A message is identified by its event `seq` (a 1-based
+ * AUTOINCREMENT total-order key), so a non-integer / zero / negative value cannot be a message —
+ * the SDK rejects it at the boundary BEFORE the delegate runs (no event appended), and a
+ * well-formed-but-not-a-message seq is the `MESSAGE_NOT_FOUND` case core owns (`findMessage`).
+ */
+export const messageSeqSchema = z.number().int().positive();
+
 /** The snake_case room payload returned on the wire (camelCase mapped here). */
 export interface RoomWire {
   room_id: string;
@@ -131,11 +140,12 @@ export function roomToWire(room: Room): RoomWire {
 }
 
 /**
- * The snake_case message payload returned on the wire by `read_room` (Story 4.4). One entry
- * in a room's ordered history. The field names are all single-word (`seq`/`actor`/`body`/
- * `kind`), so the snake_case boundary is a no-op for them (no camel↔snake transform needed);
- * `kind` is the literal `'announcement'` (message #1) or `'reply'`. A message is identified
- * by its `seq` (the same `seq` Epic 5's react / current-contract target).
+ * The snake_case message payload returned on the wire by `read_room` (Story 4.4; `reactions`
+ * added Story 5.2). One entry in a room's ordered history. The field names are all single-word
+ * (`seq`/`actor`/`body`/`kind`/`reactions`), so the snake_case boundary is a no-op for them (no
+ * camel↔snake transform needed); `kind` is the literal `'announcement'` (message #1) or
+ * `'reply'`, and `reactions` is the message's LIVE 👍 reactor handles (a string array). A message
+ * is identified by its `seq` (the same `seq` Epic 5's react / current-contract target).
  */
 export interface MessageWire {
   /** `seq` of the underlying event — the message's identity + ordering key. */
@@ -146,13 +156,20 @@ export interface MessageWire {
   body: string;
   /** `'announcement'` for the seeding message #1, `'reply'` for a reply. */
   kind: RoomMessage['kind'];
+  /**
+   * The handles holding a LIVE 👍 on this message (Story 5.2) — DERIVED by latest-react-wins,
+   * `[]` when un-reacted. So `read_room` shows each message's live 👍 (the observable for
+   * react/unreact AND the input Story 5.3 reads). Already a snake_case-safe single word.
+   */
+  reactions: string[];
 }
 
 /**
  * Map a camelCase core {@link RoomMessage} to its snake_case wire object. A flat field
  * rename only (the field names happen to be single-word, so the values pass through
- * unchanged) — this is boundary plumbing, NOT board logic; the ordered history itself is
- * core's concern (`roomMessages`/`readRoom`).
+ * unchanged — `reactions` is a string array carried as-is) — this is boundary plumbing, NOT
+ * board logic; the ordered history (and the derived live reactors) is core's concern
+ * (`roomMessages`/`readRoom`/`liveReactors`).
  */
 export function messageToWire(message: RoomMessage): MessageWire {
   return {
@@ -160,5 +177,6 @@ export function messageToWire(message: RoomMessage): MessageWire {
     actor: message.actor,
     body: message.body,
     kind: message.kind,
+    reactions: message.reactions,
   };
 }

@@ -76,6 +76,28 @@ function joined(seq: number, actor: string, projectId: string): Event {
   };
 }
 
+/** Build a message.reacted Event (a live 👍 on the message at messageSeq, by actor). */
+function reacted(seq: number, actor: string, messageSeq: number): Event {
+  return {
+    seq,
+    type: 'message.reacted',
+    actor,
+    createdAt: `2026-05-31T00:00:0${seq}.000Z`,
+    payload: { messageSeq },
+  };
+}
+
+/** Build a message.unreacted Event (retracts actor's 👍 from the message at messageSeq). */
+function unreacted(seq: number, actor: string, messageSeq: number): Event {
+  return {
+    seq,
+    type: 'message.unreacted',
+    actor,
+    createdAt: `2026-05-31T00:00:0${seq}.000Z`,
+    payload: { messageSeq },
+  };
+}
+
 describe('roomMessages — proto-room is a single-message history (AC #5)', () => {
   it('a room with an announcement but no reply → exactly one message (the announcement, kind=announcement)', () => {
     const events: Event[] = [
@@ -99,6 +121,7 @@ describe('roomMessages — proto-room is a single-message history (AC #5)', () =
         actor: 'ada',
         body: 'looking for a second pair of eyes',
         kind: 'announcement',
+        reactions: [],
       },
     ]);
   });
@@ -126,9 +149,27 @@ describe('roomMessages — full ordered history (AC #1)', () => {
     const messages = roomMessages(events, 'need-a-reviewer');
 
     expect(messages).toEqual([
-      { seq: 5, actor: 'ada', body: 'announcement body', kind: 'announcement' },
-      { seq: 6, actor: 'bob', body: 'bob first reply', kind: 'reply' },
-      { seq: 7, actor: 'cleo', body: 'cleo second reply', kind: 'reply' },
+      {
+        seq: 5,
+        actor: 'ada',
+        body: 'announcement body',
+        kind: 'announcement',
+        reactions: [],
+      },
+      {
+        seq: 6,
+        actor: 'bob',
+        body: 'bob first reply',
+        kind: 'reply',
+        reactions: [],
+      },
+      {
+        seq: 7,
+        actor: 'cleo',
+        body: 'cleo second reply',
+        kind: 'reply',
+        reactions: [],
+      },
     ]);
     // Message #1 is the announcement; the rest are replies — discriminated by `kind`.
     expect(messages[0]?.kind).toBe('announcement');
@@ -196,6 +237,7 @@ describe('roomMessages — no truncation under growth (AC #4)', () => {
       actor: 'cleo',
       body: 'reply two',
       kind: 'reply',
+      reactions: [],
     });
   });
 });
@@ -221,7 +263,13 @@ describe('roomMessages — unknown room → empty list (Task 2 turns this into R
     expect(roomMessages(events, 'orphan-room')).toEqual([
       // The reply still appears IF asked for its room, but there is no announcement message —
       // existence is the op's concern. Assert the reply-only shape explicitly.
-      { seq: 1, actor: 'bob', body: 'lonely reply', kind: 'reply' },
+      {
+        seq: 1,
+        actor: 'bob',
+        body: 'lonely reply',
+        kind: 'reply',
+        reactions: [],
+      },
     ]);
   });
 });
@@ -259,6 +307,73 @@ describe('roomMessages — cross-room isolation (AC #1)', () => {
 
     // No id from room A appears in room B's history and vice-versa (disjoint).
     expect(a.every((m) => !b.includes(m))).toBe(true);
+  });
+});
+
+describe('roomMessages — each message carries its LIVE 👍 reactors (Story 5.2, AC #5)', () => {
+  it('a message with no reactions has reactions: []; a reacted message lists its live reactors', () => {
+    const events: Event[] = [
+      posted(
+        1,
+        'ada',
+        'calling-interface',
+        'need-a-reviewer',
+        'Need a reviewer',
+        'seed',
+      ),
+      replied(2, 'bob', 'need-a-reviewer', 'bob reply'),
+      replied(3, 'cleo', 'need-a-reviewer', 'cleo reply'),
+      // bob reacts cleo's reply (seq 3); cleo reacts bob's reply (seq 2).
+      reacted(4, 'bob', 3),
+      reacted(5, 'cleo', 2),
+    ];
+
+    const messages = roomMessages(events, 'need-a-reviewer');
+    // Announcement (#1, seq 1): no reactions. bob's reply (seq 2): cleo live. cleo's reply
+    // (seq 3): bob live. The reactions are the per-message live-reactor handles.
+    expect(messages.map((m) => m.reactions)).toEqual([[], ['cleo'], ['bob']]);
+  });
+
+  it('reflects latest-wins: a react then unreact on the same message leaves reactions: []', () => {
+    const events: Event[] = [
+      posted(
+        1,
+        'ada',
+        'calling-interface',
+        'need-a-reviewer',
+        'Need a reviewer',
+        'seed',
+      ),
+      replied(2, 'bob', 'need-a-reviewer', 'bob reply'),
+      reacted(3, 'cleo', 2),
+      unreacted(4, 'cleo', 2), // cleo retracts → no longer live
+    ];
+
+    const messages = roomMessages(events, 'need-a-reviewer');
+    // bob's reply (seq 2) had a react then unreact by cleo → no live reactors.
+    expect(messages.find((m) => m.seq === 2)?.reactions).toEqual([]);
+  });
+
+  it('multiple live reactors on one message appear in react seq order', () => {
+    const events: Event[] = [
+      posted(
+        1,
+        'ada',
+        'calling-interface',
+        'need-a-reviewer',
+        'Need a reviewer',
+        'seed',
+      ),
+      replied(2, 'bob', 'need-a-reviewer', 'bob reply'),
+      reacted(3, 'cleo', 2),
+      reacted(4, 'dan', 2),
+    ];
+
+    const messages = roomMessages(events, 'need-a-reviewer');
+    expect(messages.find((m) => m.seq === 2)?.reactions).toEqual([
+      'cleo',
+      'dan',
+    ]);
   });
 });
 

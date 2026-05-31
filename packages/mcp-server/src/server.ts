@@ -25,9 +25,11 @@ import { registerListProjectsTool } from './tools/list-projects.js';
 import { registerListRoomsTool } from './tools/list-rooms.js';
 import { registerLoginTool } from './tools/login.js';
 import { registerPostAnnouncementTool } from './tools/post-announcement.js';
+import { registerReactTool } from './tools/react.js';
 import { registerReadRoomTool } from './tools/read-room.js';
 import { registerRegisterTool } from './tools/register.js';
 import { registerReplyTool } from './tools/reply.js';
+import { registerUnreactTool } from './tools/unreact.js';
 import { registerUpdateFocusTool } from './tools/update-focus.js';
 
 import type { SessionIdentity } from './session.js';
@@ -152,6 +154,18 @@ export function createBoardServer(deps: BoardServerDeps): McpServer {
   //     transaction. Re-adding an existing participant is an idempotent no-op. Rejects
   //     ROOM_NOT_FOUND for an unknown room. Returns { room, participants } — participation is
   //     DERIVED (room.replied actors ∪ room.participant_added handles), never stored.
+  // Messaging / reaction tools (Epic 5):
+  //   - react / unreact (Story 5.2): the two MESSAGE tools — SESSION-REQUIRED (actor = session
+  //     handle, rejects NO_IDENTITY if unset). Place / retract a 👍 on a specific message (by its
+  //     seq). Both GATE the actor on PARTICIPATING in the message's room (reacting ratifies a
+  //     negotiation you are in — it does NOT join you, unlike reply) → NOT_A_MEMBER otherwise; and
+  //     resolve the message → MESSAGE_NOT_FOUND (added to the closed set in core, additively) for a
+  //     non-message message_seq. react appends one message.reacted; unreact one message.unreacted
+  //     — each PLAIN (reactions are not uniqueness-constrained), idempotent (re-react when already
+  //     live / unreact when not live appends nothing). Cannot-retract-another is INHERENT (unreact
+  //     appends only the actor's own event; liveness is per-actor). The LIVE 👍 state is DERIVED by
+  //     latest-react-wins, never stored — read_room surfaces each message's live reactors. Each
+  //     returns { message_seq, reactions } (the message's live reactors after the op).
   registerRegisterTool(server, deps.dataAccess, sessionIdentity);
   registerLoginTool(server, deps.dataAccess, sessionIdentity);
   registerUpdateFocusTool(server, deps.dataAccess, sessionIdentity);
@@ -165,6 +179,8 @@ export function createBoardServer(deps: BoardServerDeps): McpServer {
   registerReplyTool(server, deps.dataAccess, sessionIdentity);
   registerReadRoomTool(server, deps.dataAccess, sessionIdentity);
   registerAddParticipantTool(server, deps.dataAccess, sessionIdentity);
+  registerReactTool(server, deps.dataAccess, sessionIdentity);
+  registerUnreactTool(server, deps.dataAccess, sessionIdentity);
 
   return server;
 }

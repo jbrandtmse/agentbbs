@@ -48,6 +48,8 @@ interface WireMessage {
   actor: string;
   body: string;
   kind: 'announcement' | 'reply';
+  /** The live 👍 reactor handles (Story 5.2) — `[]` for an un-reacted message. */
+  reactions: string[];
 }
 
 /**
@@ -211,6 +213,8 @@ describe('read_room over a real MCP client + real ledger (AC #6)', () => {
       bobBody,
       cleoBody,
     ]);
+    // Story 5.2: every message carries a `reactions` array — `[]` here (nothing reacted yet).
+    expect(messages.map((m) => m.reactions)).toEqual([[], [], []]);
     // Strictly increasing seqs — message #1 (the announcement) strictly precedes both replies.
     expect(messages[0]!.seq).toBeLessThan(messages[1]!.seq);
     expect(messages[1]!.seq).toBeLessThan(messages[2]!.seq);
