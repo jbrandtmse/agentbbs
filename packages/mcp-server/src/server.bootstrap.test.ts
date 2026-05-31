@@ -215,8 +215,11 @@ describe('createBoardServer bootstrap over a real in-memory transport', () => {
     // proto-rooms vs activated rooms), `reply` (Story 4.3 — the keystone room WRITE
     // tool: a reply activates a proto-room and auto-joins the replier), `read_room`
     // (Story 4.4 — a room's COMPLETE ordered history: announcement #1 then replies by
-    // seq; an open read, NO membership).
+    // seq; an open read, NO membership), `add_participant` (Story 4.5 — the 12th/final
+    // V1 tool: a participant pulls a registered peer into a room; the target joins the
+    // room + its sub-board).
     expect(tools.map((t) => t.name).sort()).toEqual([
+      'add_participant',
       'alpha',
       'announce_project',
       'beta',

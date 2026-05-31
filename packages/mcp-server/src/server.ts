@@ -16,6 +16,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { DataAccess } from '@agentbbs/core';
 
 import { createSessionIdentity } from './session.js';
+import { registerAddParticipantTool } from './tools/add-participant.js';
 import { registerAnnounceProjectTool } from './tools/announce-project.js';
 import { registerJoinBoardTool } from './tools/join-board.js';
 import { registerListAnnouncementsTool } from './tools/list-announcements.js';
@@ -140,6 +141,17 @@ export function createBoardServer(deps: BoardServerDeps): McpServer {
   //     truncated (append-only). Rejects ROOM_NOT_FOUND for an unknown room. Reads only (no
   //     new event type / error code — the history is folded from announcement.posted +
   //     room.replied; the message identity is the `seq` Epic 5's react/contract consume).
+  //   - add_participant (Story 4.5 — the 12th/final V1 tool): a ROOM WRITE tool —
+  //     SESSION-REQUIRED (actor = session handle, rejects NO_IDENTITY if unset). Pulls a
+  //     registered peer into a room: the ACTOR must be a participant of the room (replied or
+  //     previously added) else NOT_A_MEMBER; the target handle must be registered else
+  //     HANDLE_NOT_FOUND (added to the closed set in core, additively). On success appends one
+  //     room.participant_added (actor = the adder, payload.handle = the target) PLUS a
+  //     conditional board.joined whose ACTOR is the TARGET (the pulled-in peer joins the
+  //     room's sub-board if not already — "acting = joining" applied to the target), in ONE
+  //     transaction. Re-adding an existing participant is an idempotent no-op. Rejects
+  //     ROOM_NOT_FOUND for an unknown room. Returns { room, participants } — participation is
+  //     DERIVED (room.replied actors ∪ room.participant_added handles), never stored.
   registerRegisterTool(server, deps.dataAccess, sessionIdentity);
   registerLoginTool(server, deps.dataAccess, sessionIdentity);
   registerUpdateFocusTool(server, deps.dataAccess, sessionIdentity);
@@ -152,6 +164,7 @@ export function createBoardServer(deps: BoardServerDeps): McpServer {
   registerListRoomsTool(server, deps.dataAccess, sessionIdentity);
   registerReplyTool(server, deps.dataAccess, sessionIdentity);
   registerReadRoomTool(server, deps.dataAccess, sessionIdentity);
+  registerAddParticipantTool(server, deps.dataAccess, sessionIdentity);
 
   return server;
 }

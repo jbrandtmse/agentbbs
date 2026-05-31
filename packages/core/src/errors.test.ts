@@ -51,6 +51,11 @@ describe('BoardError (AC3)', () => {
       // exist — join/post against an unannounced board (join_board is its first
       // consumer). Distinct from ROOM_NOT_FOUND (Epic 4 rooms).
       'BOARD_NOT_FOUND',
+      // Story 4.5 (additive): a referenced TARGET identity handle is not
+      // registered — add_participant by an unknown handle (add_participant is its
+      // first consumer). Distinct from LOGIN_UNKNOWN (the session actor's own
+      // handle at login) and NOT_A_MEMBER (actor lacks participation).
+      'HANDLE_NOT_FOUND',
     ] as const;
     for (const code of required) {
       expect(BOARD_ERROR_CODES).toContain(code);

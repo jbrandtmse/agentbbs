@@ -100,3 +100,19 @@ export { roomMessages } from './rooms/room-history.js';
 export type { RoomMessage, RoomMessageKind } from './rooms/room-history.js';
 export { readRoom } from './rooms/read-room.js';
 export type { RoomHistory } from './rooms/read-room.js';
+
+// --- Room-participants projection + add-participant op (Story 4.5) — a participant pulls a
+// registered peer into a room mid-negotiation. `roomParticipants`/`isParticipant` derive a
+// room's participants (actors of `room.replied` ∪ handles of `room.participant_added`, de-duped
+// in seq order; the announcer-who-never-replied is NOT one). `addParticipant` gates the actor
+// as a participant (NOT_A_MEMBER), resolves the target (HANDLE_NOT_FOUND if unregistered),
+// then PLAIN-appends `room.participant_added` (actor=adder) + a conditional `board.joined`
+// (actor=TARGET — the pulled-in peer joins the board, mirroring reply's auto-join) in ONE
+// transaction; idempotent if the target already participates. ROOM_NOT_FOUND for an unknown
+// room. This projection is also Story 4.6's join-cursor input. ---
+export { roomParticipants, isParticipant } from './rooms/participants.js';
+export { addParticipant } from './rooms/add-participant.js';
+export type {
+  AddParticipantInput,
+  AddParticipantResult,
+} from './rooms/add-participant.js';
