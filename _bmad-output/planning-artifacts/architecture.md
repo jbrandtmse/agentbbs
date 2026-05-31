@@ -450,7 +450,7 @@ agentbbs/
 ├── tsconfig.base.json                 # shared strict TS config; packages extend it
 ├── .eslintrc.cjs                      # naming + import-boundary rules (step 5)
 ├── .prettierrc
-├── vitest.workspace.ts                # one Vitest config across the workspace
+├── vitest.config.ts                   # one Vitest config (test.projects) across the workspace
 ├── .gitignore                         # ignores .agentbbs/ , dist/ , *.vsix
 ├── .github/
 │   └── workflows/

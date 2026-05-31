@@ -87,7 +87,7 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - One shared `ui-shared` React core mounted twice; per-surface deltas (web brand hex vs `--vscode-*`) confined to theme/chrome; `tokens.css` is the single styling-token source.
 
 ### Testing
-- Vitest, **co-located `*.test.ts(x)`**, one root `vitest.workspace.ts` — packages extend root configs, never redefine.
+- Vitest, **co-located `*.test.ts(x)`**, one root `vitest.config.ts` using `test.projects` (Vitest 4 removed the standalone `vitest.workspace.ts` file) — packages extend root configs, never redefine.
 - The **multi-process concurrency test** (N×M appends → unique, strictly monotonic `seq`, no lost writes) is the correctness gate **before** anything builds on the ledger.
 - The **round-trip fidelity test** (export → import → identical derived state) lives in `cli/` and proves derived state is reproducible from events alone.
 
@@ -95,7 +95,7 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - **Research First** (`.claude/rules/research-first.md`): when <100% certain about an API signature, version-specific behavior, or config, **research with Perplexity MCP** (`search`/`reason`/`deep_research`) against authoritative sources **before coding**; summarize decisions → map to concrete steps → verify (build/lint/test). Critical here because versions are leading-edge (MCP SDK 1.29.0, Zod v4, Vite 8, Node 24) and memory may be stale.
 - DB at `<project-root>/.agentbbs/agentbbs.db` (walk-up from CWD; `AGENTBBS_DB` override); `.agentbbs/` is git-ignored, created on first run.
 - Body cap **256 KB** per message ([ASSUMPTION], OQ1 — confirm at init); reject above with `BODY_TOO_LARGE`.
-- Root-level single configs (tsconfig.base, ESLint, Prettier, Vitest); packages extend, never redefine.
+- Root-level single configs (tsconfig.base, ESLint flat config, Prettier, one `vitest.config.ts`); packages extend, never redefine.
 
 ### Don't-miss anti-patterns (reject in review)
 - A `rooms.status='active'` column or any persisted derived state → must be computed.

@@ -1,0 +1,68 @@
+# pnpm workspace definition (pnpm 11.3).
+# Only packages/* and apps/* are buildable workspace packages.
+# integration/bmad/ is intentionally NOT matched here — it holds non-code
+# assets (AR24) and must never be treated as a pnpm package.
+packages:
+  - 'packages/*'
+  - 'apps/*'
+
+# Default catalog: single source of truth for shared dependency versions.
+# Reference an entry from a package.json with the "catalog:" protocol.
+# NOTE: declaring a version here does NOT install it — the owning story adds
+# the actual dependency that references it. These are pinned ahead of use so
+# later stories pull aligned versions. Verified against the npm registry
+# 2026-05-30.
+catalog:
+  # Toolchain
+  typescript: 6.0.3
+  '@types/node': ^24.12.4
+
+  # MCP server (Epic 2+) — pinned minor per project-context.md
+  '@modelcontextprotocol/sdk': 1.29.0
+  zod: ^4.4.3
+
+  # data-access (Story 1.4) — only data-access may import better-sqlite3
+  better-sqlite3: ^12.10.0
+  '@types/better-sqlite3': ^7.6.13
+
+  # UI / web (Epic 9) — apps/web
+  vite: ^8.0.14
+  '@vitejs/plugin-react': ^6.0.2
+  react: ^19.2.6
+  react-dom: ^19.2.6
+  '@types/react': ^19.2.15
+  '@types/react-dom': ^19.2.3
+
+  # Inert markdown rendering (Epic 9)
+  markdown-it: ^14.2.0
+  '@types/markdown-it': ^14.1.2
+  dompurify: ^3.4.7
+  shiki: ^4.1.0
+
+  # Testing (Story 1.2+)
+  vitest: ^4.1.7
+
+  # Lint / format toolchain (Story 1.2) — verified against the npm registry 2026-05-30.
+  # ESLint 10 flat config + typescript-eslint 8 (peer eslint ^10) + boundary/import/
+  # naming plugins. eslint-plugin-import-x is the maintained successor to
+  # eslint-plugin-import for flat config + TS.
+  eslint: ^10.4.1
+  '@eslint/js': ^10.0.1
+  typescript-eslint: ^8.60.0
+  eslint-plugin-boundaries: ^6.0.2
+  eslint-plugin-import-x: ^4.16.2
+  eslint-plugin-unicorn: ^64.0.0
+  eslint-config-prettier: ^10.1.8
+  prettier: ^3.8.3
+  globals: ^17.6.0
+
+# Approve the dependency build scripts we need. pnpm 11 blocks dependency build
+# scripts by default and fails `pnpm install` (ERR_PNPM_IGNORED_BUILDS) until each
+# is explicitly approved here. Keeps install/CI non-interactive and green.
+#   - unrs-resolver: native resolver backing eslint-plugin-import-x (Story 1.2).
+#   - better-sqlite3: compiles a native addon (node-gyp / prebuild) on install;
+#     the ONLY package allowed to depend on it (Story 1.4). Required on Linux CI
+#     (`pnpm install --frozen-lockfile`) so the addon is built and loadable.
+allowBuilds:
+  unrs-resolver: true
+  better-sqlite3: true
