@@ -44,3 +44,5 @@
 2026-05-31T16:52:55Z	Story 3.5	cr_complete	spawn_at=2026-05-31T16:54:00Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=2 high=0 med=0 low=0 clarifications=0 closing_sections_present=true
 2026-05-31T16:53:42Z	Story 3.5	smoke_complete	method=api result=pass iterations=1 defects_caught=0 evidence=_bmad-output/implementation-artifacts/tests/smoke-3-5.mjs model=claude-opus-4-8
 2026-05-31T16:53:58Z	Story 3.5	committed	sha=a92f268 submodules=
+2026-05-31T17:32:35Z	Epic 3	epic_merge_skipped	reason=user_held_the_merge
+2026-05-31T17:32:35Z	Epic 3	epic_summary	stories=6 total_high=0 total_med=1 total_low=2 total_smoke_defects=0 rework_events=0 opus_stage_count=18 sonnet_stage_count=0 haiku_stage_count=0 tests_final=324
