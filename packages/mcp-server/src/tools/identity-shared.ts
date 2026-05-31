@@ -11,7 +11,7 @@
 
 import { z } from 'zod';
 
-import type { Identity } from '@agentbbs/core';
+import type { DirectoryMember, Identity } from '@agentbbs/core';
 
 /**
  * The canonical handle charset + form (architecture.md#Identifiers): lowercase
@@ -74,5 +74,31 @@ export function identityToWire(identity: Identity): IdentityWire {
     current_focus: identity.currentFocus,
     created_at: identity.createdAt,
     last_seen: identity.lastSeen,
+  };
+}
+
+/**
+ * The snake_case sub-board member entry returned by `list_members` (Story 3.4). A
+ * SUBSET of {@link IdentityWire} — the directory surfaces who / what / last-seen, but
+ * not the member's `created_at`. Reuses the identity wire field convention (the same
+ * snake_case names) rather than inventing a second rename.
+ */
+export interface MemberWire {
+  handle: string;
+  current_focus: string;
+  last_seen: string;
+}
+
+/**
+ * Map a camelCase core {@link DirectoryMember} to its snake_case wire object. Reuses
+ * the {@link identityToWire} field convention (`current_focus`, `last_seen`); the member
+ * entry is a subset of the identity wire (no `created_at`), so this is the one place the
+ * member rename lives — it does not duplicate a second snake_case mapping.
+ */
+export function memberToWire(member: DirectoryMember): MemberWire {
+  return {
+    handle: member.handle,
+    current_focus: member.currentFocus,
+    last_seen: member.lastSeen,
   };
 }

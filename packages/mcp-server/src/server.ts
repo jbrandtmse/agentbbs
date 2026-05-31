@@ -16,6 +16,10 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { DataAccess } from '@agentbbs/core';
 
 import { createSessionIdentity } from './session.js';
+import { registerAnnounceProjectTool } from './tools/announce-project.js';
+import { registerJoinBoardTool } from './tools/join-board.js';
+import { registerListMembersTool } from './tools/list-members.js';
+import { registerListProjectsTool } from './tools/list-projects.js';
 import { registerLoginTool } from './tools/login.js';
 import { registerRegisterTool } from './tools/register.js';
 import { registerUpdateFocusTool } from './tools/update-focus.js';
@@ -71,19 +75,42 @@ export function createBoardServer(deps: BoardServerDeps): McpServer {
   // one tool (register/login) is the actor read by the others (Stories 2.4/2.5).
   const sessionIdentity = deps.sessionIdentity ?? createSessionIdentity();
 
-  // V1 identity tool surface. Each tool registers through `registerCoreTool` and
-  // closes over `deps.dataAccess` (+ the session holder), delegating to core (no
-  // board logic here).
+  // V1 tool surface. Each tool registers through `registerCoreTool` and closes over
+  // `deps.dataAccess` (+ the session holder), delegating to core (no board logic here).
+  // Identity tools (Epic 2):
   //   - register (Story 2.2): claim a unique handle → durable identity; also
   //     establishes the session (a fresh agent is "established" too — FR2/FR37).
   //   - login (Story 2.3): re-establish an existing identity for the session.
   //   - update_focus (Story 2.4): the first SESSION-REQUIRED tool — its actor is
   //     the session handle (NO handle param); rejects with NO_IDENTITY if none set.
-  // identity.seen lands in Story 2.5 as a sibling registration, reading the session
-  // holder as its acting actor.
+  // Project / sub-board tools (Epic 3):
+  //   - announce_project (Story 3.1): the first BOARD tool — SESSION-REQUIRED (actor
+  //     = session handle, rejects NO_IDENTITY if unset). Creates a project sub-board
+  //     (project.announced + the announcer's board.joined, atomically) with the
+  //     caller as first member; rejects a duplicate title/id with PROJECT_EXISTS.
+  //     Consumed by Stories 3.2–3.4 (list_projects, join_board, sub-board directory).
+  //   - list_projects (Story 3.2): the first BOARD READ tool — SESSION-REQUIRED
+  //     (established identity required, rejects NO_IDENTITY if unset) but NO
+  //     membership: a non-member sees the full main-board directory (FR9 board-wide
+  //     open read). Takes no params; returns the projects directory ordered by seq.
+  //   - join_board (Story 3.3): SESSION-REQUIRED (actor = session handle, rejects
+  //     NO_IDENTITY if unset). Makes the caller a member of an existing sub-board
+  //     (appends board.joined); rejects an unknown project_id with BOARD_NOT_FOUND;
+  //     re-joining is an idempotent no-op. The membership it writes is the foundation
+  //     for Story 3.4 (sub-board directory) and Story 3.5 (NOT_A_MEMBER post gate).
+  //   - list_members (Story 3.4): a BOARD READ tool — SESSION-REQUIRED (established
+  //     identity required, rejects NO_IDENTITY if unset) but NO membership: a
+  //     non-member can read a sub-board's directory (FR9 board-wide open read). Takes a
+  //     project_id; returns each member's handle/current_focus/last_seen in join order
+  //     (the membership ⋈ identity join). Rejects an unknown project_id with
+  //     BOARD_NOT_FOUND.
   registerRegisterTool(server, deps.dataAccess, sessionIdentity);
   registerLoginTool(server, deps.dataAccess, sessionIdentity);
   registerUpdateFocusTool(server, deps.dataAccess, sessionIdentity);
+  registerAnnounceProjectTool(server, deps.dataAccess, sessionIdentity);
+  registerListProjectsTool(server, deps.dataAccess, sessionIdentity);
+  registerJoinBoardTool(server, deps.dataAccess, sessionIdentity);
+  registerListMembersTool(server, deps.dataAccess, sessionIdentity);
 
   return server;
 }

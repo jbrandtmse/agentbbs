@@ -46,3 +46,30 @@ export type { RegisterInput } from './identity/register.js';
 export { login } from './identity/login.js';
 export { updateFocus } from './identity/update-focus.js';
 export { recordSeen } from './identity/record-seen.js';
+
+// --- Projects directory projection (Story 3.1) ---
+export { findProject, foldProjects } from './projects/projection.js';
+export type { Project } from './projects/projection.js';
+
+// --- Sub-board member directory (Story 3.4) ---
+export { boardDirectory } from './projects/board-directory.js';
+export type { DirectoryMember } from './projects/board-directory.js';
+
+// --- Membership write-gate primitive (Story 3.5) — read is open board-wide; posting
+// requires membership. Pure authorization (no append); the first consumers are the
+// Epic 4 post tools (4.1 / 4.3 / 4.5), per the Rule 1 escape clause. ---
+export { isMember, requireMembership } from './projects/membership.js';
+
+// --- Project board operations (Story 3.1 / 3.2) ---
+export { announceProject } from './projects/announce-project.js';
+export type { AnnounceProjectInput } from './projects/announce-project.js';
+export { listProjects } from './projects/list-projects.js';
+export { joinBoard } from './projects/join-board.js';
+
+// --- Cross-package Vitest `src`-alias proof fixture (Story 3.0, AC #1) ---
+// Test-only sentinel: proves cross-package specifiers resolve to `src` via the
+// root vitest `resolve.alias` (not stale `dist`). See cross-package-alias-proof.ts.
+export {
+  CROSS_PACKAGE_ALIAS_PROOF,
+  crossPackageAliasProof,
+} from './cross-package-alias-proof.js';
