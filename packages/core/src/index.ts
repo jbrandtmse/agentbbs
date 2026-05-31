@@ -51,6 +51,10 @@ export { recordSeen } from './identity/record-seen.js';
 export { findProject, foldProjects } from './projects/projection.js';
 export type { Project } from './projects/projection.js';
 
+// --- Sub-board member directory (Story 3.4) ---
+export { boardDirectory } from './projects/board-directory.js';
+export type { DirectoryMember } from './projects/board-directory.js';
+
 // --- Project board operations (Story 3.1 / 3.2) ---
 export { announceProject } from './projects/announce-project.js';
 export type { AnnounceProjectInput } from './projects/announce-project.js';

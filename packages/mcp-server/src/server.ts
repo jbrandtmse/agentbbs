@@ -18,6 +18,7 @@ import type { DataAccess } from '@agentbbs/core';
 import { createSessionIdentity } from './session.js';
 import { registerAnnounceProjectTool } from './tools/announce-project.js';
 import { registerJoinBoardTool } from './tools/join-board.js';
+import { registerListMembersTool } from './tools/list-members.js';
 import { registerListProjectsTool } from './tools/list-projects.js';
 import { registerLoginTool } from './tools/login.js';
 import { registerRegisterTool } from './tools/register.js';
@@ -97,12 +98,19 @@ export function createBoardServer(deps: BoardServerDeps): McpServer {
   //     (appends board.joined); rejects an unknown project_id with BOARD_NOT_FOUND;
   //     re-joining is an idempotent no-op. The membership it writes is the foundation
   //     for Story 3.4 (sub-board directory) and Story 3.5 (NOT_A_MEMBER post gate).
+  //   - list_members (Story 3.4): a BOARD READ tool — SESSION-REQUIRED (established
+  //     identity required, rejects NO_IDENTITY if unset) but NO membership: a
+  //     non-member can read a sub-board's directory (FR9 board-wide open read). Takes a
+  //     project_id; returns each member's handle/current_focus/last_seen in join order
+  //     (the membership ⋈ identity join). Rejects an unknown project_id with
+  //     BOARD_NOT_FOUND.
   registerRegisterTool(server, deps.dataAccess, sessionIdentity);
   registerLoginTool(server, deps.dataAccess, sessionIdentity);
   registerUpdateFocusTool(server, deps.dataAccess, sessionIdentity);
   registerAnnounceProjectTool(server, deps.dataAccess, sessionIdentity);
   registerListProjectsTool(server, deps.dataAccess, sessionIdentity);
   registerJoinBoardTool(server, deps.dataAccess, sessionIdentity);
+  registerListMembersTool(server, deps.dataAccess, sessionIdentity);
 
   return server;
 }
