@@ -210,16 +210,29 @@ describe('createBoardServer bootstrap over a real in-memory transport', () => {
     // `announce_project` (Story 3.1 — the first board tool), `list_projects`
     // (Story 3.2 — the first board READ tool), `join_board` (Story 3.3 — the
     // membership-write tool), `list_members` (Story 3.4 — the sub-board directory
-    // READ tool).
+    // READ tool), `post_announcement` (Story 4.1 — the first room tool),
+    // `list_announcements` + `list_rooms` (Story 4.2 — the two room browse tools:
+    // proto-rooms vs activated rooms), `reply` (Story 4.3 — the keystone room WRITE
+    // tool: a reply activates a proto-room and auto-joins the replier), `read_room`
+    // (Story 4.4 — a room's COMPLETE ordered history: announcement #1 then replies by
+    // seq; an open read, NO membership), `add_participant` (Story 4.5 — the 12th/final
+    // V1 tool: a participant pulls a registered peer into a room; the target joins the
+    // room + its sub-board).
     expect(tools.map((t) => t.name).sort()).toEqual([
+      'add_participant',
       'alpha',
       'announce_project',
       'beta',
       'join_board',
+      'list_announcements',
       'list_members',
       'list_projects',
+      'list_rooms',
       'login',
+      'post_announcement',
+      'read_room',
       'register',
+      'reply',
       'update_focus',
     ]);
   });

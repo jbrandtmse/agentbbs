@@ -64,7 +64,12 @@ function mixedEvents(): NewEvent[] {
     {
       type: 'announcement.posted',
       actor: 'bob',
-      payload: { roomId: 'calling-interface', subject: 'Subj', body: 'Body' },
+      payload: {
+        projectId: 'agentbbs',
+        roomId: 'calling-interface',
+        subject: 'Subj',
+        body: 'Body',
+      },
     },
     {
       type: 'room.replied',
@@ -307,7 +312,7 @@ describe('real-runtime write->read round-trip for ALL 10 event types (AC1)', () 
       {
         type: 'announcement.posted',
         actor: 'a',
-        payload: { roomId: 'r', subject: 's', body: 'b' },
+        payload: { projectId: 'p', roomId: 'r', subject: 's', body: 'b' },
       },
       { type: 'room.replied', actor: 'a', payload: { roomId: 'r', body: 'b' } },
       {
@@ -368,6 +373,18 @@ describe('real-runtime write->read round-trip for ALL 10 event types (AC1)', () 
         .get() as { payload: string };
       expect(reactRow.payload).toContain('message_seq');
       expect(reactRow.payload).not.toContain('messageSeq');
+
+      // Story 4.1: announcement.posted carries the board scope project_id alongside
+      // room_id at rest — both snake_case on disk, neither camelCase form present.
+      const annRow = raw
+        .prepare(
+          "SELECT payload FROM events WHERE type = 'announcement.posted'",
+        )
+        .get() as { payload: string };
+      expect(annRow.payload).toContain('project_id');
+      expect(annRow.payload).toContain('room_id');
+      expect(annRow.payload).not.toContain('projectId');
+      expect(annRow.payload).not.toContain('roomId');
     } finally {
       raw.close();
     }

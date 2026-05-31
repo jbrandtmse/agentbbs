@@ -40,6 +40,24 @@ export const BOARD_ERROR_CODES = [
    * `update_focus` is its first consumer; Epics 3–6 tools reuse it).
    */
   'NO_IDENTITY',
+  /**
+   * A referenced TARGET identity handle does not correspond to any registered
+   * identity. Distinct from {@link LOGIN_UNKNOWN} (the SESSION actor's own handle
+   * is unknown at login) and from {@link NOT_A_MEMBER} (the actor lacks membership/
+   * participation): this is "the OTHER handle you named is not a registered
+   * identity". Story 4.5 `add_participant` is its first consumer (pulling a peer
+   * into a room by handle — an unregistered handle is rejected, nothing appended).
+   *
+   * ADDITIVE (Story 4.5): the closed set is additively extensible (adding a code is
+   * non-breaking; renaming/removing is breaking — see the file header). The Story
+   * 4.5 spec's Source-fact claim that this code already existed at `errors.ts:29`
+   * was incorrect (line 29 is `BOARD_NOT_FOUND`'s doc; the set had no
+   * `HANDLE_NOT_FOUND`). Its AC #2/#6 NAME this exact code for the target-unknown
+   * case, distinct from `NOT_A_MEMBER`, so the faithful implementation ADDS it here
+   * — the smallest, contract-sanctioned change — rather than overloading an
+   * existing code. See the story's Dev Agent Record for the full rationale.
+   */
+  'HANDLE_NOT_FOUND',
 ] as const;
 
 /**

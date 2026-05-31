@@ -66,10 +66,65 @@ export type { AnnounceProjectInput } from './projects/announce-project.js';
 export { listProjects } from './projects/list-projects.js';
 export { joinBoard } from './projects/join-board.js';
 
-// --- Cross-package Vitest `src`-alias proof fixture (Story 3.0, AC #1) ---
-// Test-only sentinel: proves cross-package specifiers resolve to `src` via the
-// root vitest `resolve.alias` (not stale `dist`). See cross-package-alias-proof.ts.
-export {
-  CROSS_PACKAGE_ALIAS_PROOF,
-  crossPackageAliasProof,
-} from './cross-package-alias-proof.js';
+// --- Rooms projection + room-id derivation (Story 4.1; activation read-model Story 4.2)
+// — proto-rooms folded from `announcement.posted`; `active` derives from `room.replied`
+// (existence-of-reply). ---
+export { findRoom, foldRooms } from './rooms/projection.js';
+export type { Room } from './rooms/projection.js';
+export { roomIdBase } from './rooms/room-id.js';
+
+// --- Announcement / room board operations (Story 4.1) — the first consumer of the
+// Story 3.5 membership write-gate; opens a globally-unique proto-room. ---
+export { postAnnouncement } from './rooms/post-announcement.js';
+export type { PostAnnouncementInput } from './rooms/post-announcement.js';
+
+// --- Room browse read operations (Story 4.2) — split the rooms projection for a board
+// into proto-rooms (listAnnouncements, active=false) vs activated rooms (listRooms,
+// active=true), both `seq`-ordered; BOARD_NOT_FOUND for an unknown board. Open reads. ---
+export { listAnnouncements, listRooms } from './rooms/list-rooms.js';
+
+// --- Reply room operation (Story 4.3) — the keystone: a reply activates a proto-room into
+// a live room. Plain append of `room.replied` ALWAYS + a conditional `board.joined`
+// (idempotent auto-join — "acting = joining", FR10) in ONE transaction; ROOM_NOT_FOUND for
+// an unknown room. The activator is the read-side min-`seq` derivation (rooms projection). ---
+export { reply } from './rooms/reply.js';
+export type { ReplyInput } from './rooms/reply.js';
+
+// --- Room message-history projection + read op (Story 4.4) — a room's COMPLETE ordered
+// history: the seeding `announcement.posted` as message #1 (kind='announcement'), then every
+// `room.replied` by `seq` (kind='reply'); a "message" is identified by its `seq` (Epic 5's
+// react/current-contract consume these by seq). `readRoom` resolves the room (ROOM_NOT_FOUND
+// for an unknown one) + returns `{ room, messages }` (RoomHistory). An OPEN read (FR9 — no
+// membership). Pure fold; derived, never stored; ordered by `seq`, never `createdAt`. ---
+export { roomMessages } from './rooms/room-history.js';
+export type { RoomMessage, RoomMessageKind } from './rooms/room-history.js';
+export { readRoom } from './rooms/read-room.js';
+export type { RoomHistory } from './rooms/read-room.js';
+
+// --- Room-participants projection + add-participant op (Story 4.5) — a participant pulls a
+// registered peer into a room mid-negotiation. `roomParticipants`/`isParticipant` derive a
+// room's participants (actors of `room.replied` ∪ handles of `room.participant_added`, de-duped
+// in seq order; the announcer-who-never-replied is NOT one). `addParticipant` gates the actor
+// as a participant (NOT_A_MEMBER), resolves the target (HANDLE_NOT_FOUND if unregistered),
+// then PLAIN-appends `room.participant_added` (actor=adder) + a conditional `board.joined`
+// (actor=TARGET — the pulled-in peer joins the board, mirroring reply's auto-join) in ONE
+// transaction; idempotent if the target already participates. ROOM_NOT_FOUND for an unknown
+// room. This projection is also Story 4.6's join-cursor input. ---
+export { roomParticipants, isParticipant } from './rooms/participants.js';
+export { addParticipant } from './rooms/add-participant.js';
+export type {
+  AddParticipantInput,
+  AddParticipantResult,
+} from './rooms/add-participant.js';
+
+// --- Per-(identity, room) JOIN-CURSOR projection (Story 4.6) — the per-room FLOOR Story 6.1's
+// `check` uses so a newly-joined / newly-added participant is NOT flooded with a room's
+// back-history. `roomJoinSeq` derives the `seq` of a handle's EARLIEST participating event for a
+// room (MIN over their `room.replied` ∪ the `room.participant_added` naming them; `undefined` if
+// not a participant) — DERIVED, never stored (THE APPEND INVARIANT — no cursor table/mutation;
+// the join-event `seq` IS the ledger position at the instant of join). `roomMessagesSince` filters
+// `roomMessages` (4.4) to `seq > sinceSeq` (STRICT — your own join not re-surfaced), expressing
+// that floor. The FIRST consumer is Story 6.1 (`check`), which combines this per-room floor with
+// the stored per-identity high-water-mark as `seq > max(checkCursor, roomJoinSeq)` (Rule 1 escape
+// clause — no Epic-4 consumer, NO new MCP tool/event/error code/stored cursor here). ---
+export { roomJoinSeq, roomMessagesSince } from './rooms/join-cursor.js';

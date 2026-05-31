@@ -60,6 +60,8 @@ export interface BoardJoinedPayload {
 
 /** `announcement.posted` — an announcement (proto-room) was posted. */
 export interface AnnouncementPostedPayload {
+  /** Slug id of the sub-board (project) this announcement was posted to. */
+  projectId: string;
   /** Slug id of the room the announcement opens. */
   roomId: string;
   /** Announcement subject line. */
