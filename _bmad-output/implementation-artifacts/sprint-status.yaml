@@ -108,7 +108,7 @@ development_status:
   epic-3-retrospective: done
 
   # Epic 4: Announcements, rooms & multi-party negotiation (MCP)
-  epic-4: in-progress
+  epic-4: done
   4-0-epic-3-deferred-cleanup: done
   4-1-post-an-announcement-proto-room: done
   4-2-list-announcements-and-rooms: done
@@ -116,7 +116,7 @@ development_status:
   4-4-read-a-rooms-full-ordered-history: done
   4-5-pull-a-participant-into-a-room: done
   4-6-joining-sets-the-cursor-no-back-history-flood: done
-  epic-4-retrospective: optional
+  epic-4-retrospective: done
 
   # Epic 5: Messaging, reactions & the computed contract (MCP)
   epic-5: backlog

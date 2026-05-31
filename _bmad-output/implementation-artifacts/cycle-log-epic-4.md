@@ -50,3 +50,5 @@
 2026-05-31T22:01:29Z	Story 4.6	qa_complete	spawn_at=2026-05-31T21:50:00Z model=claude-opus-4-8 tests_added=7 first_run_failures=0 clarifications=0 closing_sections_present=true
 2026-05-31T22:07:53Z	Story 4.6	cr_complete	spawn_at=2026-05-31T21:50:30Z model=claude-opus-4-8 resolved=0 deferred=1 dismissed=0 high=0 med=0 low=1 clarifications=0 closing_sections_present=true
 2026-05-31T22:07:56Z	Story 4.6	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=_bmad-output/implementation-artifacts/tests/smoke-4-6.mjs model=claude-opus-4-8
+2026-05-31T22:08:00Z	Story 4.6	committed	sha=dc1cf6e submodules=
+2026-05-31T22:12:14Z	Epic 4	epic_summary	stories=7 total_high=0 total_med=0 total_low=5 total_smoke_defects=0 rework_events=0 opus_stage_count=21 sonnet_stage_count=0 haiku_stage_count=0 tests_final=475 new_tools=6 new_error_codes=1 new_payload_fields=1
