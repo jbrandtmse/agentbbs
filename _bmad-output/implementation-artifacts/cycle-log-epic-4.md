@@ -52,3 +52,4 @@
 2026-05-31T22:07:56Z	Story 4.6	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=_bmad-output/implementation-artifacts/tests/smoke-4-6.mjs model=claude-opus-4-8
 2026-05-31T22:08:00Z	Story 4.6	committed	sha=dc1cf6e submodules=
 2026-05-31T22:12:14Z	Epic 4	epic_summary	stories=7 total_high=0 total_med=0 total_low=5 total_smoke_defects=0 rework_events=0 opus_stage_count=21 sonnet_stage_count=0 haiku_stage_count=0 tests_final=475 new_tools=6 new_error_codes=1 new_payload_fields=1
+2026-05-31T22:13:18Z	Epic 4	epic_merged_to_feature	repos=. feature_sha=911ab6b merge_sha=911ab6b submodules=
