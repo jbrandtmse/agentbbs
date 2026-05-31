@@ -17,6 +17,7 @@ import type { DataAccess } from '@agentbbs/core';
 
 import { createSessionIdentity } from './session.js';
 import { registerAnnounceProjectTool } from './tools/announce-project.js';
+import { registerJoinBoardTool } from './tools/join-board.js';
 import { registerListProjectsTool } from './tools/list-projects.js';
 import { registerLoginTool } from './tools/login.js';
 import { registerRegisterTool } from './tools/register.js';
@@ -91,11 +92,17 @@ export function createBoardServer(deps: BoardServerDeps): McpServer {
   //     (established identity required, rejects NO_IDENTITY if unset) but NO
   //     membership: a non-member sees the full main-board directory (FR9 board-wide
   //     open read). Takes no params; returns the projects directory ordered by seq.
+  //   - join_board (Story 3.3): SESSION-REQUIRED (actor = session handle, rejects
+  //     NO_IDENTITY if unset). Makes the caller a member of an existing sub-board
+  //     (appends board.joined); rejects an unknown project_id with BOARD_NOT_FOUND;
+  //     re-joining is an idempotent no-op. The membership it writes is the foundation
+  //     for Story 3.4 (sub-board directory) and Story 3.5 (NOT_A_MEMBER post gate).
   registerRegisterTool(server, deps.dataAccess, sessionIdentity);
   registerLoginTool(server, deps.dataAccess, sessionIdentity);
   registerUpdateFocusTool(server, deps.dataAccess, sessionIdentity);
   registerAnnounceProjectTool(server, deps.dataAccess, sessionIdentity);
   registerListProjectsTool(server, deps.dataAccess, sessionIdentity);
+  registerJoinBoardTool(server, deps.dataAccess, sessionIdentity);
 
   return server;
 }

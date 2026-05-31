@@ -24,6 +24,14 @@ export const BOARD_ERROR_CODES = [
   'NOT_A_MEMBER',
   /** Referenced room id does not exist. */
   'ROOM_NOT_FOUND',
+  /**
+   * Referenced sub-board (project_id) does not exist — join/post against an
+   * unannounced board (Story 3.3 `join_board` is its first consumer). DISTINCT
+   * from {@link ROOM_NOT_FOUND}: a sub-board (a project) and a room (an Epic 4
+   * announcement/thread within a board) are separate concepts with separate
+   * "not found" codes — do not conflate them.
+   */
+  'BOARD_NOT_FOUND',
   /** Message body exceeds the configured size cap. */
   'BODY_TOO_LARGE',
   /**

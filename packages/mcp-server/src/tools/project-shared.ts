@@ -63,6 +63,31 @@ export const projectDescriptionSchema = z
   .min(1)
   .max(PROJECT_DESCRIPTION_MAX_LENGTH);
 
+/**
+ * Max project-id length — mirrors the title cap (an id is derived from a title and is
+ * never longer than its source). A defensive boundary so a pathologically long id is
+ * rejected rather than scanned against the ledger.
+ */
+export const PROJECT_ID_MAX_LENGTH = PROJECT_TITLE_MAX_LENGTH;
+
+/**
+ * The shared Zod validator for a `project_id` wire param (Story 3.3, `join_board` is
+ * its first consumer): a non-empty, length-bounded string in the slug charset. A
+ * `project_id` is a slug `slugify` produces — lowercase ASCII alphanumerics joined by
+ * single hyphens — so it matches `^[a-z0-9]+(?:-[a-z0-9]+)*$`. The SDK validates
+ * against this and rejects an invalid id (empty, uppercase, leading/trailing/double
+ * hyphen, or non-slug characters) BEFORE the delegate runs, so core only ever sees a
+ * well-formed id (an unknown-but-well-formed id is the BOARD_NOT_FOUND case core owns).
+ */
+export const projectIdSchema = z
+  .string()
+  .min(1)
+  .max(PROJECT_ID_MAX_LENGTH)
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, {
+    message:
+      'project_id must be a slug: lowercase alphanumerics separated by single hyphens',
+  });
+
 /** The snake_case project payload returned on the wire (camelCase mapped here). */
 export interface ProjectWire {
   project_id: string;

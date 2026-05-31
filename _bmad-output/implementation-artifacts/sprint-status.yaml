@@ -37,6 +37,8 @@
 
 generated: 2026-05-31
 last_updated: 2026-05-31
+# story 3-3 code-review: done (2026-05-31) — CLEAN; 0 HIGH/MED/defer; 1 dismissed; Rule 3 integration green; full gate 307 tests
+# story 3-3: review (2026-05-31) — dev complete, 307 tests green (+9: 6 core unit + 3 integration)
 # story 3-2 code-review: done (2026-05-31) — CLEAN; 0 HIGH/MED/defer; 4 dismissed; Rule 3 integration re-run green
 # story 3-2: review (2026-05-31) — dev complete, 298 tests green
 # story 3-1 code-review: done (2026-05-31) — 0 HIGH; 1 MED resolved inline (empty-slug title guard); 0 deferred
@@ -83,7 +85,7 @@ development_status:
   3-0-epic-2-deferred-cleanup: done
   3-1-announce-a-project-and-create-its-sub-board: review
   3-2-browse-the-main-board: done
-  3-3-join-a-sub-board-single-and-multiple: backlog
+  3-3-join-a-sub-board-single-and-multiple: done
   3-4-sub-board-directory-with-focus-and-last-seen: backlog
   3-5-board-wide-read-with-join-to-post-gating: backlog
   epic-3-retrospective: optional

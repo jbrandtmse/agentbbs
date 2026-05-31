@@ -47,6 +47,10 @@ describe('BoardError (AC3)', () => {
       // Story 2.4 (additive): the reusable "no established identity" code for
       // every session-required tool (update_focus is its first consumer).
       'NO_IDENTITY',
+      // Story 3.3 (additive): the referenced sub-board (project_id) does not
+      // exist — join/post against an unannounced board (join_board is its first
+      // consumer). Distinct from ROOM_NOT_FOUND (Epic 4 rooms).
+      'BOARD_NOT_FOUND',
     ] as const;
     for (const code of required) {
       expect(BOARD_ERROR_CODES).toContain(code);
