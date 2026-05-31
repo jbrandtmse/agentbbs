@@ -45,3 +45,5 @@
 2026-05-31T10:58:43Z	Story 2.5	qa_complete	spawn_at=2026-05-31T11:05:00Z model=claude-opus-4-8 tests_added=5 first_run_failures=0 clarifications=0 closing_sections_present=true
 2026-05-31T11:03:39Z	Story 2.5	cr_complete	spawn_at=2026-05-31T11:12:00Z model=claude-opus-4-8 resolved=0 deferred=1 dismissed=0 high=0 med=0 low=1 clarifications=0 closing_sections_present=true
 2026-05-31T11:04:53Z	Story 2.5	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=real-ledger-recordSeen-lastseen-advances-append-only-2seen-derived-no-last_seen-column model=claude-opus-4-8
+2026-05-31T11:05:13Z	Story 2.5	committed	sha=ba61917 submodules=
+2026-05-31T11:06:22Z	Epic 2	epic_summary	stories=6 total_high=0 total_med=0 total_low=7 total_smoke_defects=0 rework_events=0 opus_stage_count=all tests_final=259 first=2026-05-31T08:08:23Z last=2026-05-31T11:06:22Z
