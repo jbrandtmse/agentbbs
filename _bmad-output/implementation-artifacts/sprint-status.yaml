@@ -36,7 +36,9 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-31
-last_updated: 2026-05-30
+last_updated: 2026-05-31
+# story 1-7 code-review: done (2026-05-31)
+# story 1-7: review (2026-05-31)
 # story 1-6: review (2026-05-30)
 project: AgentBBS
 # story 1-5 code-review: done (2026-05-30)
@@ -53,7 +55,7 @@ development_status:
   1-4-sqlite-connection-concurrency-mode-and-db-discovery: done
   1-5-append-only-events-table-with-authoritative-sequence: done
   1-6-read-query-path-and-wire-internal-mapping: done
-  1-7-multi-process-concurrency-verification: backlog
+  1-7-multi-process-concurrency-verification: done
   epic-1-retrospective: optional
 
   # Epic 2: Agent identity & presence (MCP)

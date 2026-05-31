@@ -321,3 +321,78 @@ After: "All matched files use Prettier code style!", exit 0.
 ## Next Steps
 - Story 1.7: the multi-process N×M concurrency proof drives this append→read round-trip
   under real cross-process contention to prove total-order agreement across readers.
+
+---
+
+# Test Automation Summary — Story 1.7
+
+**Story:** 1.7 — Multi-process concurrency verification (the correctness gate, NFR3/NFR10)
+**Stage:** `bmad-qa-generate-e2e-tests` (epic-cycle QA) · 2026-05-31 · branch `AGENTBBS-1-epic1`
+**Framework:** Vitest 4.1.7 (single root runner) + the typecheck gate.
+
+## Outcome: deliverable-as-test verified GENUINE + STRICT; cleanup hardened (no assertion changed)
+
+This story's deliverable IS the test. Per the directive, QA did NOT author a new
+concurrency test (no redundant second test/runner) — it verified the existing one is
+real and its assertions would fail on a defect, ran a non-flake battery, and closed one
+genuine hygiene gap.
+
+## Files under test (dev deliverable)
+
+- `packages/data-access/src/concurrency-worker.ts` — forked per-writer worker (built to
+  `dist`); opens the shared DB via real `createDataAccess` and appends M events through
+  the real `append` path; IPC ready/go start barrier; AC2 lock-hold device.
+- `packages/data-access/src/concurrency.test.ts` — orchestrator. AC1: N×M (6×100=600)
+  concurrent appends from REAL OS processes; AC2: induced `BEGIN IMMEDIATE` contention.
+
+## Genuineness (Rule 3 — strongest in the project; confirmed)
+
+- Real OS processes via `child_process.fork` of the BUILT `dist/concurrency-worker.js`
+  (NOT `worker_threads`) → genuine cross-process WAL + busy_timeout.
+- Full real seam traced: `append` → `runWithRetry` → `appendBatch.immediate` (BEGIN
+  IMMEDIATE write lock) → read-back via `eventsSince(0)` (`ORDER BY seq ASC`). No stubs.
+- Assertions fail on defect: exact count (=600), strict `seq[i] > seq[i-1]`, uniqueness
+  (`Set(seqs).size === 600`), and full marker-set EQUALITY (`toEqual` over the expected
+  600) — a lost write breaks equality + count, a duplicate breaks the dedup count. A
+  second independent reader must fold the identical seq + marker order.
+- AC2 is genuinely contended: writer 0 holds a real lock 150ms post-barrier blocking the
+  other 5; asserts `busyErrors === 0` (1.4 retry resolved every contended write) and
+  slowest contending append > `LOCK_HOLD_MS * 0.3` (busy path provably traversed). An
+  escaped `StoreBusyError` rethrows → worker non-zero exit → hard fail (never swallowed).
+
+## Reliability + hygiene (Rule 8)
+
+- 22 consecutive concurrency-test runs this session (12 + 5 + 5): ALL green.
+- Zero orphan node processes (stable 33). Zero leftover temp dirs from QA runs.
+- Discoverable in default `pnpm test` (root Vitest include glob; 99 passed / 15 files) and
+  in CI (`.github/workflows/ci.yml` build→test→typecheck→lint→format).
+- Build-if-missing verified: deleted `dist/concurrency-worker.js`, ran ONLY the test →
+  rebuilt via `tsc -b --force` and passed 2/2 from clean dist.
+
+## Hardening applied (cleanup ONLY — no assertion touched)
+
+One PRE-EXISTING orphan temp dir (from before this QA session) had intact `-wal`/`-shm`
+sidecars — evidence of a rare Windows EBUSY/EPERM handle-release race: `reapChildren()`
+issues an async SIGKILL, so a just-killed worker can still hold the WAL handle when
+`rmSync` runs. Added `removeTempTree()` wrapping `rmSync` with `maxRetries: 20,
+retryDelay: 50` (linear backoff, retried on EBUSY/EPERM/ENOTEMPTY per Node fs docs;
+active with `recursive: true`). Both cleanup call sites now use it.
+
+## Gate runs (after hardening, all exit 0)
+
+| Command | Result |
+| --- | --- |
+| `pnpm -r build` | 7 packages `tsc -b` Done |
+| `pnpm run typecheck` | `tsc --noEmit -p tsconfig.typecheck.json` — clean |
+| `pnpm run lint` (`eslint .`) | clean |
+| `pnpm test` | Test Files 15 passed (15) · Tests 99 passed (99) |
+| `pnpm run format` (`prettier --check .`) | all files conform |
+
+## Rule 5 / Rule 6
+
+No NFR/correctness tripwire — assertions are strict and all pass; ledger impl (1.4–1.6)
+untouched. `docs/adr/` confirmed absent — no ADR constraints.
+
+## Next Steps
+- None for this story. The correctness gate passes; deliverable verified genuine, strict,
+  non-flaky. Epic 1's ledger is licensed for downstream projections on `seq`.
