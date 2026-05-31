@@ -1,0 +1,143 @@
+# generated: 2026-05-31
+# last_updated: 2026-05-31
+# project: AgentBBS
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: {project-root}/_bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog -> in-progress: Automatically when first story is created (via create-story)
+#   - in-progress -> done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - Developer typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: 2026-05-31
+last_updated: 2026-05-30
+project: AgentBBS
+project_key: NOKEY
+tracking_system: file-system
+story_location: "{project-root}/_bmad-output/implementation-artifacts"
+
+development_status:
+  # Epic 1: Foundation - monorepo, append-only ledger & shared core
+  epic-1: in-progress
+  1-1-scaffold-the-pnpm-workspace-and-package-skeleton: done
+  1-2-shared-toolchain-and-boundary-enforcement: backlog
+  1-3-event-vocabulary-dataaccess-port-and-error-model: backlog
+  1-4-sqlite-connection-concurrency-mode-and-db-discovery: backlog
+  1-5-append-only-events-table-with-authoritative-sequence: backlog
+  1-6-read-query-path-and-wire-internal-mapping: backlog
+  1-7-multi-process-concurrency-verification: backlog
+  epic-1-retrospective: optional
+
+  # Epic 2: Agent identity & presence (MCP)
+  epic-2: backlog
+  2-1-mcp-server-bootstrap-with-validation-and-error-mapping: backlog
+  2-2-register-a-durable-unique-identity: backlog
+  2-3-re-establish-identity-with-login: backlog
+  2-4-update-current-focus: backlog
+  2-5-last-seen-presence-tracking: backlog
+  epic-2-retrospective: optional
+
+  # Epic 3: Projects & sub-boards (MCP)
+  epic-3: backlog
+  3-1-announce-a-project-and-create-its-sub-board: backlog
+  3-2-browse-the-main-board: backlog
+  3-3-join-a-sub-board-single-and-multiple: backlog
+  3-4-sub-board-directory-with-focus-and-last-seen: backlog
+  3-5-board-wide-read-with-join-to-post-gating: backlog
+  epic-3-retrospective: optional
+
+  # Epic 4: Announcements, rooms & multi-party negotiation (MCP)
+  epic-4: backlog
+  4-1-post-an-announcement-proto-room: backlog
+  4-2-list-announcements-and-rooms: backlog
+  4-3-first-reply-activates-the-room: backlog
+  4-4-read-a-rooms-full-ordered-history: backlog
+  4-5-pull-a-participant-into-a-room: backlog
+  4-6-joining-sets-the-cursor-no-back-history-flood: backlog
+  epic-4-retrospective: optional
+
+  # Epic 5: Messaging, reactions & the computed contract (MCP)
+  epic-5: backlog
+  5-1-post-a-verbatim-message-with-a-size-cap: backlog
+  5-2-react-and-retract-a-thumbs-up: backlog
+  5-3-compute-the-current-agreed-contract: backlog
+  epic-5-retrospective: optional
+
+  # Epic 6: Discovery - pull-only check & cursors (MCP)
+  epic-6: backlog
+  6-1-check-returns-my-delta-and-advances-my-cursor: backlog
+  6-2-bounded-pull-only-delivery-with-documented-dead-letter: backlog
+  epic-6-retrospective: optional
+
+  # Epic 7: Negotiation Protocol & agent guidance
+  epic-7: backlog
+  7-1-document-the-negotiation-protocol: backlog
+  7-2-seed-and-surface-the-protocol-announcement: backlog
+  7-3-ship-the-agent-prompt-snippet: backlog
+  epic-7-retrospective: optional
+
+  # Epic 8: BMad integration, identity & installation kit
+  epic-8: backlog
+  8-1-identity-bootstrap-workflow: backlog
+  8-2-post-step-board-review-cadence-hook: backlog
+  8-3-skill-customizations-and-skill-rules-registry: backlog
+  8-4-single-self-contained-installation-kit: backlog
+  epic-8-retrospective: optional
+
+  # Epic 9: Operator UI - shared core & web control room
+  epic-9: backlog
+  9-1-ui-shared-scaffold-and-design-token-system: backlog
+  9-2-inert-markdown-renderer-and-code-block: backlog
+  9-3-on-demand-web-host-with-json-api-and-sse: backlog
+  9-4-board-navigation-tree-with-decorations-and-needs-you-queue: backlog
+  9-5-room-thread-with-breadcrumb-and-joined-row: backlog
+  9-6-reaction-chip-and-computed-agreed-mark: backlog
+  9-7-join-gate-composer-and-participate-as-peer: backlog
+  9-8-rooms-as-editor-tabs: backlog
+  9-9-live-updates-optimistic-posting-and-reconciliation: backlog
+  9-10-calm-states-connection-footer-voice-and-accessibility-floor: backlog
+  epic-9-retrospective: optional
+
+  # Epic 10: Operator UI - VS Code extension surface
+  epic-10: backlog
+  10-1-extension-scaffold-and-better-sqlite3-electron-abi-proof: backlog
+  10-2-extension-host-opens-the-db-and-bridges-to-the-webview: backlog
+  10-3-native-treeview-navigation-with-decorations: backlog
+  10-4-rooms-as-webviewpanels-mounting-ui-shared-with-theme-inheritance: backlog
+  10-5-webview-csp-hardening-and-state-serialization: backlog
+  10-6-live-updates-high-contrast-and-accessibility-parity: backlog
+  epic-10-retrospective: optional
+
+  # Epic 11: Backup, restore & open-source readiness
+  epic-11: backlog
+  11-1-operator-cli-scaffold: backlog
+  11-2-export-the-ledger-to-a-logical-archive: backlog
+  11-3-import-by-replaying-into-an-empty-board: backlog
+  11-4-round-trip-fidelity-test: backlog
+  11-5-distribution-and-open-source-stand-up-docs: backlog
+  epic-11-retrospective: optional

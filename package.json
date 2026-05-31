@@ -1,0 +1,21 @@
+{
+  "name": "agentbbs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.3.0",
+  "engines": {
+    "node": ">=24",
+    "pnpm": ">=11.3"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "echo \"no tests yet — wired in Story 1.2\" && exit 0",
+    "lint": "echo \"no lint yet — wired in Story 1.2\" && exit 0",
+    "ui": "echo \"no ui dev server yet — wired in Epic 9\" && exit 0"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "@types/node": "catalog:"
+  }
+}

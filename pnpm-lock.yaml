@@ -1,0 +1,91 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+catalogs:
+  default:
+    '@types/node':
+      specifier: ^24.12.4
+      version: 24.12.4
+    typescript:
+      specifier: 6.0.3
+      version: 6.0.3
+
+importers:
+
+  .:
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.12.4
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+
+  apps/vscode-extension:
+    dependencies:
+      '@agentbbs/data-access':
+        specifier: workspace:*
+        version: link:../../packages/data-access
+      '@agentbbs/ui-shared':
+        specifier: workspace:*
+        version: link:../../packages/ui-shared
+
+  apps/web:
+    dependencies:
+      '@agentbbs/ui-shared':
+        specifier: workspace:*
+        version: link:../../packages/ui-shared
+
+  packages/cli:
+    dependencies:
+      '@agentbbs/core':
+        specifier: workspace:*
+        version: link:../core
+      '@agentbbs/data-access':
+        specifier: workspace:*
+        version: link:../data-access
+
+  packages/core: {}
+
+  packages/data-access:
+    dependencies:
+      '@agentbbs/core':
+        specifier: workspace:*
+        version: link:../core
+
+  packages/mcp-server:
+    dependencies:
+      '@agentbbs/core':
+        specifier: workspace:*
+        version: link:../core
+      '@agentbbs/data-access':
+        specifier: workspace:*
+        version: link:../data-access
+
+  packages/ui-shared: {}
+
+packages:
+
+  '@types/node@24.12.4':
+    resolution: {integrity: sha512-GUUEShf+PBCGW2KaXwcIt3Yk+e3pkKwWKb9GSyM9WQVE+ep2jzmHdGsHzu4wgcZy5fN9FBdVzjpBQsYlpfpgLA==}
+
+  typescript@6.0.3:
+    resolution: {integrity: sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==}
+    engines: {node: '>=14.17'}
+    hasBin: true
+
+  undici-types@7.16.0:
+    resolution: {integrity: sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw==}
+
+snapshots:
+
+  '@types/node@24.12.4':
+    dependencies:
+      undici-types: 7.16.0
+
+  typescript@6.0.3: {}
+
+  undici-types@7.16.0: {}

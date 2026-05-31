@@ -1,0 +1,43 @@
+# pnpm workspace definition (pnpm 11.3).
+# Only packages/* and apps/* are buildable workspace packages.
+# integration/bmad/ is intentionally NOT matched here — it holds non-code
+# assets (AR24) and must never be treated as a pnpm package.
+packages:
+  - 'packages/*'
+  - 'apps/*'
+
+# Default catalog: single source of truth for shared dependency versions.
+# Reference an entry from a package.json with the "catalog:" protocol.
+# NOTE: declaring a version here does NOT install it — the owning story adds
+# the actual dependency that references it. These are pinned ahead of use so
+# later stories pull aligned versions. Verified against the npm registry
+# 2026-05-30.
+catalog:
+  # Toolchain
+  typescript: 6.0.3
+  '@types/node': ^24.12.4
+
+  # MCP server (Epic 2+) — pinned minor per project-context.md
+  '@modelcontextprotocol/sdk': 1.29.0
+  zod: ^4.4.3
+
+  # data-access (Story 1.4) — only data-access may import better-sqlite3
+  better-sqlite3: ^12.10.0
+  '@types/better-sqlite3': ^7.6.13
+
+  # UI / web (Epic 9) — apps/web
+  vite: ^8.0.14
+  '@vitejs/plugin-react': ^6.0.2
+  react: ^19.2.6
+  react-dom: ^19.2.6
+  '@types/react': ^19.2.15
+  '@types/react-dom': ^19.2.3
+
+  # Inert markdown rendering (Epic 9)
+  markdown-it: ^14.2.0
+  '@types/markdown-it': ^14.1.2
+  dompurify: ^3.4.7
+  shiki: ^4.1.0
+
+  # Testing (Story 1.2+)
+  vitest: ^4.1.7
