@@ -56,9 +56,13 @@ catalog:
   prettier: ^3.8.3
   globals: ^17.6.0
 
-# Approve the one dependency build script we need: unrs-resolver's postinstall
-# (the native resolver backing eslint-plugin-import-x). pnpm 11 blocks dependency
-# build scripts by default and fails `pnpm install` (ERR_PNPM_IGNORED_BUILDS) until
-# each is explicitly approved here. Keeps install/CI non-interactive and green.
+# Approve the dependency build scripts we need. pnpm 11 blocks dependency build
+# scripts by default and fails `pnpm install` (ERR_PNPM_IGNORED_BUILDS) until each
+# is explicitly approved here. Keeps install/CI non-interactive and green.
+#   - unrs-resolver: native resolver backing eslint-plugin-import-x (Story 1.2).
+#   - better-sqlite3: compiles a native addon (node-gyp / prebuild) on install;
+#     the ONLY package allowed to depend on it (Story 1.4). Required on Linux CI
+#     (`pnpm install --frozen-lockfile`) so the addon is built and loadable.
 allowBuilds:
   unrs-resolver: true
+  better-sqlite3: true

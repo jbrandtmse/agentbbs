@@ -18,6 +18,10 @@
     "build": "tsc -b tsconfig.json"
   },
   "dependencies": {
-    "@agentbbs/core": "workspace:*"
+    "@agentbbs/core": "workspace:*",
+    "better-sqlite3": "catalog:"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "catalog:"
   }
 }

@@ -186,3 +186,92 @@ the same files plus future ones via its glob. No second test runner introduced.
 - Story 1.4/1.6: when `data-access` implements `DataAccess`, add the producer↔consumer
   integration test (real append → seq, ordered reads) that this contract-only story defers.
 - Keep the `typecheck` gate green as new packages add co-located type tests.
+
+---
+
+# Test Automation Summary — Story 1.4
+
+**Story:** 1.4 — SQLite connection, concurrency mode, and DB discovery
+**Stage:** `bmad-qa-generate-e2e-tests` (epic-cycle QA) · 2026-05-30 · branch `AGENTBBS-1-epic1`
+**Framework:** Vitest 4.1.7 (single root runner) + the Story 1.3 typecheck gate.
+
+## Rule 3 — real-runtime evidence PRESENT and genuine
+
+This is a library with real-runtime behavior (SQLite via better-sqlite3). The dev's
+`connection.test.ts` opens a GENUINE SQLite file via better-sqlite3 in `os.tmpdir()`
+(never the repo's real `.agentbbs/`), reads back `journal_mode=wal` and
+`busy_timeout=5000`, and induces a REAL `SQLITE_BUSY` via a second connection holding
+`BEGIN IMMEDIATE` with `busy_timeout=0` — proving (a) the retried write SUCCEEDS within
+the bound, (b) exhaustion throws the typed `StoreBusyError` (asserting
+`cause.code='SQLITE_BUSY'`, never a raw leak), and (c) a non-busy error propagates
+unwrapped. `path.test.ts` exercises discovery on the real filesystem (temp trees).
+Not mocks. Rule 3 satisfied.
+
+## Native build (install clean)
+
+`pnpm install --frozen-lockfile` exit 0; the native addon `better_sqlite3.node` is built
+(`node_modules/.pnpm/better-sqlite3@12.10.0/.../build/Release/`) and loads at runtime from
+the data-access package context (pragmas exercised, exit 0). Correctly NOT hoisted to root
+`node_modules` (only `data-access` depends on it — pnpm isolation, lint-enforced).
+
+## Test files
+
+- `packages/data-access/src/path.test.ts` (dev) — 8 path-discovery tests.
+- `packages/data-access/src/sqlite/connection.test.ts` (dev) — 6 real-runtime connection
+  + busy-retry tests.
+- `packages/data-access/src/sqlite/connection.qa.test.ts` (**QA-added**) — 5 tests closing
+  genuine AC-surface gaps.
+
+## QA-added coverage (5 tests, all real-runtime / OS temp dirs)
+
+### AC1 — discovery + WAL first-run side effects
+- [x] `openDatabase()` physically CREATES the absent `.agentbbs/` dir + the `.db` file on
+  first run — the AC1 "created on first run" side-effect at the `openDatabase` boundary
+  (the dev's same-named test only read `journal_mode`, never asserted the creation).
+- [x] WAL leaves its defining observable artifact on disk — the `<db>-wal` sidecar after a
+  write (file-level evidence beyond the pragma read-back).
+
+### AC2 — busy-code branch + default bound
+- [x] `SQLITE_BUSY_SNAPSHOT` (the other `BUSY_CODES` member) is treated as retryable →
+  retry SUCCEEDS on a later attempt (branch the dev tests never hit — they only induced
+  plain `SQLITE_BUSY`).
+- [x] sustained `SQLITE_BUSY_SNAPSHOT` exhausts into the typed `StoreBusyError`
+  (`cause.code='SQLITE_BUSY_SNAPSHOT'`).
+- [x] the exported default bound `MAX_WRITE_ATTEMPTS` is the one wired into `runWithRetry`
+  when no `attempts` arg is passed.
+
+## No extra coordination added (NFR3/AR4 verified)
+
+`connection.ts` adds NOTHING beyond WAL + `busy_timeout` + the bounded whole-call retry —
+no app-level locks, mutexes, or coordination that would undermine SQLite's single-writer
+serialization (the property that makes `seq` a correct total order). Confirmed by reading
+the module.
+
+## Rule 5 / Rule 6
+
+No NFR tripwire (WAL + busy_timeout + bounded retry implementable exactly as worded).
+`docs/adr/` confirmed absent — no ADR constraints to honor.
+
+## Gate runs (clean tree, all exit 0)
+
+| Command | Result |
+| --- | --- |
+| `pnpm install --frozen-lockfile` | exit 0; better-sqlite3 native addon built + loads |
+| `pnpm test` | Test Files 9 passed (9) · Tests 57 passed (57) (was 8/52 before the QA file) |
+| `pnpm run typecheck` | `tsc --noEmit -p tsconfig.typecheck.json` — exit 0 (covers `*.test.ts`) |
+| `pnpm run lint` (`eslint .`) | clean |
+| `pnpm -r build` | 7 packages `tsc -b` Done |
+| `pnpm run format` (`prettier --check .`) | all files conform |
+
+## Rule 8 (discoverability)
+
+Single runner. Root `vitest.config.ts` include glob `packages/*/src/**/*.test.{ts,tsx}`
+collects all three Story 1.4 files; the default `pnpm test` went 8→9 files / 52→57 tests
+after the QA file was added — auto-discovered, not opted out. No second runner introduced.
+
+## Next Steps
+- Story 1.5: producer-side append/migration uses this connection — add the
+  append→`seq` ordering integration test there.
+- Story 1.7: the multi-process N×M concurrency proof drives this retry path under real
+  cross-process contention (the dev's intra-process `SQLITE_BUSY` induction is the
+  library-level proxy until then).
