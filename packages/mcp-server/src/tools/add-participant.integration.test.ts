@@ -306,6 +306,79 @@ describe('add_participant over a real MCP client + real ledger (AC #6)', () => {
     ).toHaveLength(0);
   });
 
+  it('rejects a malformed room_id OR a malformed handle at the Zod boundary BEFORE core — nothing appended, the real room.participant_added is untouched (closes deferred-work 4.3-a)', async () => {
+    // Establish a REAL room with a genuine participant_added first: A announces + posts,
+    // B replies (becomes a participant + the legitimate adder), B pulls in C → exactly one
+    // room.participant_added exists. Then prove each malformed call leaves that count
+    // UNCHANGED (stronger than asserting 0 — a valid add DID append, malformed ones do NOT).
+    // add_participant validates BOTH params at the boundary: room_id via roomIdSchema
+    // (`.min(1).max(200)` + slug regex) and handle via the shared handleSchema
+    // (identity-shared.ts: `.min(1).max(128)` + `^[a-z0-9._@-]+$`). The SDK rejects an empty /
+    // out-of-charset value for EITHER before the delegate runs — a Zod validation rejection
+    // (isError, NOT a closed board code), distinct from ROOM_NOT_FOUND / HANDLE_NOT_FOUND
+    // (those are well-formed-but-unknown ids that reach core).
+    let roomId: string;
+    {
+      const { client } = await connect();
+      await registerAndAnnounce(client, 'ada', 'calling-interface');
+      roomId = await postAnnouncement(
+        client,
+        'calling-interface',
+        'Need a reviewer',
+        'seed',
+      );
+    }
+    const bob = await registerOnFreshConnection('bob');
+    await reply(bob, roomId, 'on it'); // bob is now a participant (allowed to add)
+    await registerOnFreshConnection('cleo'); // a valid, registered target
+    const firstAdd = (await bob.callTool({
+      name: 'add_participant',
+      arguments: { room_id: roomId, handle: 'cleo' },
+    })) as CallToolResult;
+    expect(firstAdd.isError).toBeFalsy();
+    expect(
+      await dataAccess!.eventsByType('room.participant_added'),
+    ).toHaveLength(1);
+
+    // Malformed room_id (handle 'cleo' is valid) — rejected at the boundary, never reaches
+    // the room lookup. Malformed handle (room_id valid) — rejected before the target lookup.
+    const malformedRoomIds = [
+      '',
+      '   ',
+      'Bad Room!',
+      'UPPER',
+      '--leading',
+      'a..b',
+    ];
+    const malformedHandles = ['', '   ', 'Bad Handle!', 'has space', 'UPPER!'];
+    for (const badRoomId of malformedRoomIds) {
+      const before = await dataAccess!.maxSeq();
+      const result = (await bob.callTool({
+        name: 'add_participant',
+        arguments: { room_id: badRoomId, handle: 'cleo' },
+      })) as CallToolResult;
+      expect(result.isError).toBe(true);
+      expect(readErrorPayload(result)).toBeUndefined(); // Zod rejection, no closed code
+      expect(await dataAccess!.maxSeq()).toBe(before);
+      expect(
+        await dataAccess!.eventsByType('room.participant_added'),
+      ).toHaveLength(1);
+    }
+    for (const badHandle of malformedHandles) {
+      const before = await dataAccess!.maxSeq();
+      const result = (await bob.callTool({
+        name: 'add_participant',
+        arguments: { room_id: roomId, handle: badHandle },
+      })) as CallToolResult;
+      expect(result.isError).toBe(true);
+      expect(readErrorPayload(result)).toBeUndefined(); // Zod rejection, no closed code
+      expect(await dataAccess!.maxSeq()).toBe(before);
+      expect(
+        await dataAccess!.eventsByType('room.participant_added'),
+      ).toHaveLength(1);
+    }
+  });
+
   it('a NON-participant (A, who announced but never replied) calling add_participant → NOT_A_MEMBER (nothing appended)', async () => {
     const { client: ada } = await connect();
     await registerAndAnnounce(ada, 'ada', 'calling-interface');

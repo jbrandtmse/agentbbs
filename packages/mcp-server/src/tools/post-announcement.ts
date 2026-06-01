@@ -14,9 +14,12 @@
 // so it lives in the delegate. core stays session-agnostic.
 //
 // No NEW error code: NOT_A_MEMBER + BOARD_NOT_FOUND are already in the closed set (Epic 3)
-// and any thrown BoardError is mapped by registerCoreTool. The 256 KB body cap /
-// BODY_TOO_LARGE is Epic 5 Story 5.1 — `room-shared.ts` uses a sane interim cap and
-// explicitly defers the formal cap; this story introduces no body-size code.
+// and any thrown BoardError is mapped by registerCoreTool. The announcement `body` is
+// validated non-empty at the Zod boundary (`announcementBodySchema`, `.min(1)`); the formal
+// 256 KB `BODY_TOO_LARGE` size cap (Story 5.1) is enforced in CORE (`assertBodyWithinCap`, on
+// UTF-8 byte length) AFTER the membership gate and before any append — so a non-member's
+// over-cap post is rejected NOT_A_MEMBER first, and an over-cap body otherwise surfaces the
+// closed `BODY_TOO_LARGE` code; this thin tool adds no body-size logic of its own.
 
 import { BoardError, postAnnouncement } from '@agentbbs/core';
 

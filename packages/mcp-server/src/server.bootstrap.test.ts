@@ -217,7 +217,12 @@ describe('createBoardServer bootstrap over a real in-memory transport', () => {
     // (Story 4.4 — a room's COMPLETE ordered history: announcement #1 then replies by
     // seq; an open read, NO membership), `add_participant` (Story 4.5 — the 12th/final
     // V1 tool: a participant pulls a registered peer into a room; the target joins the
-    // room + its sub-board).
+    // room + its sub-board), and `react` + `unreact` (Story 5.2 — the two MESSAGE tools:
+    // place / retract a 👍 on a message by its seq; gated on participating in the
+    // message's room, MESSAGE_NOT_FOUND for a non-message seq), and `read_contract`
+    // (Story 5.3 — FR21: the room's CURRENT AGREED CONTRACT, the highest-seq message
+    // currently holding a live 👍, computed never stored; an open read, ROOM_NOT_FOUND for
+    // an unknown room, contract: null for a known room with no live 👍 yet).
     expect(tools.map((t) => t.name).sort()).toEqual([
       'add_participant',
       'alpha',
@@ -230,9 +235,12 @@ describe('createBoardServer bootstrap over a real in-memory transport', () => {
       'list_rooms',
       'login',
       'post_announcement',
+      'react',
+      'read_contract',
       'read_room',
       'register',
       'reply',
+      'unreact',
       'update_focus',
     ]);
   });

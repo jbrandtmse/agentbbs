@@ -48,6 +48,8 @@ interface WireMessage {
   actor: string;
   body: string;
   kind: 'announcement' | 'reply';
+  /** The live 👍 reactor handles (Story 5.2) — `[]` for an un-reacted message. */
+  reactions: string[];
 }
 
 /**
@@ -211,6 +213,8 @@ describe('read_room over a real MCP client + real ledger (AC #6)', () => {
       bobBody,
       cleoBody,
     ]);
+    // Story 5.2: every message carries a `reactions` array — `[]` here (nothing reacted yet).
+    expect(messages.map((m) => m.reactions)).toEqual([[], [], []]);
     // Strictly increasing seqs — message #1 (the announcement) strictly precedes both replies.
     expect(messages[0]!.seq).toBeLessThan(messages[1]!.seq);
     expect(messages[1]!.seq).toBeLessThan(messages[2]!.seq);
@@ -231,6 +235,28 @@ describe('read_room over a real MCP client + real ledger (AC #6)', () => {
 
     expect(result.isError).toBe(true);
     expect(readErrorPayload(result)).toMatchObject({ code: 'ROOM_NOT_FOUND' });
+  });
+
+  it('rejects a malformed room_id (empty / non-slug charset) at the Zod boundary BEFORE core — isError, NOT ROOM_NOT_FOUND (READ-side parity, deferred-work 4.3-a)', async () => {
+    // READ-tool parity for the family-wide boundary-rejection coverage: read_room reuses the
+    // SAME roomIdSchema as reply / add_participant, so an empty / non-slug room_id is rejected
+    // at the Zod boundary BEFORE core — a Zod validation rejection (no closed board code),
+    // distinct from the ROOM_NOT_FOUND case above (a well-formed-but-unknown id that reaches
+    // core's existence check). read_room is a pure read (it never appends), so the boundary
+    // guarantee here is "rejected, no closed code" rather than a ledger delta.
+    const { client } = await connect();
+    await registerAndAnnounce(client, 'ada', 'calling-interface');
+
+    for (const badRoomId of ['', '   ', 'Bad Room!', 'UPPER', 'a..b']) {
+      const result = (await client.callTool({
+        name: 'read_room',
+        arguments: { room_id: badRoomId },
+      })) as CallToolResult;
+      expect(result.isError).toBe(true);
+      // A Zod validation rejection, NOT a domain error — no closed board code (contrast the
+      // ROOM_NOT_FOUND case above).
+      expect(readErrorPayload(result)).toBeUndefined();
+    }
   });
 
   it('re-reading after an additional reply returns the SAME earlier messages plus the new one appended (no truncation, AC #4)', async () => {

@@ -56,6 +56,11 @@ describe('BoardError (AC3)', () => {
       // first consumer). Distinct from LOGIN_UNKNOWN (the session actor's own
       // handle at login) and NOT_A_MEMBER (actor lacks participation).
       'HANDLE_NOT_FOUND',
+      // Story 5.2 (additive): a referenced message_seq does not identify a message
+      // (announcement.posted / room.replied) — react/unreact against a non-message
+      // seq (react/unreact are its first consumers). Distinct from ROOM_NOT_FOUND
+      // (a room id, not a message) — a message is identified by its `seq`.
+      'MESSAGE_NOT_FOUND',
     ] as const;
     for (const code of required) {
       expect(BOARD_ERROR_CODES).toContain(code);

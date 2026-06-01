@@ -58,6 +58,20 @@ export const BOARD_ERROR_CODES = [
    * existing code. See the story's Dev Agent Record for the full rationale.
    */
   'HANDLE_NOT_FOUND',
+  /**
+   * Referenced `message_seq` does not identify a message (an `announcement.posted`
+   * or a `room.replied`) — there is no event at that `seq`, or the event at it is
+   * not a message. `react`/`unreact` (Story 5.2 — its first consumers) reject a
+   * non-message `message_seq` with this code, appending nothing.
+   *
+   * ADDITIVE (Story 5.2): the closed set is additively extensible (adding a code is
+   * non-breaking; renaming/removing is breaking — see the file header). DISTINCT
+   * from {@link ROOM_NOT_FOUND}: a room is identified by its slug id, a message by
+   * its `seq` — "this seq is not a message" is a separate concept from "this room id
+   * does not exist", so it gets its own code (mirrors the Story 4.5 `HANDLE_NOT_FOUND`
+   * add for the analogous "this handle is not a registered identity" case).
+   */
+  'MESSAGE_NOT_FOUND',
 ] as const;
 
 /**

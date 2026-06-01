@@ -17,6 +17,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { BoardError } from '../errors.js';
+import { MAX_BODY_BYTES } from './body-cap.js';
 import { postAnnouncement } from './post-announcement.js';
 
 import type { Event, NewEvent } from '../events/event.js';
@@ -319,5 +320,62 @@ describe('postAnnouncement — non-uniqueness error propagation', () => {
 
     expect(err).toBe(boom);
     expect(err).not.toBeInstanceOf(BoardError);
+  });
+});
+
+describe('postAnnouncement — body-size cap (Story 5.1 / AC #2)', () => {
+  it('accepts an announcement body EXACTLY at the 256 KB cap (announcement.posted stored verbatim)', async () => {
+    const da = memoryDataAccess(ledger());
+    const atCap = 'a'.repeat(MAX_BODY_BYTES); // ASCII → byteLength === MAX_BODY_BYTES
+
+    const room = await postAnnouncement(da, 'ada', {
+      projectId: 'calling-interface',
+      subject: 'Need a reviewer',
+      body: atCap,
+    });
+    expect(room.roomId).toBe('need-a-reviewer');
+    expect(room.body).toBe(atCap); // stored verbatim
+
+    const posted = await da.eventsByType('announcement.posted');
+    expect(posted).toHaveLength(1);
+    expect((posted[0]?.payload as { body: string }).body).toBe(atCap);
+  });
+
+  it('throws BODY_TOO_LARGE for a member posting a body ONE byte over the cap and appends NOTHING', async () => {
+    const da = memoryDataAccess(ledger());
+    const before = await da.maxSeq();
+    const overCap = 'a'.repeat(MAX_BODY_BYTES + 1);
+
+    // ada IS a member → the gate passes; the cap is what rejects (the member-over-cap path).
+    const err = await postAnnouncement(da, 'ada', {
+      projectId: 'calling-interface',
+      subject: 'Too big',
+      body: overCap,
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(BoardError);
+    expect((err as BoardError).code).toBe('BODY_TOO_LARGE');
+    // Nothing appended on the over-cap path.
+    expect(await da.maxSeq()).toBe(before);
+    expect(await da.eventsByType('announcement.posted')).toHaveLength(0);
+  });
+
+  it('a NON-member over-cap post is rejected NOT_A_MEMBER (the gate runs BEFORE the cap), nothing appended', async () => {
+    const da = memoryDataAccess(ledger());
+    const before = await da.maxSeq();
+    const overCap = 'a'.repeat(MAX_BODY_BYTES + 1);
+
+    // cleo is NOT a member: the membership gate must reject FIRST (NOT_A_MEMBER), so the
+    // size of the body is never reached — precedence the story pins (gate runs first).
+    const err = await postAnnouncement(da, 'cleo', {
+      projectId: 'calling-interface',
+      subject: 'Sneaky and big',
+      body: overCap,
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(BoardError);
+    expect((err as BoardError).code).toBe('NOT_A_MEMBER');
+    expect(await da.maxSeq()).toBe(before);
+    expect(await da.eventsByType('announcement.posted')).toHaveLength(0);
   });
 });

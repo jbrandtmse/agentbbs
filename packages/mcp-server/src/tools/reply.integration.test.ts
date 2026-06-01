@@ -259,6 +259,65 @@ describe('reply over a real MCP client + real ledger (AC #5)', () => {
     expect(await dataAccess!.eventsByType('room.replied')).toHaveLength(0);
   });
 
+  it('rejects a malformed room_id (empty / whitespace / non-slug charset) at the Zod boundary BEFORE core — nothing appended, the real room.replied is untouched (closes deferred-work 4.3-a)', async () => {
+    // Establish a REAL, active room first (announce → post → reply) so there is a genuine
+    // room.replied on the ledger — then prove each malformed reply leaves that count
+    // UNCHANGED (a stronger guarantee than asserting 0: a valid reply DID append, a
+    // malformed one does NOT). roomIdSchema (room-shared.ts) is `.min(1).max(200)` + the
+    // slug regex `^[a-z0-9]+(?:-[a-z0-9]+)*$`, so an empty / whitespace-only / non-slug
+    // (uppercase, spaces, punctuation) room_id is rejected by the SDK before the delegate
+    // runs — a Zod validation rejection (isError, NOT a closed board code), not ROOM_NOT_FOUND.
+    let roomId: string;
+    {
+      const { client } = await connect();
+      await registerAndAnnounce(client, 'ada', 'calling-interface');
+      roomId = await postAnnouncement(
+        client,
+        'calling-interface',
+        'Need a reviewer',
+        'seed',
+      );
+    }
+    const { client } = await connect();
+    await client.callTool({
+      name: 'register',
+      arguments: { handle: 'bob', current_focus: 'x' },
+    });
+    // A valid reply activates the room → exactly one room.replied exists from here on.
+    const ok = (await client.callTool({
+      name: 'reply',
+      arguments: { room_id: roomId, body: 'I can take a look' },
+    })) as CallToolResult;
+    expect(ok.isError).toBeFalsy();
+    expect(await dataAccess!.eventsByType('room.replied')).toHaveLength(1);
+
+    // Each malformed room_id is rejected at the boundary; the ledger never grows and the
+    // single legitimate room.replied is untouched.
+    const malformedRoomIds = [
+      '',
+      '   ',
+      'Bad Room!',
+      'UPPER',
+      '--leading',
+      'a..b',
+    ];
+    for (const badRoomId of malformedRoomIds) {
+      const before = await dataAccess!.maxSeq();
+      const result = (await client.callTool({
+        name: 'reply',
+        arguments: { room_id: badRoomId, body: 'should be rejected' },
+      })) as CallToolResult;
+
+      expect(result.isError).toBe(true);
+      // A Zod validation rejection, NOT a domain error — no closed board code (contrast the
+      // ROOM_NOT_FOUND case above, where a well-formed-but-unknown id reaches core).
+      expect(readErrorPayload(result)).toBeUndefined();
+      // Rejected before core → nothing appended; the real room.replied count is unchanged.
+      expect(await dataAccess!.maxSeq()).toBe(before);
+      expect(await dataAccess!.eventsByType('room.replied')).toHaveLength(1);
+    }
+  });
+
   it('a second reply by an ALREADY-MEMBER appends a room.replied but NO second board.joined (count stays 1)', async () => {
     const { client } = await connect();
     await registerAndAnnounce(client, 'ada', 'calling-interface');
