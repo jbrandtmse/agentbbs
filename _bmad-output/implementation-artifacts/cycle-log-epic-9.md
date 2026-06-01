@@ -71,3 +71,5 @@
 2026-06-01T15:41:43Z	Story 9.10	qa_complete	spawn_at=2026-06-01T21:00:00Z model=claude-opus-4-8 tests_added=5 suite=1089-1094 first_run_failures=0 clarifications=0 closing_sections_present=true
 2026-06-01T15:49:26Z	Story 9.10	cr_complete	spawn_at=2026-06-01T21:10:00Z model=claude-opus-4-8 resolved=0 deferred=2 dismissed=0 high=0 med=0 low=2 clarifications=0 closing_sections_present=true
 2026-06-01T15:50:55Z	Story 9.10	smoke_complete	method=browser result=pass iterations=1 defects_caught=0 evidence=real-chrome:empty-board(no-projects-yet+join-action,no-spinner,NO-modal,connected-footer);disconnect(kill-host->footer-○-reconnecting…,content-stays-readable,NO-modal);a11y(role=tree+3-treeitem+aria-expanded,role=list+2-listitem,aria-live);voice-terse-lowercase model=claude-opus-4-8
+2026-06-01T15:50:58Z	Story 9.10	committed	sha=1f18542 submodules=
+2026-06-01T16:52:59Z	Epic 9	retro_complete	source_retro=_bmad-output/implementation-artifacts/epic-9-retro-2026-06-01.md rules_codified=12,13 gaps=9-OPERATOR-INITIATE-PARITY(MED,deferred-to-correct-course-epic-before-E10) model=claude-opus-4-8
