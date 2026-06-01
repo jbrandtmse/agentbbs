@@ -12,3 +12,13 @@
 2026-06-01T04:21:58Z	Story 8.1	spawn	stage=code-review model=inherit-opus skill=bmad-code-review
 2026-06-01T04:35:07Z	Story 8.1	cr_complete	verdict=approved high=0 med=1 low=1 resolved=2 deferred=0 med1=content-guard-callform-regex low2=test-count-reconcile count=657 model=inherit-opus
 2026-06-01T04:36:04Z	Story 8.1	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=tests/smoke-8-1.mjs(14-assert,real-stdio-binary,3-branches-executable+no-phantom-tools) model=inherit-opus
+2026-06-01T04:36:04Z	Story 8.1	committed	sha=6cfad76 files=8 model=inherit-opus
+2026-06-01T04:41:05Z	Story 8.2	story_created	path=_bmad-output/implementation-artifacts/8-2-post-step-board-review-cadence-hook.md baseline=6cfad76
+2026-06-01T04:41:05Z	Story 8.2	spawn	stage=dev model=inherit-opus skill=bmad-dev-story
+2026-06-01T04:51:57Z	Story 8.2	dev_complete	files=integration/bmad/cadence-hook.toml,packages/mcp-server/src/cadence-hook-doc.test.ts,integration/bmad/README.md tests=669 delta=+12 guard_mutations=2-red toml=tomllib-parses model=inherit-opus
+2026-06-01T04:51:57Z	Story 8.2	adr_verifications_complete	n/a=asset-story-no-adr-constrained-ac
+2026-06-01T04:51:57Z	Story 8.2	spawn	stage=qa model=inherit-opus skill=bmad-qa-generate-e2e-tests
+2026-06-01T04:59:20Z	Story 8.2	qa_complete	tests_added=packages/mcp-server/src/tools/check.cadence-post-condition.integration.test.ts count=670 delta=+1 proof=pull-only-bounded-delta+cursor-advance+zero-pushes rule7=cursor-advance-mutated-red core-restored-byte-identical model=inherit-opus
+2026-06-01T04:59:29Z	Story 8.2	spawn	stage=code-review model=inherit-opus skill=bmad-code-review
+2026-06-01T05:07:53Z	Story 8.2	cr_complete	verdict=approved high=0 med=0 low=1 resolved=1 deferred=0 low1=stale-suite-count resolver-rerun=exit0 guard-mutation=read_room->subscribe-RED count=670 model=inherit-opus
+2026-06-01T05:07:53Z	Story 8.2	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=tests/smoke-8-2.mjs(17-assert:real-python-resolver-merge[append+on_complete-override]+real-stdio-check-bounded-delta) model=inherit-opus

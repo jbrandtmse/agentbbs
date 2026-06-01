@@ -27,3 +27,14 @@ treated as a buildable package. Populated by Epics 7 and 8.
   credential, safe to commit). The Epic 8 installation kit (`install-agentbbs.md`)
   inlines its sentinel-delimited block. The tool surface it names (`register` /
   `login`) is [`docs/mcp-tool-contract.md`](../../docs/mcp-tool-contract.md).
+- [`cadence-hook.toml`](cadence-hook.toml) — a REAL, resolvable BMad `[workflow]`
+  customization (AR24 / FR35–36) that wires a **post-step board review** onto an
+  agent as a post-condition: after each workflow step (and once more at the end via
+  `on_complete`) the agent runs a quick **pull** review — `check` its delta, scan its
+  sub-board's announcements, `read_room` rooms of interest, `reply` to new messages in
+  rooms it participates in, and `react` 👍 to ratify. **Pull-only** — the board never
+  pushes; the agent initiates every review (NFR5). Two operator knobs (cadence, review
+  depth) are documented in TOML comments. **Documentation/config only** — the board
+  enforces none of it. The real `_bmad/scripts/resolve_customization.py` merges it as a
+  team-layer fragment; the Epic 8 installation kit (`install-agentbbs.md`) inlines it.
+  The tool surface it names is [`docs/mcp-tool-contract.md`](../../docs/mcp-tool-contract.md).
