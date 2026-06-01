@@ -14,7 +14,9 @@
 //   GET /api/projects/:projectId/members→ { members }
 //   GET /api/projects/:projectId/announcements → { announcements }
 //   GET /api/projects/:projectId/rooms  → { rooms }
-//   GET /api/rooms/:roomId              → { room, messages }
+//   GET /api/rooms/:roomId              → { room, messages, participants }
+//     (each message additionally carries a DISPLAY-ONLY `created_at`; the host has the
+//      events, core's RoomMessage + the ratified MCP message wire stay seq-only — Story 9.5)
 //   GET /api/rooms/:roomId/contract     → { room_id, contract }
 // The route table maps cleanly to the remaining read ops (read-room / read-contract /
 // list-* already wired); WRITE endpoints (reply / react / add_participant / join) are
@@ -32,12 +34,14 @@
 import {
   BoardError,
   boardDirectory,
+  findRoom,
   listAnnouncements,
   listProjects,
   listRooms,
   needsYouRooms,
   readContract,
-  readRoom,
+  roomMessages,
+  roomParticipants,
 } from '@agentbbs/core';
 
 import {
@@ -47,7 +51,7 @@ import {
   roomToWire,
 } from './wire.js';
 
-import type { DataAccess } from '@agentbbs/core';
+import type { DataAccess, Event } from '@agentbbs/core';
 
 /** A slug param (project_id / room_id) — the shape core read ops expect. */
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -85,6 +89,20 @@ interface Route {
   /** Path template, e.g. `/api/rooms/:roomId/contract`. */
   pattern: string;
   handler: RouteHandler;
+}
+
+/**
+ * Index every event's `createdAt` (ISO-8601 UTC string) by its `seq`. A {@link RoomMessage}'s
+ * identity IS its underlying event `seq`, so this maps each message to its DISPLAY timestamp
+ * (Story 9.5) without touching core. Used only to enrich the `/api/rooms/:id` envelope; the
+ * ORDER key stays `seq` (this index is never sorted on).
+ */
+function createdAtIndex(events: Event[]): Map<number, string> {
+  const index = new Map<number, string>();
+  for (const event of events) {
+    index.set(event.seq, event.createdAt);
+  }
+  return index;
 }
 
 /** Build a uniform `{ code, message }` error response at the given status. */
@@ -183,10 +201,39 @@ const ROUTES: Route[] = [
     pattern: '/api/rooms/:roomId',
     handler: async (params, { dataAccess }) => {
       const roomId = requireSlug(params.roomId, 'room_id');
-      const { room, messages } = await readRoom(dataAccess, roomId);
+      // Read the `seq`-ordered stream ONCE; resolve the room (ROOM_NOT_FOUND mirrors
+      // readRoom), then derive its messages + participants + the per-message display
+      // timestamp from the SAME events. Story 9.5: the core RoomMessage and the ratified
+      // MCP message wire (`messageToWire`) are UNTOUCHED — `created_at` is a HOST-LAYER
+      // DISPLAY-ONLY field attached here (the host has the events; core does not carry it
+      // because `seq`, never `createdAt`, is the order key). Ordering stays by `seq`.
+      const events = await dataAccess.eventsSince(0);
+      const room = findRoom(events, roomId);
+      if (room === undefined) {
+        throw new BoardError(
+          'ROOM_NOT_FOUND',
+          `No such room: "${roomId}". It was never announced.`,
+        );
+      }
+      const messages = roomMessages(events, roomId);
+      // Map each message `seq` → its event `createdAt` (the message's identity IS its
+      // event `seq`), so the display timestamp pairs with the right post.
+      const createdAtBySeq = createdAtIndex(events);
+      const participants = roomParticipants(events, roomId);
       return {
         status: 200,
-        body: { room: roomToWire(room), messages: messages.map(messageToWire) },
+        body: {
+          room: roomToWire(room),
+          // DISPLAY-ONLY `created_at` (ISO string) appended to the ratified message wire;
+          // ordering is by `seq` (messageToWire + roomMessages keep that invariant).
+          messages: messages.map((m) => ({
+            ...messageToWire(m),
+            created_at: createdAtBySeq.get(m.seq) ?? '',
+          })),
+          // The room's participants (posted-in ∪ pulled-in), seq-ordered — the joined-row
+          // + operator-posture source. A pulled-in peer with no message still appears.
+          participants,
+        },
       };
     },
   },

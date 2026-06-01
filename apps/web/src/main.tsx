@@ -8,6 +8,10 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import '@agentbbs/ui-shared/tokens.css';
+// Story 9.2 markdown render classes (the room thread renders post bodies inert through
+// MarkdownView) + Story 9.5 room structural classes — both side-effecting stylesheets.
+import '@agentbbs/ui-shared/markdown.css';
+import '@agentbbs/ui-shared/room.css';
 
 import { App } from './App.js';
 

@@ -10,7 +10,16 @@
 
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
+import { prewarmHighlighter } from '@agentbbs/ui-shared';
 
 import { App } from './App.js';
 
@@ -99,10 +108,51 @@ const RESPONSES: Record<string, unknown> = {
     ],
   },
   '/api/projects/payments/announcements': { announcements: [] },
+  // Story 9.5 — opening a room loads its thread (/api/rooms/:id → room + messages +
+  // participants, each message carrying a display created_at). `ops` is a participant here
+  // (it replied), so the operator posture resolves to peer.
+  '/api/rooms/ledger-rollover': {
+    room: {
+      room_id: 'ledger-rollover',
+      project_id: 'payments',
+      subject: 'Ledger rollover',
+      body: 'How do we roll the ledger?',
+      posted_by: 'bob',
+      seq: 9,
+      active: true,
+      activated_by: 'ops',
+      activated_at_seq: 10,
+    },
+    messages: [
+      {
+        seq: 9,
+        actor: 'bob',
+        body: 'How do we roll the ledger?',
+        kind: 'announcement',
+        reactions: [],
+        created_at: '2026-06-01T08:00:00.000Z',
+      },
+      {
+        seq: 10,
+        actor: 'ops',
+        body: 'Let us **discuss**.',
+        kind: 'reply',
+        reactions: [],
+        created_at: '2026-06-01T08:05:00.000Z',
+      },
+    ],
+    participants: ['ops'],
+  },
 };
 
 let container: HTMLDivElement;
 let root: Root;
+
+beforeAll(async () => {
+  // Story 9.5 room-open test renders RoomView → MarkdownView; warm the highlighter so the
+  // synchronous render path produces the inert body on first paint.
+  await prewarmHighlighter();
+});
 
 beforeEach(() => {
   container = document.createElement('div');
@@ -219,5 +269,67 @@ describe('App shell — NavTree from the JSON API + live SSE decorations (Story 
       container.querySelector(`${roomSel} [data-testid="unread-badge"]`)
         ?.textContent,
     ).toBe('1');
+  });
+});
+
+describe('App shell — opening a room renders the thread (Story 9.5)', () => {
+  /** Mount the shell + flush the board load. */
+  async function mountAndLoad(): Promise<void> {
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await flush();
+  }
+
+  it('shows the "Select a room" placeholder before any room is opened', async () => {
+    await mountAndLoad();
+    expect(container.querySelector('[data-testid="no-room"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="room-view"]')).toBeNull();
+  });
+
+  it('clicking a tree room opens its RoomView thread (breadcrumb + seq-ordered inert posts)', async () => {
+    await mountAndLoad();
+
+    // Click the payments room row in the tree (Story 9.4 selection → Story 9.5 open).
+    const row = container.querySelector<HTMLElement>(
+      '[data-project-id="payments"] [data-room-id="ledger-rollover"]',
+    );
+    expect(row).not.toBeNull();
+    await act(async () => {
+      row?.click();
+    });
+    await flush();
+
+    const roomView = container.querySelector('[data-testid="room-view"]');
+    expect(roomView).not.toBeNull();
+    // Breadcrumb: payments › #ledger-rollover.
+    const crumb = roomView?.querySelector('[data-testid="room-breadcrumb"]');
+    expect(crumb?.textContent).toContain('payments');
+    expect(crumb?.textContent).toContain('#ledger-rollover');
+    // The two posts render seq-ordered (announcement #9 then reply #10).
+    const seqs = [
+      ...(roomView?.querySelectorAll('[data-testid="message-post"]') ?? []),
+    ].map((n) => Number(n.getAttribute('data-message-seq')));
+    expect(seqs).toEqual([9, 10]);
+    // The reply body rendered inert via MarkdownView (a real <strong>, not raw markdown).
+    expect(roomView?.querySelector('.markdown-view strong')?.textContent).toBe(
+      'discuss',
+    );
+  });
+
+  it('shows `you: @ops (peer)` posture because ops is a participant of the opened room', async () => {
+    await mountAndLoad();
+    const row = container.querySelector<HTMLElement>(
+      '[data-project-id="payments"] [data-room-id="ledger-rollover"]',
+    );
+    await act(async () => {
+      row?.click();
+    });
+    await flush();
+
+    const posture = container.querySelector('[data-testid="operator-posture"]');
+    expect(posture?.textContent).toBe('you: @ops (peer)');
+    expect(posture?.getAttribute('data-posture')).toBe('peer');
   });
 });

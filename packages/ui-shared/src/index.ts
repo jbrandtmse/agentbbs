@@ -54,3 +54,26 @@ export { UnreadBadge } from './tree/UnreadBadge.js';
 export type { UnreadBadgeProps } from './tree/UnreadBadge.js';
 export { NeedsYouItem } from './tree/NeedsYouItem.js';
 export type { NeedsYouItemProps } from './tree/NeedsYouItem.js';
+
+// Story 9.5 — the room main-column thread: the breadcrumb + joined-participants row +
+// operator posture (RoomView), the seq-ordered thread (MessageThread), and each inert post
+// (MessagePost) consuming the Story 9.2 MarkdownView. Prop-driven + presentation-only
+// (NFR2). The display timestamp formatter is deterministic/locale-stable (Rule 3).
+export {
+  MessagePost,
+  POST_COLLAPSE_LINE_THRESHOLD,
+} from './room/MessagePost.js';
+export type {
+  MessagePostProps,
+  MessagePostModel,
+  MessagePostKind,
+} from './room/MessagePost.js';
+export { MessageThread } from './room/MessageThread.js';
+export type { MessageThreadProps } from './room/MessageThread.js';
+export { RoomView } from './room/RoomView.js';
+export type {
+  RoomViewProps,
+  RoomViewModel,
+  OperatorPosture,
+} from './room/RoomView.js';
+export { formatTimestamp } from './room/format-timestamp.js';

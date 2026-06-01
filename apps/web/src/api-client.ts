@@ -12,7 +12,12 @@
 // /api/needs-you, and the NavTreeModel builder + the IMMUTABLE SSE tree fold (the live
 // unread/activity decorations) — extending the 9.3 immutability discipline to the tree.
 
-import type { NavTreeModel, NavTreeProject } from '@agentbbs/ui-shared';
+import type {
+  MessagePostModel,
+  NavTreeModel,
+  NavTreeProject,
+  RoomViewModel,
+} from '@agentbbs/ui-shared';
 
 /** A project (sub-board) as the JSON API returns it (snake_case). */
 export interface ProjectWire {
@@ -49,6 +54,28 @@ export interface RoomsResponse {
 /** The `/api/projects/:id/announcements` envelope. */
 export interface AnnouncementsResponse {
   announcements: RoomWire[];
+}
+
+/**
+ * A room message as `/api/rooms/:id` returns it (snake_case). Mirrors the MCP `read_room`
+ * message shape `{ seq, actor, body, kind, reactions }` PLUS the host-layer DISPLAY-ONLY
+ * `created_at` (Story 9.5 — the host attaches it; core's RoomMessage stays seq-only). The
+ * ORDER key is `seq`, never `created_at`.
+ */
+export interface MessageWire {
+  seq: number;
+  actor: string;
+  body: string;
+  kind: 'announcement' | 'reply';
+  reactions: string[];
+  created_at: string;
+}
+
+/** The `/api/rooms/:id` envelope — the room metadata, its messages, and its participants. */
+export interface RoomResponse {
+  room: RoomWire;
+  messages: MessageWire[];
+  participants: string[];
 }
 
 /** The `/api/me` envelope — the resolved operator handle, or null (watching-only). */
@@ -375,4 +402,77 @@ export function selectRoom(model: NavTreeModel, roomId: string): NavTreeModel {
     ),
   }));
   return { ...model, activeRoomId: roomId, projects };
+}
+
+// =============================================================================
+// Room thread (Story 9.5) — fetching ONE room's history + building the prop-driven
+// RoomViewModel @agentbbs/ui-shared's RoomView renders. The operator POSTURE (AC2) is
+// computed from /api/me + the room's participant list; the interactive join flip is 9.7.
+// =============================================================================
+
+/** Fetch ONE room's metadata + messages + participants (`/api/rooms/:id`). */
+export async function fetchRoom(
+  roomId: string,
+  baseUrl = '',
+  fetchImpl: typeof fetch = fetch,
+): Promise<RoomResponse> {
+  return getJson<RoomResponse>(
+    `/api/rooms/${encodeURIComponent(roomId)}`,
+    baseUrl,
+    fetchImpl,
+  );
+}
+
+/**
+ * Build the prop-driven {@link RoomViewModel} from the `/api/rooms/:id` envelope + the
+ * resolved operator handle. The operator POSTURE (AC2, the Mode A→B signal): `peer` when
+ * the operator handle is in the room's participant list, else `watching`. The message
+ * order key stays `seq` (RoomView/MessageThread sort by it); `created_at` is mapped to the
+ * post model's display `createdAt` only.
+ *
+ * @param room The room envelope from {@link fetchRoom}.
+ * @param operatorHandle The resolved operator handle (`/api/me`), or `null` (watching-only).
+ */
+export function buildRoomViewModel(
+  room: RoomResponse,
+  operatorHandle: string | null,
+): RoomViewModel {
+  const isPeer =
+    operatorHandle !== null && room.participants.includes(operatorHandle);
+  const messages: MessagePostModel[] = room.messages.map((m) => ({
+    seq: m.seq,
+    actor: m.actor,
+    body: m.body,
+    kind: m.kind,
+    createdAt: m.created_at,
+    reactions: m.reactions,
+  }));
+  return {
+    roomId: room.room.room_id,
+    projectId: room.room.project_id,
+    subject: room.room.subject,
+    participants: room.participants,
+    messages,
+    operatorPosture:
+      isPeer && operatorHandle !== null
+        ? { kind: 'peer', handle: operatorHandle }
+        : { kind: 'watching' },
+  };
+}
+
+/**
+ * Load + build a room's {@link RoomViewModel} in one call: fetch the room and `/api/me`,
+ * then compute the model (incl. the operator posture). The single seam apps/web's shell
+ * calls when a tree room is selected.
+ */
+export async function loadRoomViewModel(
+  roomId: string,
+  baseUrl = '',
+  fetchImpl: typeof fetch = fetch,
+): Promise<RoomViewModel> {
+  const [room, me] = await Promise.all([
+    fetchRoom(roomId, baseUrl, fetchImpl),
+    fetchMe(baseUrl, fetchImpl),
+  ]);
+  return buildRoomViewModel(room, me.handle);
 }

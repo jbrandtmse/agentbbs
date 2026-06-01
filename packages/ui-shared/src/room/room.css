@@ -1,0 +1,28 @@
+/*
+ * Room thread structural styling (Story 9.5). The room components (MessagePost /
+ * MessageThread / RoomView) carry their VISUAL tokens via inline `style` props (the
+ * NavTree convention), so this stylesheet is intentionally thin: it provides the few
+ * structural rules that are awkward as inline styles and a stable class seam for the
+ * later stories (9.6 agreed rail/wash, 9.10 a11y). Consumers import it as a side-effecting
+ * stylesheet alongside tokens.css + markdown.css.
+ *
+ * SOURCE OF TRUTH for the visual contract: DESIGN.md §Components -> Message post +
+ * Breadcrumb/joined row. No inline-style escape of the strict style-src CSP (NFR12): the
+ * inline styles the components set are token-var references only.
+ */
+
+/* The post body within the reading measure — the MarkdownView already applies --measure
+ * via .markdown-view; this keeps the body column from exceeding it inside the post. */
+.message-post-body {
+  max-width: var(--measure);
+}
+
+/* The "show more"/"show less" toggle underlines on hover (calm affordance). */
+.message-post-toggle:hover {
+  text-decoration: underline;
+}
+
+/* The seq-ordered thread never collapses its posts horizontally below the measure. */
+.message-thread {
+  min-width: 0;
+}

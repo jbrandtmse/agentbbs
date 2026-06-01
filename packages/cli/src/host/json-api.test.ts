@@ -99,6 +99,105 @@ describe('handleApiRequest — read routes', () => {
   });
 });
 
+// --- Story 9.5: /api/rooms/:id carries each message's DISPLAY created_at + the room's
+// participant list (host-layer additive fields; core RoomMessage + the ratified MCP message
+// wire are UNTOUCHED — created_at is attached at the host, ordering stays by `seq`). Real
+// in-memory ledger (Rule 3). ---
+describe('handleApiRequest — /api/rooms/:id display timestamp + participants (Story 9.5)', () => {
+  async function seedRoom(): Promise<string> {
+    await register(dataAccess, { handle: 'bob', currentFocus: 'init' });
+    const room = await postAnnouncement(dataAccess, 'alice', {
+      projectId: 'calling-interface',
+      subject: 'Need a reviewer',
+      body: 'announcement body',
+    });
+    await reply(dataAccess, 'alice', { roomId: room.roomId, body: 'starting' });
+    await reply(dataAccess, 'bob', { roomId: room.roomId, body: 'on it' });
+    return room.roomId;
+  }
+
+  it('each message carries a created_at (ISO string) alongside the ratified seq/actor/body/kind/reactions', async () => {
+    const roomId = await seedRoom();
+    const res = await handleApiRequest(
+      'GET',
+      `/api/rooms/${roomId}`,
+      dataAccess,
+    );
+    expect(res?.status).toBe(200);
+    const body = res?.body as {
+      messages: {
+        seq: number;
+        actor: string;
+        body: string;
+        kind: string;
+        reactions: string[];
+        created_at: string;
+      }[];
+    };
+    expect(body.messages).toHaveLength(3);
+    for (const m of body.messages) {
+      expect(typeof m.created_at).toBe('string');
+      // A real ISO-8601 UTC string round-trips through Date.
+      expect(new Date(m.created_at).toISOString()).toBe(m.created_at);
+    }
+    // The ratified fields are still present + unchanged (created_at is purely additive).
+    expect(body.messages[0]).toMatchObject({
+      kind: 'announcement',
+      actor: 'alice',
+      body: 'announcement body',
+    });
+  });
+
+  it('messages stay ordered by seq even though created_at is now present (order key is seq, NOT created_at)', async () => {
+    const roomId = await seedRoom();
+    const res = await handleApiRequest(
+      'GET',
+      `/api/rooms/${roomId}`,
+      dataAccess,
+    );
+    const body = res?.body as {
+      messages: { seq: number; created_at: string }[];
+    };
+    const seqs = body.messages.map((m) => m.seq);
+    // Strictly ascending by seq — the authoritative order.
+    expect([...seqs].sort((a, b) => a - b)).toEqual(seqs);
+    // created_at for the highest-seq message is NOT necessarily the max timestamp the UI
+    // would sort on — assert the ordering follows seq, not the created_at strings.
+    const bySeq = [...body.messages].sort((a, b) => a.seq - b.seq);
+    expect(body.messages).toEqual(bySeq);
+  });
+
+  it('carries the room participant list (the joined-row + operator-posture source)', async () => {
+    const roomId = await seedRoom();
+    const res = await handleApiRequest(
+      'GET',
+      `/api/rooms/${roomId}`,
+      dataAccess,
+    );
+    const body = res?.body as { participants: string[] };
+    // Both repliers are participants (announcer alice replied; bob replied), in seq order.
+    expect(body.participants).toEqual(['alice', 'bob']);
+  });
+
+  it('a pulled-in (added) non-replying peer is a participant even though it has no message', async () => {
+    const roomId = await seedRoom();
+    await register(dataAccess, { handle: 'ops', currentFocus: 'watching' });
+    await addParticipant(dataAccess, 'alice', { roomId, handle: 'ops' });
+    const res = await handleApiRequest(
+      'GET',
+      `/api/rooms/${roomId}`,
+      dataAccess,
+    );
+    const body = res?.body as {
+      participants: string[];
+      messages: { actor: string }[];
+    };
+    // ops never posted, so it is NOT a message actor, but IS a participant (pulled-in).
+    expect(body.messages.some((m) => m.actor === 'ops')).toBe(false);
+    expect(body.participants).toContain('ops');
+  });
+});
+
 describe('handleApiRequest — error + routing model', () => {
   it('an unknown sub-board → 404 BOARD_NOT_FOUND', async () => {
     const res = await handleApiRequest(

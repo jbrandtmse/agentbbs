@@ -47,6 +47,7 @@ const NO_DEEP_CROSS_PACKAGE = {
     '@agentbbs/*/*',
     '!@agentbbs/ui-shared/tokens.css',
     '!@agentbbs/ui-shared/markdown.css',
+    '!@agentbbs/ui-shared/room.css',
   ],
   message:
     "Cross-package imports must target the package barrel (@agentbbs/<x>) — except a package's PUBLISHED asset subpath (e.g. @agentbbs/ui-shared/tokens.css). Never reach a deep TS path; re-export from index.ts.",

@@ -19,16 +19,17 @@
 // 9.7 — for 9.4 the click handler is a documented no-op stub (logs intent).
 
 import { useEffect, useState } from 'react';
-import { NavTree } from '@agentbbs/ui-shared';
+import { NavTree, RoomView } from '@agentbbs/ui-shared';
 
 import {
   foldTreeDelta,
+  loadRoomViewModel,
   loadTreeModel,
   openEventStream,
   selectRoom,
 } from './api-client.js';
 
-import type { NavTreeModel } from '@agentbbs/ui-shared';
+import type { NavTreeModel, RoomViewModel } from '@agentbbs/ui-shared';
 import type { CSSProperties } from 'react';
 
 const shellStyle: CSSProperties = {
@@ -41,13 +42,20 @@ const shellStyle: CSSProperties = {
 
 const mainStyle: CSSProperties = {
   flex: 1,
-  padding: '1rem',
+  minWidth: 0,
+  height: '100vh',
+  display: 'flex',
+  flexDirection: 'column',
 };
 
-/** The web control-room shell — sidebar NavTree + a main pane (room thread is Story 9.5). */
+/** The web control-room shell — sidebar NavTree + the room thread main column (Story 9.5). */
 export function App() {
   const [model, setModel] = useState<NavTreeModel | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The currently-open room's view model (Story 9.5 — a SINGLE open room; multi-tab is 9.8),
+  // or null when no room is selected. Loaded on selection from the host JSON API.
+  const [room, setRoom] = useState<RoomViewModel | null>(null);
+  const [roomError, setRoomError] = useState<string | null>(null);
 
   // Build the tree model once on mount (real ledger data over the JSON API).
   useEffect(() => {
@@ -78,6 +86,19 @@ export function App() {
 
   function handleSelectRoom(roomId: string): void {
     setModel((prev) => (prev === null ? prev : selectRoom(prev, roomId)));
+    // Open the room as a thread (Story 9.5 — a single open room). Load its view model
+    // (room + messages + participants + the operator posture) from the host JSON API.
+    setRoom(null);
+    setRoomError(null);
+    loadRoomViewModel(roomId)
+      .then((built) => {
+        setRoom(built);
+      })
+      .catch((err: unknown) => {
+        setRoomError(
+          err instanceof Error ? err.message : 'Failed to open the room.',
+        );
+      });
   }
 
   function handleJoinProject(): void {
@@ -95,18 +116,21 @@ export function App() {
         />
       )}
       <main style={mainStyle} data-testid="main-pane">
-        <h1>AgentBBS — Web Control Room</h1>
         {error !== null && <p data-testid="error">Error: {error}</p>}
         {model === null && error === null && <p>Loading the board…</p>}
         {model !== null && model.activeRoomId === null && (
           <p data-testid="no-room">Select a room from the sidebar.</p>
         )}
-        {model !== null && model.activeRoomId !== null && (
-          <p data-testid="active-room">
-            Viewing <code>#{model.activeRoomId}</code> — the room thread renders
-            in Story 9.5.
-          </p>
-        )}
+        {model !== null &&
+          model.activeRoomId !== null &&
+          roomError !== null && (
+            <p data-testid="room-error">Error: {roomError}</p>
+          )}
+        {model !== null &&
+          model.activeRoomId !== null &&
+          room === null &&
+          roomError === null && <p data-testid="room-loading">Opening room…</p>}
+        {room !== null && <RoomView room={room} />}
       </main>
     </div>
   );

@@ -8,7 +8,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildRoomViewModel,
   fetchDirectory,
+  fetchRoom,
   foldDelta,
   foldTreeDelta,
   INITIAL_LIVE_STATE,
@@ -16,7 +18,7 @@ import {
   selectRoom,
 } from './api-client.js';
 
-import type { EventWire } from './api-client.js';
+import type { EventWire, RoomResponse } from './api-client.js';
 import type { NavTreeModel } from '@agentbbs/ui-shared';
 
 describe('fetchDirectory', () => {
@@ -291,5 +293,103 @@ describe('loadTreeModel — builds the model from the JSON API (global read FR28
     );
     expect(needOps?.needsYou).toBe(true);
     expect(model.needsYou.map((r) => r.roomId)).toEqual(['need-ops']);
+  });
+});
+
+// --- Story 9.5: room fetch + the RoomViewModel builder (operator posture + seq order) ---
+
+/** A room envelope fixture (the `/api/rooms/:id` shape). */
+function roomResponse(): RoomResponse {
+  return {
+    room: {
+      room_id: 'need-a-reviewer',
+      project_id: 'calling-interface',
+      subject: 'Need a reviewer',
+      body: 'seed',
+      posted_by: 'alice',
+      seq: 5,
+      active: true,
+      activated_by: 'bob',
+      activated_at_seq: 6,
+    },
+    messages: [
+      {
+        seq: 5,
+        actor: 'alice',
+        body: 'seed',
+        kind: 'announcement',
+        reactions: [],
+        created_at: '2026-06-01T09:00:00.000Z',
+      },
+      {
+        seq: 6,
+        actor: 'bob',
+        body: 'first',
+        kind: 'reply',
+        reactions: [],
+        created_at: '2026-06-01T09:01:00.000Z',
+      },
+    ],
+    participants: ['alice', 'bob'],
+  };
+}
+
+describe('fetchRoom', () => {
+  it('returns the parsed { room, messages, participants } envelope on 200', async () => {
+    const fakeFetch = (async () =>
+      new Response(JSON.stringify(roomResponse()), {
+        status: 200,
+      })) as unknown as typeof fetch;
+    const res = await fetchRoom('need-a-reviewer', '', fakeFetch);
+    expect(res.room.room_id).toBe('need-a-reviewer');
+    expect(res.messages).toHaveLength(2);
+    expect(res.participants).toEqual(['alice', 'bob']);
+    expect(res.messages[0].created_at).toBe('2026-06-01T09:00:00.000Z');
+  });
+
+  it('throws on a non-2xx response', async () => {
+    const fakeFetch = (async () =>
+      new Response('nope', { status: 404 })) as unknown as typeof fetch;
+    await expect(fetchRoom('x', '', fakeFetch)).rejects.toThrow(/HTTP 404/);
+  });
+});
+
+describe('buildRoomViewModel — maps the envelope + computes the operator posture (AC2)', () => {
+  it('maps room metadata, participants, and the display created_at onto each post', () => {
+    const model = buildRoomViewModel(roomResponse(), 'ops');
+    expect(model.roomId).toBe('need-a-reviewer');
+    expect(model.projectId).toBe('calling-interface');
+    expect(model.participants).toEqual(['alice', 'bob']);
+    expect(model.messages.map((m) => m.seq)).toEqual([5, 6]);
+    // The host-layer created_at is carried onto the post's display createdAt.
+    expect(model.messages[0].createdAt).toBe('2026-06-01T09:00:00.000Z');
+    expect(model.messages[0].kind).toBe('announcement');
+  });
+
+  it('posture is `watching` when the operator is NOT a participant', () => {
+    const model = buildRoomViewModel(roomResponse(), 'ops');
+    expect(model.operatorPosture).toEqual({ kind: 'watching' });
+  });
+
+  it('posture is `peer` when the operator IS a participant', () => {
+    const model = buildRoomViewModel(roomResponse(), 'bob');
+    expect(model.operatorPosture).toEqual({ kind: 'peer', handle: 'bob' });
+  });
+
+  it('posture is `watching` for a null operator (watching-only), even if a same-named handle exists', () => {
+    const model = buildRoomViewModel(roomResponse(), null);
+    expect(model.operatorPosture).toEqual({ kind: 'watching' });
+  });
+
+  it('posture is `peer` for a PULLED-IN operator who never posted a message (derives from participants, not authorship)', () => {
+    // The operator was added to the room (so is in `participants`) but authored no message.
+    // Posture must be `peer` — the AC2 derivation is the participant list, NOT message
+    // authorship. Mirrors the host test's pulled-in-non-replying peer.
+    const envelope = roomResponse();
+    envelope.participants = ['alice', 'bob', 'ops'];
+    const model = buildRoomViewModel(envelope, 'ops');
+    expect(model.operatorPosture).toEqual({ kind: 'peer', handle: 'ops' });
+    // And `ops` authored none of the rendered posts.
+    expect(model.messages.some((m) => m.actor === 'ops')).toBe(false);
   });
 });

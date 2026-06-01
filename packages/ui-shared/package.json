@@ -9,14 +9,16 @@
       "import": "./dist/index.js"
     },
     "./tokens.css": "./src/tokens.css",
-    "./markdown.css": "./src/markdown/markdown.css"
+    "./markdown.css": "./src/markdown/markdown.css",
+    "./room.css": "./src/room/room.css"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
     "src/tokens.css",
-    "src/markdown/markdown.css"
+    "src/markdown/markdown.css",
+    "src/room/room.css"
   ],
   "scripts": {
     "build": "tsc -b tsconfig.json"
