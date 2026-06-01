@@ -110,6 +110,10 @@ export default defineConfig({
           name: 'ui-shared-dom',
           environment: 'happy-dom',
           include: ['packages/ui-shared/src/**/*.test.tsx'],
+          // Story 9.2 / 9.1-L1: set IS_REACT_ACT_ENVIRONMENT=true so React act()
+          // semantics are correct and the act(...) stderr warning is silenced for
+          // every DOM-project component test.
+          setupFiles: ['packages/ui-shared/src/test-setup-dom.ts'],
           passWithNoTests: true,
         },
       },

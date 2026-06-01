@@ -1,0 +1,148 @@
+/*
+ * Markdown render styling — the CSS CLASSES that tint the inert output of
+ * render-markdown.ts (Story 9.2). tokens.css (Story 9.1) ships the color VALUES as
+ * custom properties (`--code-keyword`, `--code-panel`, …); THIS file maps the
+ * Shiki-emitted token CLASSES (`.code-keyword`, …) and the markdown element set to
+ * those properties. No inline styles anywhere — a strict `style-src` CSP holds
+ * (NFR12). Consumers import this as a side-effecting stylesheet alongside
+ * tokens.css.
+ *
+ * SOURCE OF TRUTH for the visual contract: DESIGN.md §Components -> "Markdown
+ * rendering inside a post" (code-block / inline-code / table / blockquote rows).
+ */
+
+/* ============================ Reading column / prose ======================== */
+.markdown-view {
+  font-family: var(--message-body-font);
+  font-size: var(--message-body-size);
+  font-weight: var(--message-body-weight);
+  line-height: var(--message-body-line-height);
+  color: var(--text-body);
+  max-width: var(--measure);
+  overflow-wrap: break-word;
+}
+
+.markdown-view p {
+  margin: 0 0 var(--space-4);
+}
+
+.markdown-view strong {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.markdown-view a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.markdown-view a:hover {
+  text-decoration: underline;
+}
+
+.markdown-view ul,
+.markdown-view ol {
+  margin: 0 0 var(--space-4);
+  padding-left: var(--space-6);
+}
+.markdown-view li {
+  margin: var(--space-1) 0;
+}
+
+/* ============================== Blockquote ================================== */
+/* 3px left rail, dimmed, mono. */
+.markdown-view blockquote {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-1) 0 var(--space-1) var(--space-4);
+  border-left: 3px solid var(--border);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+}
+
+/* ============================== Inline code ================================= */
+/* Mono on --code-inline-bg, 1px border, small radius. */
+.markdown-view :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: var(--identifier-size);
+  background: var(--code-inline-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 1px 4px;
+  color: var(--text-body);
+}
+
+/* ============================== GFM table =================================== */
+.markdown-view table {
+  border-collapse: collapse;
+  margin: 0 0 var(--space-4);
+  font-size: var(--message-body-size);
+}
+.markdown-view th,
+.markdown-view td {
+  border: 1px solid var(--border);
+  padding: var(--space-1) var(--space-3);
+  text-align: left;
+}
+.markdown-view thead th {
+  font-family: var(--ui-label-font);
+  font-weight: 600;
+  /* Faint head-bg — DESIGN.md notes #2a2a2c dark / #f0f0f0 light. tokens.css has
+   * no --table-head-bg yet; use --badge-bg (the nearest faint panel tone) so the
+   * head shade follows the active theme rather than hard-coding a literal. */
+  background: var(--badge-bg);
+}
+
+/* ============================== Code block ================================== */
+/* Deeper code-panel ground, 1px border, 6px radius, NEVER wraps (horizontal
+ * scroll), caps at ~25 lines then internal scroll. The expand affordance is
+ * applied by the CodeBlock component toggling `.code-block--expanded`. */
+.markdown-view pre.code-block,
+.code-block {
+  background: var(--code-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-body);
+  font-family: var(--code-font);
+  font-size: var(--code-size);
+  line-height: var(--code-line-height);
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  overflow-x: auto; /* wide code -> horizontal scroll, never wrap */
+  overflow-y: auto;
+  /* ~25 lines cap (line-height 1.55 * 12px ~= 18.6px/line). */
+  max-height: calc(var(--code-line-height) * var(--code-size) * 25);
+}
+.code-block--expanded {
+  max-height: none;
+}
+.code-block code,
+.code-block-inner {
+  display: block;
+  white-space: pre; /* NEVER wraps */
+  font-family: inherit;
+}
+.code-line {
+  display: block;
+  min-height: 1em;
+}
+
+/* ----- Restrained VS Code syntax tints (class -> token color value) ----- */
+/* The Shiki token COLOR is discarded; only these scope-derived classes tint. */
+.code-keyword {
+  color: var(--code-keyword);
+}
+.code-type {
+  color: var(--code-type);
+}
+.code-fn {
+  color: var(--code-fn);
+}
+.code-comment {
+  color: var(--code-comment);
+  font-style: italic;
+}
+.code-italic {
+  font-style: italic;
+}
+.code-bold {
+  font-weight: 600;
+}

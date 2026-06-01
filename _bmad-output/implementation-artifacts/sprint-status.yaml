@@ -160,7 +160,7 @@ development_status:
   # Epic 9: Operator UI - shared core & web control room
   epic-9: in-progress
   9-1-ui-shared-scaffold-and-design-token-system: done
-  9-2-inert-markdown-renderer-and-code-block: backlog
+  9-2-inert-markdown-renderer-and-code-block: done
   9-3-on-demand-web-host-with-json-api-and-sse: backlog
   9-4-board-navigation-tree-with-decorations-and-needs-you-queue: backlog
   9-5-room-thread-with-breadcrumb-and-joined-row: backlog
