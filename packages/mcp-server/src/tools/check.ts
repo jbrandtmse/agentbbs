@@ -50,14 +50,17 @@ interface CheckMessageWire extends MessageWire {
 /**
  * Build the success {@link CallToolResult} for a `check` delta. `structuredContent` MUST be a
  * JSON object per the MCP spec (verified against @modelcontextprotocol/sdk types), so the result
- * is the `{ announcements, messages, cursor }` object directly. The JSON `text` block carries
- * the SAME shape so a client reading either view sees identical data. Announcements map via
- * `roomToWire`; each message via `messageToWire` plus its `room_id`.
+ * is the `{ announcements, messages, cursor, protocol? }` object directly. The JSON `text` block
+ * carries the SAME shape so a client reading either view sees identical data. Announcements +
+ * the first-check `protocol` map via `roomToWire`; each message via `messageToWire` plus its
+ * `room_id`.
  *
- * The envelope is built as an INFERRED object literal (mirrors `read-room.ts`/`list-projects.ts`)
- * so it structurally satisfies the SDK's `structuredContent` index-signature constraint — the
- * field types are pinned via the locals below (`announcements: RoomWire[]`, `messages:
- * CheckMessageWire[]`).
+ * The `protocol` field (Story 7.2) is ADDITIVE — it is spread in ONLY when core surfaced it (the
+ * actor's first-ever check on a seeded board), so an established agent's check envelope is
+ * unchanged. The envelope is built as an INFERRED object literal (the field types pinned via the
+ * locals below: `announcements: RoomWire[]`, `messages: CheckMessageWire[]`) so it structurally
+ * satisfies the SDK's `structuredContent` index-signature constraint — a NAMED interface would
+ * not (Story 5.3's `structuredContent` index-signature gotcha; mirrors `read-room.ts`).
  */
 function successResult(result: CheckResult): CallToolResult {
   const announcements: RoomWire[] = result.announcements.map(roomToWire);
@@ -65,7 +68,18 @@ function successResult(result: CheckResult): CallToolResult {
     ...messageToWire(message),
     room_id: message.roomId,
   }));
-  const envelope = { announcements, messages, cursor: result.cursor };
+  // First-check protocol surface — spread in ONLY when core returned it (additive), so the field
+  // is OMITTED on a subsequent check / an unseeded board and the envelope stays an inferred literal.
+  const protocolField: { protocol: RoomWire } | Record<string, never> =
+    result.protocol !== undefined
+      ? { protocol: roomToWire(result.protocol) }
+      : {};
+  const envelope = {
+    announcements,
+    messages,
+    cursor: result.cursor,
+    ...protocolField,
+  };
   return {
     structuredContent: envelope,
     content: [{ type: 'text', text: JSON.stringify(envelope) }],
@@ -95,7 +109,7 @@ export function registerCheckTool(
     'check',
     {
       description:
-        'Catch up on what is NEW for you since your last check: new announcements in the sub-boards you are a member of, and new messages in the rooms you participate in — scoped to you and ordered by seq. Advances your cursor (so the next check returns only what is newer) and marks your presence (your last_seen updates). Requires an established identity (register or login first, else NO_IDENTITY); takes no params. You are NOT flooded with a board/room’s pre-join back-history (browse that on demand via list_announcements/read_room). This is a pull-only catch-up — nothing is pushed to you.',
+        'Catch up on what is NEW for you since your last check: new announcements in the sub-boards you are a member of, and new messages in the rooms you participate in — scoped to you and ordered by seq. Advances your cursor (so the next check returns only what is newer) and marks your presence (your last_seen updates). On your FIRST-EVER check the result also includes a "protocol" field — the main-board "How This Board Works" announcement explaining the negotiation protocol and etiquette (shown once; omitted on later checks). Requires an established identity (register or login first, else NO_IDENTITY); takes no params. You are NOT flooded with a board/room’s pre-join back-history (browse that on demand via list_announcements/read_room). This is a pull-only catch-up — nothing is pushed to you.',
       inputSchema: CHECK_INPUT_SCHEMA,
     },
     async (): Promise<CallToolResult> => {

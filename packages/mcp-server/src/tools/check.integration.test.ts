@@ -136,6 +136,10 @@ async function check(client: Client): Promise<{
   announcements: { room_id: string; seq: number }[];
   messages: { room_id: string; seq: number; actor: string }[];
   cursor: number;
+  // Story 7.2 — present ONLY on a first-ever check of a SEEDED board (these tests build the
+  // server UNSEEDED, so it is always absent here; the seeded surface is exercised by
+  // protocol-seed.integration.test.ts).
+  protocol?: { room_id: string };
 }> {
   const result = (await client.callTool({
     name: 'check',
@@ -146,6 +150,7 @@ async function check(client: Client): Promise<{
     announcements: { room_id: string; seq: number }[];
     messages: { room_id: string; seq: number; actor: string }[];
     cursor: number;
+    protocol?: { room_id: string };
   };
 }
 
@@ -245,6 +250,10 @@ describe('check over a real MCP client + real ledger (AC #5)', () => {
     expect(first.announcements.map((a) => a.room_id)).toContain(postJoinRoomId); // in-scope post-join
     expect(first.announcements.map((a) => a.room_id)).not.toContain(oldRoomId); // NO flood (pre-join)
     expect(first.messages).toEqual([]); // ada participates in no room yet
+    // This server is built UNSEEDED (createBoardServer does not seed) — so even this FIRST check
+    // carries NO `protocol` field (robust to an unseeded board). The seeded surface is proven in
+    // protocol-seed.integration.test.ts.
+    expect(first.protocol).toBeUndefined();
 
     // Presence advanced: exactly one identity.seen now, and list_members last_seen moved forward.
     expect(await seenCount('ada')).toBe(1);

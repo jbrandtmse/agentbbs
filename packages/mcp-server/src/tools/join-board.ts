@@ -12,13 +12,19 @@
 // `board.joined` append + read-back — lives in `core.joinBoard`. core stays session-
 // agnostic; this handler adds no board logic.
 
-import { BoardError, joinBoard } from '@agentbbs/core';
+import {
+  BoardError,
+  joinBoard,
+  readProtocolAnnouncement,
+} from '@agentbbs/core';
 
 import { registerCoreTool } from '../register-tool.js';
 import { projectIdSchema, projectToWire } from './project-shared.js';
+import { roomToWire } from './room-shared.js';
 
+import type { RoomWire } from './room-shared.js';
 import type { SessionIdentity } from '../session.js';
-import type { DataAccess, Project } from '@agentbbs/core';
+import type { DataAccess, Project, Room } from '@agentbbs/core';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 
@@ -34,15 +40,34 @@ const JOIN_BOARD_INPUT_SCHEMA = {
 } as const;
 
 /**
- * Build the success {@link CallToolResult} for a joined board. Carries the snake_case
- * project payload (including `members`, so the caller sees their membership) in BOTH
- * `structuredContent` and a JSON `text` block (mirrors the other project tools).
+ * The snake_case `join_board` wire envelope: the joined project's fields (incl. `members`, so the
+ * caller sees their membership), plus the additive `protocol` (Story 7.2 / AC #4) — the seeded
+ * main-board protocol announcement, so a new member MEETS the protocol on join too. `protocol` is
+ * present whenever the board is SEEDED (the read is unconditional on join, mirroring the doc's
+ * "meet the protocol on join"); it is OMITTED on an unseeded board (robust). It extends the
+ * project wire shape, so the envelope keeps the project fields at the top level (back-compat).
+ *
+ * Build the success {@link CallToolResult} for a joined board. Carries the snake_case project
+ * payload (including `members`) plus the additive `protocol` (when seeded — Story 7.2) in BOTH
+ * `structuredContent` and a JSON `text` block (mirrors the other project tools). The `protocol`
+ * is spread in ONLY when present, so the envelope stays an INFERRED object literal — required to
+ * satisfy the SDK's `structuredContent` index-signature constraint (a NAMED type would not; the
+ * Story 5.3 `structuredContent` gotcha). An unseeded board omits it (pre-7.2 envelope unchanged).
+ *
+ * @param project The joined project (from `core.joinBoard`).
+ * @param protocol The seeded protocol room (from `core.readProtocolAnnouncement`), or `undefined`
+ *   when the board is unseeded.
  */
-function successResult(project: Project): CallToolResult {
-  const wire = projectToWire(project);
+function successResult(
+  project: Project,
+  protocol: Room | undefined,
+): CallToolResult {
+  const protocolField: { protocol: RoomWire } | Record<string, never> =
+    protocol !== undefined ? { protocol: roomToWire(protocol) } : {};
+  const envelope = { ...projectToWire(project), ...protocolField };
   return {
-    structuredContent: { ...wire },
-    content: [{ type: 'text', text: JSON.stringify(wire) }],
+    structuredContent: envelope,
+    content: [{ type: 'text', text: JSON.stringify(envelope) }],
   };
 }
 
@@ -70,7 +95,7 @@ export function registerJoinBoardTool(
     'join_board',
     {
       description:
-        'Join a sub-board by its project_id, becoming a member able to post in it and appear in its directory. You can be a member of multiple sub-boards at once. Requires an established identity — register or login first, else fails with NO_IDENTITY. Fails with BOARD_NOT_FOUND if no sub-board with that project_id was announced. Re-joining a board you already belong to is a harmless no-op.',
+        'Join a sub-board by its project_id, becoming a member able to post in it and appear in its directory. You can be a member of multiple sub-boards at once. The result also includes a "protocol" field — the main-board "How This Board Works" announcement explaining the negotiation protocol and etiquette — so you meet the protocol on join. Requires an established identity — register or login first, else fails with NO_IDENTITY. Fails with BOARD_NOT_FOUND if no sub-board with that project_id was announced. Re-joining a board you already belong to is a harmless no-op.',
       inputSchema: JOIN_BOARD_INPUT_SCHEMA,
     },
     async (args): Promise<CallToolResult> => {
@@ -90,7 +115,12 @@ export function registerJoinBoardTool(
         session.handle,
         args.project_id,
       );
-      return successResult(project);
+      // Surface the seeded protocol announcement so a new member MEETS the protocol on
+      // join too (Story 7.2 / AC #4). A core READ (readProtocolAnnouncement) — the tool
+      // stays thin; an idempotent re-join still surfaces it (the read is unconditional).
+      // Robust to an unseeded board: `undefined` → the additive field is omitted.
+      const protocol = await readProtocolAnnouncement(dataAccess);
+      return successResult(project, protocol);
     },
   );
 }

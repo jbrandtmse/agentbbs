@@ -27,6 +27,11 @@ import { describe, expect, it } from 'vitest';
 
 import { check } from './check.js';
 import { findIdentity, foldIdentities } from '../identity/projection.js';
+import {
+  MAIN_BOARD_PROJECT_ID,
+  PROTOCOL_ROOM_ID,
+  seedProtocolAnnouncement,
+} from '../seed/protocol-announcement.js';
 
 import type { Event, NewEvent } from '../events/event.js';
 import type { DataAccess } from '../ports.js';
@@ -153,6 +158,10 @@ describe('check — first dial-in after joining a board with OLD announcements (
     expect(result.messages).toEqual([]);
     // Empty delta → cursor stays at bob's prior cursor (0). maxReturned = max(0, nothing) = 0.
     expect(result.cursor).toBe(0);
+    // UNSEEDED board (no protocol announcement) → first check surfaces NOTHING (robust). The
+    // additive `protocol` field is OMITTED, not carried as undefined.
+    expect(result.protocol).toBeUndefined();
+    expect('protocol' in result).toBe(false);
 
     // Presence advanced: recordSeen appended an identity.seen, so last_seen moved forward.
     const after = findIdentity(await da.eventsByActor('bob'), 'bob');
@@ -396,5 +405,139 @@ describe('check — presence (recordSeen) advances last_seen on every dial-in (A
       (e) => e.type === 'identity.seen',
     );
     expect(seens).toHaveLength(2);
+  });
+});
+
+describe('check — first-check protocol surface (Story 7.2 / AC #3)', () => {
+  it('surfaces the seeded protocol on the FIRST check, even though it predates the actor’s join floor', async () => {
+    // Seed the protocol FIRST (so its announcement.posted sits at a LOW seq), then a fresh
+    // identity registers and joins a board AFTER it — so the protocol is below every floor the
+    // actor has and would never surface via the scoped delta. It must STILL surface on first check.
+    const da = memoryDataAccess();
+    await seedProtocolAnnouncement(da); // protocol announcement now at a low seq
+    await da.append([
+      {
+        type: 'identity.registered',
+        actor: 'ada',
+        payload: { handle: 'ada', currentFocus: 'x' },
+      },
+    ]);
+
+    const first = await check(da, 'ada');
+
+    // The protocol is surfaced on the first check — regardless of floors/cursor.
+    expect(first.protocol).toBeDefined();
+    expect(first.protocol?.roomId).toBe(PROTOCOL_ROOM_ID);
+    expect(first.protocol?.projectId).toBe(MAIN_BOARD_PROJECT_ID);
+    // It is ADDITIVE — NOT injected into the scoped delta, and does NOT advance the cursor (the
+    // actor is a member of no board and participates in no room, so the delta is empty and the
+    // cursor stays at her prior 0; the low-seq protocol announcement does not move it).
+    expect(first.announcements).toEqual([]);
+    expect(first.messages).toEqual([]);
+    expect(first.cursor).toBe(0);
+  });
+
+  it('does NOT re-surface the protocol on a SUBSEQUENT check (the actor now has an identity.seen)', async () => {
+    const da = memoryDataAccess();
+    await seedProtocolAnnouncement(da);
+    await da.append([
+      {
+        type: 'identity.registered',
+        actor: 'ada',
+        payload: { handle: 'ada', currentFocus: 'x' },
+      },
+    ]);
+
+    const first = await check(da, 'ada');
+    expect(first.protocol).toBeDefined(); // surfaced once
+
+    const second = await check(da, 'ada');
+    // Not re-surfaced — the actor's first check appended an identity.seen, so this is not a
+    // first-check; the additive field is OMITTED.
+    expect(second.protocol).toBeUndefined();
+    expect('protocol' in second).toBe(false);
+  });
+
+  it('surfaces NOTHING on a first check of an UNSEEDED board (robust)', async () => {
+    const da = memoryDataAccess([reg(1, 'ada')]);
+
+    const result = await check(da, 'ada');
+
+    expect(result.protocol).toBeUndefined();
+    expect('protocol' in result).toBe(false);
+  });
+
+  it('surfaces the protocol independently per identity (each agent meets it on THEIR first check)', async () => {
+    const da = memoryDataAccess();
+    await seedProtocolAnnouncement(da);
+    await da.append([
+      {
+        type: 'identity.registered',
+        actor: 'ada',
+        payload: { handle: 'ada', currentFocus: 'x' },
+      },
+      {
+        type: 'identity.registered',
+        actor: 'bob',
+        payload: { handle: 'bob', currentFocus: 'y' },
+      },
+    ]);
+
+    // ada checks first (surfaced), then again (not). bob's FIRST check still surfaces it — ada's
+    // identity.seen does not consume bob's first-check.
+    expect((await check(da, 'ada')).protocol).toBeDefined();
+    expect((await check(da, 'ada')).protocol).toBeUndefined();
+    expect((await check(da, 'bob')).protocol).toBeDefined();
+  });
+
+  it('surfaces on a first check even when the actor REGISTERED + JOINED a board BEFORE the protocol was seeded (floor/cursor-independent, the late-bootstrap ordering)', async () => {
+    // The REVERSE of the "seed first, join after" case above: here the actor establishes her
+    // board membership FIRST (so she holds a board join floor at a LOW seq), and the protocol is
+    // seeded AFTER — so its announcement sits at a HIGHER seq than her floor and her prior cursor.
+    // The surfacing is detected by "no prior identity.seen", NOT by any floor/cursor, so it must
+    // STILL surface on her first check (and a DIFFERENT identity's first check too) — proving the
+    // surface is genuinely per-identity and floor/cursor-independent in BOTH orderings.
+    const da = memoryDataAccess([
+      reg(1, 'ada'),
+      announced(2, 'ada', 'board-a'), // ada announces + auto-joins board-a (her board floor)
+      joined(3, 'ada', 'board-a'),
+      posted(4, 'ada', 'board-a', 'kickoff'), // an in-scope announcement she will ALSO see
+    ]);
+    // The protocol is seeded LATER (at higher seqs than ada's join floor 3 and her cursor 0).
+    await seedProtocolAnnouncement(da);
+    const seededAt = await da.maxSeq();
+    expect(seededAt).toBeGreaterThan(3); // the protocol announcement is ABOVE ada's board floor
+
+    // A SECOND identity registers AFTER the seed too (its first check must also surface it).
+    await da.append([
+      {
+        type: 'identity.registered',
+        actor: 'bob',
+        payload: { handle: 'bob', currentFocus: 'y' },
+      },
+    ]);
+
+    const first = await check(da, 'ada');
+
+    // The protocol surfaces on ada's first check despite being seeded AFTER she joined — the
+    // detection is "no prior identity.seen", not a floor/cursor comparison.
+    expect(first.protocol).toBeDefined();
+    expect(first.protocol?.roomId).toBe(PROTOCOL_ROOM_ID);
+    expect(first.protocol?.projectId).toBe(MAIN_BOARD_PROJECT_ID);
+    // It is ADDITIVE: the protocol (on the reserved `main` board, which ada is NOT a member of)
+    // is NOT injected into her scoped `announcements` — only HER board-a announcement is — and it
+    // does NOT advance the cursor past her real in-scope delta. Her cursor reflects the kickoff
+    // announcement (seq 4), NOT the higher-seq protocol announcement.
+    expect(first.announcements.map((r) => r.roomId)).toEqual(['kickoff']);
+    expect(first.announcements.map((r) => r.roomId)).not.toContain(
+      PROTOCOL_ROOM_ID,
+    );
+    expect(first.cursor).toBe(4);
+    expect(first.cursor).toBeLessThan(seededAt); // the protocol announcement did not move it
+
+    // Subsequent check: not re-surfaced (ada now has an identity.seen).
+    expect((await check(da, 'ada')).protocol).toBeUndefined();
+    // A different identity that registered AFTER the seed STILL meets it on ITS first check.
+    expect((await check(da, 'bob')).protocol).toBeDefined();
   });
 });

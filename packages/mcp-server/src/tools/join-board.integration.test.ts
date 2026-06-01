@@ -125,6 +125,12 @@ describe('join_board over a real MCP client + real ledger (AC #6)', () => {
       'ada',
       'bob',
     ]);
+    // This server is built UNSEEDED (createBoardServer does not seed) — so the join result
+    // carries NO `protocol` field (robust to an unseeded board; Story 7.2). The SEEDED surface
+    // (a new member meets the protocol on join) is proven in protocol-seed.integration.test.ts.
+    expect(
+      (joinX.structuredContent as { protocol?: unknown }).protocol,
+    ).toBeUndefined();
 
     const joinY = (await client.callTool({
       name: 'join_board',
