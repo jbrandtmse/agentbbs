@@ -93,3 +93,12 @@ export { AGREED_POST_WASH } from './room/MessagePost.js';
 // participate-as-peer write surface (Mode B, FR31). Prop-driven + presentation-only (NFR2).
 export { Composer } from './room/Composer.js';
 export type { ComposerProps } from './room/Composer.js';
+
+// Story 9.8 — rooms as editor tabs: the web tab strip (TabStrip) + one open-room tab (RoomTab),
+// active vs inactive styling, the background-tab unread `•`, and the trailing `×` close glyph.
+// Closing a tab is a VIEW-ONLY action (drop the tab) — NEVER a board op (AC2). Prop-driven +
+// presentation-only (NFR2). The model stays prop-driven for Epic 10 VS Code-native-tab reuse.
+export { RoomTab } from './room/RoomTab.js';
+export type { RoomTabProps, RoomTabModel } from './room/RoomTab.js';
+export { TabStrip } from './room/TabStrip.js';
+export type { TabStripProps } from './room/TabStrip.js';

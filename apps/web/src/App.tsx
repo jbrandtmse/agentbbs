@@ -1,4 +1,4 @@
-// The web control-room shell (Story 9.3 → 9.4).
+// The web control-room shell (Story 9.3 → 9.4 → 9.5 → 9.8).
 //
 // Story 9.4 replaces the minimal 9.3 project list with the real sidebar NavTree
 // (@agentbbs/ui-shared): a global-read tree of EVERY project/room (FR28), live
@@ -9,7 +9,6 @@
 //   2. opens the SSE channel and folds each delta into the tree model IMMUTABLY
 //      (`foldTreeDelta`) so unread/activity decorations + live escalations update in
 //      near-real-time (host → operator browser; NFR5 — never an agent push).
-// Selecting a room clears its unread (basic for 9.4 — the rich tab-focus clear is 9.8/9.9).
 //
 // It imports @agentbbs/ui-shared (the shared React core) + the tokens.css design-token core
 // (in main.tsx). It NEVER imports @agentbbs/core / @agentbbs/data-access and never speaks
@@ -17,12 +16,29 @@
 //
 // Story 9.7 adds the join-gate Composer (the room main-column composer seam): the operator
 // joins + posts as a peer over the SAME core ops agents use (joinBoard → reply), flipping the
-// posture `you: watching` → `you: @operator (peer)` on real participation. The sidebar
-// `＋ join a project…` row stays a documented hand-off (a board-picker affordance, distinct
-// from the in-room composer — see handleJoinProject).
+// posture `you: watching` → `you: @operator (peer)` on real participation.
+//
+// Story 9.8 — ROOMS AS EDITOR TABS. The 9.5 single-open-room model is generalized to a
+// MULTI-TAB model: an ordered list of OPEN rooms + the ACTIVE room id (rooms behave like
+// editor tabs, side-by-side). Clicking a tree room OPENS it as a tab (or focuses it if
+// already open) and makes it active; the active tab's RoomView renders in the main column.
+// A background tab whose room gains SSE activity shows a leading `•` (the same Story 9.4
+// delta signal feeds tab unread too); focusing the tab clears it.
+//
+// AC2 (the load-bearing semantic): CLOSING A TAB IS A VIEW-ONLY ACTION, NEVER A BOARD OP.
+// The board has NO "leave room" / "un-participate" op (membership/participation is
+// append-only + monotonic — Epics 3-5). `handleCloseTab` drops the tab from the open list
+// and picks a new active tab; it fires NO network write. The operator stays whatever
+// participant they were; reopening the tab re-fetches the same room (read stays board-wide,
+// FR28). We do NOT invent a leave/close board write.
+//
+// RETAIN POLICY (documented): each open tab keeps its loaded RoomViewModel in state (a simple
+// "keep open rooms' models cached" so switching back is instant). Only the ACTIVE tab's
+// RoomView is rendered. The VS Code WebviewPanel retain-context LRU policy is an Epic 10
+// concern (noted in DESIGN room-tab); the web strip just holds the models in memory.
 
-import { useEffect, useState } from 'react';
-import { Composer, NavTree, RoomView } from '@agentbbs/ui-shared';
+import { useEffect, useRef, useState } from 'react';
+import { Composer, NavTree, RoomView, TabStrip } from '@agentbbs/ui-shared';
 
 import {
   foldTreeDelta,
@@ -36,7 +52,12 @@ import {
   selectRoom,
 } from './api-client.js';
 
-import type { NavTreeModel, RoomViewModel } from '@agentbbs/ui-shared';
+import type {
+  NavTreeModel,
+  RoomTabModel,
+  RoomViewModel,
+} from '@agentbbs/ui-shared';
+import type { EventWire } from './api-client.js';
 import type { CSSProperties } from 'react';
 
 const shellStyle: CSSProperties = {
@@ -55,25 +76,48 @@ const mainStyle: CSSProperties = {
   flexDirection: 'column',
 };
 
-/** The web control-room shell — sidebar NavTree + the room thread main column (Story 9.5). */
+/**
+ * One open room tab's full client state — the prop-driven {@link RoomTabModel} for the strip,
+ * PLUS the per-tab loaded view model / load error / local join intent (the bits that used to
+ * be single-room shell state in Story 9.5-9.7, now per-tab so multiple rooms stay open).
+ */
+interface OpenTab {
+  roomId: string;
+  /** The tab label (the room identifier, mono) — the subject is room metadata. */
+  label: string;
+  /** The leading `•` unread flag for a BACKGROUND tab (cleared on focus). */
+  unread: boolean;
+  /** The loaded room view model, or null while the room's thread is loading. */
+  room: RoomViewModel | null;
+  /** A load error for this tab's room, or null. */
+  roomError: string | null;
+  /** Whether the operator has clicked `[ join room to post ]` for this room (local intent). */
+  joinedIntent: boolean;
+}
+
+/** Which room id (if any) an SSE event affects — its tab-unread target (mirrors the tree fold). */
+function eventRoomId(event: EventWire): string | undefined {
+  const roomId = event.payload['room_id'];
+  return typeof roomId === 'string' ? roomId : undefined;
+}
+
+/** The web control-room shell — sidebar NavTree + the open-room TABS + active-tab thread. */
 export function App() {
   const [model, setModel] = useState<NavTreeModel | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // The currently-open room's view model (Story 9.5 — a SINGLE open room; multi-tab is 9.8),
-  // or null when no room is selected. Loaded on selection from the host JSON API.
-  const [room, setRoom] = useState<RoomViewModel | null>(null);
-  const [roomError, setRoomError] = useState<string | null>(null);
-  // Whether a composer write (join or send) is in flight — disables the composer controls so
-  // the operator does not double-submit (a basic disabled state; the rich optimistic echo +
+  // Story 9.8 — the MULTI-TAB model: an ordered list of OPEN rooms + the ACTIVE room id. The
+  // active tab's RoomView renders. (Story 9.5-9.7 single-room shell state now lives per-tab.)
+  const [openTabs, setOpenTabs] = useState<OpenTab[]>([]);
+  const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
+  // A ref mirror of `activeRoomId` so the mount-once SSE handler reads the CURRENT active tab
+  // (not the stale value captured when the effect subscribed) when deciding which background
+  // tab gains the unread • — the active tab stays read.
+  const activeRoomIdRef = useRef<string | null>(null);
+  activeRoomIdRef.current = activeRoomId;
+  // Whether a composer write (join or send) is in flight for the active room — disables the
+  // composer controls so the operator does not double-submit (the rich optimistic echo +
   // failure-retry is Story 9.9).
   const [composerPending, setComposerPending] = useState(false);
-  // Whether the operator has clicked `[ join room to post ]` for the open room (local intent).
-  // Design reconciliation (Story 9.7): the board has no standalone "join room" op — clicking
-  // join grants SUB-BOARD membership (joinBoard) and REVEALS the composer field; the FIRST send
-  // (reply) is the grant-on-act that makes the operator a true ROOM PARTICIPANT (posture → peer).
-  // So the composer shows its joined (field + send) state when the operator is ALREADY a peer OR
-  // has just clicked join. Reset whenever a different room is opened.
-  const [joinedIntent, setJoinedIntent] = useState(false);
 
   // Build the tree model once on mount (real ledger data over the JSON API).
   useEffect(() => {
@@ -94,53 +138,178 @@ export function App() {
     };
   }, []);
 
-  // Open the SSE live view; fold each delta into the tree model (live decorations).
+  // Open the SSE live view; fold each delta into the tree model (live decorations) AND into the
+  // open-tab unread flags (a BACKGROUND tab whose room gains activity shows a leading •; the
+  // active tab stays read — the operator is looking at it). Same Story 9.4 delta signal.
   useEffect(() => {
     const close = openEventStream((event) => {
       setModel((prev) => (prev === null ? prev : foldTreeDelta(prev, event)));
+      foldTabUnread(event);
     });
     return close;
+    // Subscribe once on mount. foldTabUnread reads the CURRENT active tab via activeRoomIdRef
+    // (not a captured value), so the single subscription stays correct as the active tab changes.
   }, []);
 
-  function handleSelectRoom(roomId: string): void {
-    setModel((prev) => (prev === null ? prev : selectRoom(prev, roomId)));
-    // Open the room as a thread (Story 9.5 — a single open room). Load its view model
-    // (room + messages + participants + the operator posture) from the host JSON API.
-    setRoom(null);
-    setRoomError(null);
-    // A fresh room starts at its true participation state — clear any prior join intent.
-    setJoinedIntent(false);
+  /**
+   * Fold one SSE delta into the open-tab unread flags (IMMUTABLY — a NEW tabs array). A
+   * `room.replied` / `announcement.posted` for an OPEN, NON-ACTIVE tab sets its `unread` •;
+   * the active tab stays read (the operator is reading it). A delta for a room with no open tab
+   * is ignored (the tree fold handles the sidebar decoration). Never throws.
+   */
+  function foldTabUnread(event: EventWire): void {
+    if (event.type !== 'room.replied' && event.type !== 'announcement.posted') {
+      return;
+    }
+    const roomId = eventRoomId(event);
+    if (roomId === undefined) return;
+    const activeId = activeRoomIdRef.current;
+    setOpenTabs((prev) => {
+      let changed = false;
+      const next = prev.map((tab) => {
+        // The active tab stays read; only a background open tab gains the unread •.
+        if (tab.roomId !== roomId || tab.roomId === activeId || tab.unread) {
+          return tab;
+        }
+        changed = true;
+        return { ...tab, unread: true };
+      });
+      return changed ? next : prev;
+    });
+  }
+
+  /** Load (or reload) a room's view model into its open tab (immutable per-tab update). */
+  function loadTabRoom(roomId: string): void {
     loadRoomViewModel(roomId)
       .then((built) => {
-        setRoom(built);
+        setOpenTabs((prev) =>
+          prev.map((tab) =>
+            tab.roomId === roomId
+              ? { ...tab, room: built, roomError: null }
+              : tab,
+          ),
+        );
       })
       .catch((err: unknown) => {
-        setRoomError(
-          err instanceof Error ? err.message : 'Failed to open the room.',
+        const message =
+          err instanceof Error ? err.message : 'Failed to open the room.';
+        setOpenTabs((prev) =>
+          prev.map((tab) =>
+            tab.roomId === roomId ? { ...tab, roomError: message } : tab,
+          ),
         );
       });
   }
 
+  /**
+   * Clicking a tree room: OPEN it as a tab (or FOCUS it if already open) and make it active.
+   * Focusing clears the tab's unread • (the SSE-fed background unread clears on focus, AC2).
+   * Opening a fresh tab fetches its thread; a re-focus of an already-open tab does NOT refetch
+   * (its model is retained — instant switch).
+   */
+  function handleSelectRoom(roomId: string): void {
+    // Clear the tree-side unread for the selected room (Story 9.4 basic clear-on-select).
+    setModel((prev) => (prev === null ? prev : selectRoom(prev, roomId)));
+    setActiveRoomId(roomId);
+
+    // Decide open-or-focus from the CURRENT tabs (functional check so the load decision does
+    // not rely on a setState updater's side effect — the updater may run after this line).
+    const alreadyOpen = openTabs.some((tab) => tab.roomId === roomId);
+    if (alreadyOpen) {
+      // Already open → focus it + clear its unread • (focus-clears-unread, AC2). No refetch
+      // (the tab's model is retained — instant switch).
+      setOpenTabs((prev) =>
+        prev.map((tab) =>
+          tab.roomId === roomId ? { ...tab, unread: false } : tab,
+        ),
+      );
+      return;
+    }
+    // Not open → append a new tab (loading) + fetch its full model. The label is the room id
+    // (the room subject is room metadata; the tab shows the mono identifier).
+    const label = roomLabelFromTree(roomId);
+    setOpenTabs((prev) => {
+      // Guard a double-open race (two fast clicks): if it slipped in, don't duplicate.
+      if (prev.some((tab) => tab.roomId === roomId)) return prev;
+      return [
+        ...prev,
+        {
+          roomId,
+          label,
+          unread: false,
+          room: null,
+          roomError: null,
+          joinedIntent: false,
+        },
+      ];
+    });
+    loadTabRoom(roomId);
+  }
+
+  /** Find a room's display label (its subject, falling back to the id) from the tree model. */
+  function roomLabelFromTree(roomId: string): string {
+    if (model !== null) {
+      for (const project of model.projects) {
+        const room = project.rooms.find((r) => r.roomId === roomId);
+        if (room) return room.roomId;
+      }
+    }
+    return roomId;
+  }
+
+  /**
+   * Close a tab — a VIEW-ONLY action (AC2). Drop the tab from the open list and pick a sensible
+   * new active tab if the closed one was active (the tab to its right, else its left, else
+   * none). This fires NO board write: the board has no "leave room" op (Epics 3-5); the
+   * operator stays whatever participant they were, and reopening re-fetches the same room. We
+   * do NOT invent a leave/close board op.
+   */
+  function handleCloseTab(roomId: string): void {
+    setOpenTabs((prev) => {
+      const index = prev.findIndex((tab) => tab.roomId === roomId);
+      if (index === -1) return prev;
+      const next = prev.filter((tab) => tab.roomId !== roomId);
+      // If we closed the active tab, reactivate a neighbor (right, else left, else none).
+      setActiveRoomId((currentActive) => {
+        if (currentActive !== roomId) return currentActive;
+        if (next.length === 0) return null;
+        const newIndex = Math.min(index, next.length - 1);
+        return next[newIndex]?.roomId ?? null;
+      });
+      return next;
+    });
+  }
+
   function handleJoinProject(): void {
     // DISPOSITION (Story 9.7): the room-level join-to-post (the join-gate Composer below) is
-    // this story's focus — the operator joins + posts as a peer from INSIDE an open room. The
+    // the participate seam — the operator joins + posts as a peer from INSIDE an open room. The
     // sidebar `＋ join a project…` action (a board-wide discovery affordance, distinct from the
-    // room composer) remains a documented hand-off: it would `postJoin(projectId)` for a chosen
-    // board, but that board-picker UX is out of 9.7's scope (the composer's onJoin already wires
-    // joinBoard for the open room's sub-board). Left as a logged stub.
+    // room composer) remains a documented hand-off. Left as a logged stub.
     console.info(
       'join a project… (sidebar board-picker is a later affordance)',
     );
   }
 
-  // Story 9.6 — toggle a 👍 on a post. Decide react-vs-unreact from the operator's CURRENT
-  // live state on that post (operator ∈ reactions, computed from /api/me), fire the write,
-  // then RE-LOAD the room view model so the live count, the operator's chip state, AND the
-  // agreed-mark POSITION re-derive (a basic refetch/fold — the rich optimistic echo +
-  // reconciliation is Story 9.9). The agreed mark is COMPUTED from the re-fetched contract,
-  // never stored (FR21): it MOVES when a higher-seq message gains the contract and
-  // DISAPPEARS when all live 👍s retract.
+  // The currently ACTIVE tab (the one whose RoomView renders), or undefined when none is open.
+  const activeTab = openTabs.find((tab) => tab.roomId === activeRoomId);
+
+  /** Patch the active tab immutably (used by the reaction/join/send handlers). */
+  function patchActiveTab(patch: Partial<OpenTab>): void {
+    if (activeRoomId === null) return;
+    setOpenTabs((prev) =>
+      prev.map((tab) =>
+        tab.roomId === activeRoomId ? { ...tab, ...patch } : tab,
+      ),
+    );
+  }
+
+  // Story 9.6 — toggle a 👍 on a post in the ACTIVE room. Decide react-vs-unreact from the
+  // operator's CURRENT live state on that post, fire the write, then RE-LOAD the room view
+  // model so the live count, the operator's chip state, AND the agreed-mark POSITION re-derive
+  // (a basic refetch/fold — the rich optimistic echo is Story 9.9). The agreed mark is COMPUTED
+  // from the re-fetched contract, never stored (FR21).
   function handleToggleReaction(seq: number): void {
+    const room = activeTab?.room ?? null;
     if (room === null) return;
     const roomId = room.roomId;
     const operator = room.operatorHandle ?? null;
@@ -153,47 +322,65 @@ export function App() {
     write(roomId, seq)
       .then(() => loadRoomViewModel(roomId))
       .then((rebuilt) => {
-        // Only apply if the operator is still on the same room (guards a fast room switch).
-        setRoom((prev) =>
-          prev !== null && prev.roomId === roomId ? rebuilt : prev,
+        setOpenTabs((prev) =>
+          prev.map((tab) =>
+            tab.roomId === roomId ? { ...tab, room: rebuilt } : tab,
+          ),
         );
       })
       .catch((err: unknown) => {
         // A 403 (NOT_A_MEMBER / NO_OPERATOR) or transient failure — surface a calm error.
-        // The chip's canReact gate prevents the common non-participant doomed write; this
-        // catches the race/edge. Story 9.10 enriches the error voice.
-        setRoomError(
-          err instanceof Error ? err.message : 'Could not update the reaction.',
+        setOpenTabs((prev) =>
+          prev.map((tab) =>
+            tab.roomId === roomId
+              ? {
+                  ...tab,
+                  roomError:
+                    err instanceof Error
+                      ? err.message
+                      : 'Could not update the reaction.',
+                }
+              : tab,
+          ),
         );
       });
   }
 
   // Story 9.7 — `[ join room to post ]`: join the SUB-BOARD (membership) so the operator can
-  // post. Per the Design reconciliation (the board has no standalone "join room" op), room
-  // PARTICIPATION is established by the first SEND (reply, grant-on-act) — joinBoard here is
-  // the immediate membership + the `✓ you joined` step. After joining, refetch the room so the
-  // composer reveals the field; the posture flips to peer once the operator SENDS.
+  // post in the ACTIVE room. Per the Design reconciliation, room PARTICIPATION is established
+  // by the first SEND (reply, grant-on-act); joinBoard here is the immediate membership + the
+  // `✓ you joined` step. After joining, refetch the room so the composer reveals the field.
   function handleJoinRoom(): void {
+    const room = activeTab?.room ?? null;
     if (room === null) return;
     const roomId = room.roomId;
     const projectId = room.projectId;
-    // Reveal the composer field immediately (the join-then-post flow): the operator can now
-    // type their first post, whose SEND (reply) grants room participation. joinBoard runs in
-    // the background to grant sub-board membership.
-    setJoinedIntent(true);
+    patchActiveTab({ joinedIntent: true });
     setComposerPending(true);
     postJoin(projectId)
       .then(() => loadRoomViewModel(roomId))
       .then((rebuilt) => {
-        setRoom((prev) =>
-          prev !== null && prev.roomId === roomId ? rebuilt : prev,
+        setOpenTabs((prev) =>
+          prev.map((tab) =>
+            tab.roomId === roomId ? { ...tab, room: rebuilt } : tab,
+          ),
         );
       })
       .catch((err: unknown) => {
         // Join failed — drop back to the gate (no half-joined state, per EXPERIENCE.md).
-        setJoinedIntent(false);
-        setRoomError(
-          err instanceof Error ? err.message : 'Could not join the room.',
+        setOpenTabs((prev) =>
+          prev.map((tab) =>
+            tab.roomId === roomId
+              ? {
+                  ...tab,
+                  joinedIntent: false,
+                  roomError:
+                    err instanceof Error
+                      ? err.message
+                      : 'Could not join the room.',
+                }
+              : tab,
+          ),
         );
       })
       .finally(() => setComposerPending(false));
@@ -201,27 +388,49 @@ export function App() {
 
   // Story 9.7 — SEND a message as a peer over the SAME core `reply` agents use (no operator
   // backdoor). Grant-on-act makes the operator a ROOM PARTICIPANT, so after the refetch the
-  // posture flips `you: watching` → `you: @operator (peer)` and the 👍/add_participant
-  // affordances enable. Basic refetch (optimistic echo is Story 9.9).
+  // posture flips `you: watching` → `you: @operator (peer)`. Basic refetch (optimistic echo is
+  // Story 9.9).
   function handleSendMessage(body: string): void {
+    const room = activeTab?.room ?? null;
     if (room === null) return;
     const roomId = room.roomId;
     setComposerPending(true);
     postReply(roomId, body)
       .then(() => loadRoomViewModel(roomId))
       .then((rebuilt) => {
-        setRoom((prev) =>
-          prev !== null && prev.roomId === roomId ? rebuilt : prev,
+        setOpenTabs((prev) =>
+          prev.map((tab) =>
+            tab.roomId === roomId ? { ...tab, room: rebuilt } : tab,
+          ),
         );
       })
       .catch((err: unknown) => {
-        // 413 BODY_TOO_LARGE / 403 NO_OPERATOR / transient — surface a calm error (9.10 voice).
-        setRoomError(
-          err instanceof Error ? err.message : 'Could not post the message.',
+        setOpenTabs((prev) =>
+          prev.map((tab) =>
+            tab.roomId === roomId
+              ? {
+                  ...tab,
+                  roomError:
+                    err instanceof Error
+                      ? err.message
+                      : 'Could not post the message.',
+                }
+              : tab,
+          ),
         );
       })
       .finally(() => setComposerPending(false));
   }
+
+  const tabModels: RoomTabModel[] = openTabs.map((tab) => ({
+    roomId: tab.roomId,
+    label: tab.label,
+    unread: tab.unread,
+  }));
+
+  const activeRoom = activeTab?.room ?? null;
+  const activeRoomError = activeTab?.roomError ?? null;
+  const activeJoinedIntent = activeTab?.joinedIntent ?? false;
 
   return (
     <div style={shellStyle} data-testid="web-shell">
@@ -235,31 +444,44 @@ export function App() {
       <main style={mainStyle} data-testid="main-pane">
         {error !== null && <p data-testid="error">Error: {error}</p>}
         {model === null && error === null && <p>Loading the board…</p>}
-        {model !== null && model.activeRoomId === null && (
+
+        {/* Story 9.8 — the open-room editor tabs (side-by-side; active tab base+rail, the
+            rest panel/dim; background unread •; × closes — a VIEW action, never a board op). */}
+        {openTabs.length > 0 && (
+          <TabStrip
+            tabs={tabModels}
+            activeRoomId={activeRoomId}
+            onSelect={handleSelectRoom}
+            onClose={handleCloseTab}
+          />
+        )}
+
+        {model !== null && openTabs.length === 0 && error === null && (
           <p data-testid="no-room">Select a room from the sidebar.</p>
         )}
-        {model !== null &&
-          model.activeRoomId !== null &&
-          roomError !== null && (
-            <p data-testid="room-error">Error: {roomError}</p>
+
+        {activeTab !== undefined && activeRoomError !== null && (
+          <p data-testid="room-error">Error: {activeRoomError}</p>
+        )}
+        {activeTab !== undefined &&
+          activeRoom === null &&
+          activeRoomError === null && (
+            <p data-testid="room-loading">Opening room…</p>
           )}
-        {model !== null &&
-          model.activeRoomId !== null &&
-          room === null &&
-          roomError === null && <p data-testid="room-loading">Opening room…</p>}
-        {room !== null && (
+        {activeRoom !== null && (
           <RoomView
-            room={room}
+            room={activeRoom}
             onToggleReaction={handleToggleReaction}
             composerSlot={
               <Composer
                 // The composer shows its JOINED (field + send) state when the operator is a true
                 // ROOM PARTICIPANT (posture `peer`) OR has just clicked `[ join room to post ]`
-                // (local intent) — the join-then-post flow (Story 9.7 reconciliation: clicking
-                // join reveals the field so the operator can type their first post; that SEND is
-                // the grant-on-act that establishes participation). A watching operator who has
-                // not clicked join sees the `[ join room to post ]` gate.
-                joined={room.operatorPosture.kind === 'peer' || joinedIntent}
+                // (local intent). A watching operator who has not clicked join sees the
+                // `[ join room to post ]` gate.
+                joined={
+                  activeRoom.operatorPosture.kind === 'peer' ||
+                  activeJoinedIntent
+                }
                 pending={composerPending}
                 onJoin={handleJoinRoom}
                 onSend={handleSendMessage}

@@ -818,3 +818,395 @@ describe('App shell — join-gate composer + participate-as-peer (Story 9.7, Mod
     });
   });
 });
+
+// --- Story 9.8 — ROOMS AS EDITOR TABS through the real App shell (Rule 3 real-runtime DOM
+// evidence). A board with TWO rooms, both loadable. Proves: clicking two tree rooms opens two
+// tabs side-by-side; the ACTIVE tab's RoomView renders; clicking an already-open room FOCUSES
+// (does not duplicate) its tab; closing a tab REMOVES it + reactivates a neighbor + fires NO
+// board write (the AC2 load-bearing assertion: closing ≠ leaving); a BACKGROUND tab with SSE
+// activity shows the leading •, which CLEARS when the tab is focused. The fetch stub COUNTS
+// every non-GET write so the close-fires-no-write assertion is mechanical. ---
+describe('App shell — rooms as editor tabs (Story 9.8)', () => {
+  /** Every POST/PUT/DELETE/PATCH (board WRITE) the shell issues — must stay empty across a close. */
+  let writes: string[];
+
+  function roomEnvelope(roomId: string, projectId: string, subject: string) {
+    return {
+      room: {
+        room_id: roomId,
+        project_id: projectId,
+        subject,
+        body: `${subject} body`,
+        posted_by: 'alice',
+        seq: 5,
+        active: true,
+        activated_by: 'alice',
+        activated_at_seq: 6,
+      },
+      messages: [
+        {
+          seq: 5,
+          actor: 'alice',
+          body: `${subject} body`,
+          kind: 'announcement',
+          reactions: [],
+          created_at: '2026-06-01T08:00:00.000Z',
+        },
+      ],
+      // `ops` is a participant of both rooms (so the posture resolves cleanly; participation is
+      // irrelevant to the tab open/close/unread mechanics this block proves).
+      participants: ['ops'],
+    };
+  }
+
+  const ROOM_RESPONSES: Record<string, unknown> = {
+    '/api/me': { handle: 'ops' },
+    '/api/needs-you': { rooms: [] },
+    '/api/directory': {
+      projects: [
+        {
+          project_id: 'calling-interface',
+          title: 'Calling Interface',
+          description: 'd',
+          announcer: 'alice',
+          members: ['alice', 'ops'],
+        },
+      ],
+    },
+    '/api/projects/calling-interface/rooms': {
+      rooms: [
+        {
+          room_id: 'room-a',
+          project_id: 'calling-interface',
+          subject: 'Room A',
+          body: '',
+          posted_by: 'alice',
+          seq: 5,
+          active: true,
+        },
+        {
+          room_id: 'room-b',
+          project_id: 'calling-interface',
+          subject: 'Room B',
+          body: '',
+          posted_by: 'alice',
+          seq: 6,
+          active: true,
+        },
+        {
+          room_id: 'room-c',
+          project_id: 'calling-interface',
+          subject: 'Room C',
+          body: '',
+          posted_by: 'alice',
+          seq: 7,
+          active: true,
+        },
+      ],
+    },
+    '/api/projects/calling-interface/announcements': { announcements: [] },
+    '/api/rooms/room-a': roomEnvelope('room-a', 'calling-interface', 'Room A'),
+    '/api/rooms/room-a/contract': { room_id: 'room-a', contract: null },
+    '/api/rooms/room-b': roomEnvelope('room-b', 'calling-interface', 'Room B'),
+    '/api/rooms/room-b/contract': { room_id: 'room-b', contract: null },
+    '/api/rooms/room-c': roomEnvelope('room-c', 'calling-interface', 'Room C'),
+    '/api/rooms/room-c/contract': { room_id: 'room-c', contract: null },
+  };
+
+  beforeEach(() => {
+    writes = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const method = init?.method ?? 'GET';
+        if (method !== 'GET') {
+          // Any board write — record it so the close-fires-no-write assertion is mechanical.
+          writes.push(`${method} ${url}`);
+          return new Response('{}', { status: 200 });
+        }
+        const body = ROOM_RESPONSES[url];
+        if (body === undefined) return new Response('nope', { status: 404 });
+        return new Response(JSON.stringify(body), { status: 200 });
+      }),
+    );
+    vi.stubGlobal(
+      'EventSource',
+      FakeEventSource as unknown as typeof EventSource,
+    );
+  });
+
+  async function mountBoard(): Promise<void> {
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await flush();
+  }
+
+  function clickRoom(roomId: string): Promise<void> {
+    const row = container.querySelector<HTMLElement>(
+      `[data-project-id="calling-interface"] [data-room-id="${roomId}"]`,
+    );
+    return act(async () => {
+      row?.click();
+    });
+  }
+
+  function tabs(): HTMLElement[] {
+    return [
+      ...container.querySelectorAll<HTMLElement>(
+        '[data-testid="tab-strip"] [data-testid="room-tab"]',
+      ),
+    ];
+  }
+
+  it('clicking two tree rooms opens two tabs side-by-side; the active tab RoomView renders', async () => {
+    await mountBoard();
+    await clickRoom('room-a');
+    await flush();
+    await clickRoom('room-b');
+    await flush();
+
+    // Two tabs, in open order.
+    const ids = tabs().map((t) => t.getAttribute('data-room-id'));
+    expect(ids).toEqual(['room-a', 'room-b']);
+    // room-b is the ACTIVE tab (last opened) and its RoomView renders that room's breadcrumb.
+    const activeTabs = tabs().filter(
+      (t) => t.getAttribute('data-active') === 'true',
+    );
+    expect(activeTabs).toHaveLength(1);
+    expect(activeTabs[0]?.getAttribute('data-room-id')).toBe('room-b');
+    const crumb = container.querySelector('[data-testid="room-breadcrumb"]');
+    expect(crumb?.textContent).toContain('#room-b');
+  });
+
+  it('clicking an already-open room FOCUSES (does not duplicate) its tab', async () => {
+    await mountBoard();
+    await clickRoom('room-a');
+    await flush();
+    await clickRoom('room-b');
+    await flush();
+    // Re-click room-a → it focuses (still 2 tabs, room-a now active).
+    await clickRoom('room-a');
+    await flush();
+
+    const ids = tabs().map((t) => t.getAttribute('data-room-id'));
+    expect(ids).toEqual(['room-a', 'room-b']); // no duplicate
+    const active = tabs().find((t) => t.getAttribute('data-active') === 'true');
+    expect(active?.getAttribute('data-room-id')).toBe('room-a');
+    expect(
+      container.querySelector('[data-testid="room-breadcrumb"]')?.textContent,
+    ).toContain('#room-a');
+  });
+
+  it('AC2 — closing a tab removes it + reactivates a neighbor + fires NO board write (closing ≠ leaving)', async () => {
+    await mountBoard();
+    await clickRoom('room-a');
+    await flush();
+    await clickRoom('room-b');
+    await flush();
+    // Sanity: opening rooms is READ-ONLY (no board write fired by open/focus).
+    expect(writes).toEqual([]);
+
+    // Close the ACTIVE tab (room-b) via its ×.
+    const closeB = tabs()
+      .find((t) => t.getAttribute('data-room-id') === 'room-b')
+      ?.querySelector<HTMLButtonElement>('[data-testid="room-tab-close"]');
+    await act(async () => {
+      closeB?.click();
+    });
+    await flush();
+
+    // The tab is gone; room-a (the neighbor) is reactivated and its RoomView renders.
+    const ids = tabs().map((t) => t.getAttribute('data-room-id'));
+    expect(ids).toEqual(['room-a']);
+    expect(
+      container.querySelector('[data-testid="room-breadcrumb"]')?.textContent,
+    ).toContain('#room-a');
+
+    // AC2 LOAD-BEARING: closing fired NO board write — no leave/un-participate/any POST. The
+    // board has no "leave room" op; closing is purely a VIEW state change.
+    expect(writes).toEqual([]);
+
+    // Reopening room-b re-fetches the SAME room (participation unchanged — `ops` still a peer).
+    await clickRoom('room-b');
+    await flush();
+    expect(
+      container.querySelector('[data-testid="operator-posture"]')?.textContent,
+    ).toBe('you: @ops (peer)');
+    // Still no board write across the whole close→reopen cycle.
+    expect(writes).toEqual([]);
+  });
+
+  it('closing the active MIDDLE tab reactivates the RIGHT neighbor (right→left→none order)', async () => {
+    // Harden the neighbor-pick (the existing AC2 test closes the LAST tab → left neighbor; the
+    // close-last test → none. This exercises the RIGHT branch of Math.min(index, next-1): with a
+    // tab to the right of the closed one, the right neighbor — not the left — becomes active.)
+    await mountBoard();
+    await clickRoom('room-a');
+    await flush();
+    await clickRoom('room-b');
+    await flush();
+    await clickRoom('room-c');
+    await flush();
+    // Focus the MIDDLE tab (room-b), so closing it must choose between left (room-a) and right
+    // (room-c). The spec says right wins.
+    await clickRoom('room-b');
+    await flush();
+    expect(
+      tabs()
+        .find((t) => t.getAttribute('data-room-id') === 'room-b')
+        ?.getAttribute('data-active'),
+    ).toBe('true');
+
+    const closeB = tabs()
+      .find((t) => t.getAttribute('data-room-id') === 'room-b')
+      ?.querySelector<HTMLButtonElement>('[data-testid="room-tab-close"]');
+    await act(async () => {
+      closeB?.click();
+    });
+    await flush();
+
+    // room-b gone; the RIGHT neighbor (room-c) is active — NOT the left (room-a).
+    const ids = tabs().map((t) => t.getAttribute('data-room-id'));
+    expect(ids).toEqual(['room-a', 'room-c']);
+    const active = tabs().find((t) => t.getAttribute('data-active') === 'true');
+    expect(active?.getAttribute('data-room-id')).toBe('room-c');
+    expect(
+      container.querySelector('[data-testid="room-breadcrumb"]')?.textContent,
+    ).toContain('#room-c');
+    expect(writes).toEqual([]);
+  });
+
+  it('closing an INACTIVE tab leaves the active tab unchanged (no spurious reactivation)', async () => {
+    // The neighbor-pick only runs when the CLOSED tab was active. Closing a background tab must
+    // not disturb which tab is active.
+    await mountBoard();
+    await clickRoom('room-a');
+    await flush();
+    await clickRoom('room-b');
+    await flush();
+    // room-b active; close the INACTIVE room-a.
+    const closeA = tabs()
+      .find((t) => t.getAttribute('data-room-id') === 'room-a')
+      ?.querySelector<HTMLButtonElement>('[data-testid="room-tab-close"]');
+    await act(async () => {
+      closeA?.click();
+    });
+    await flush();
+
+    const ids = tabs().map((t) => t.getAttribute('data-room-id'));
+    expect(ids).toEqual(['room-b']);
+    // room-b is STILL the active tab (closing a background tab does not change focus).
+    const active = tabs().find((t) => t.getAttribute('data-active') === 'true');
+    expect(active?.getAttribute('data-room-id')).toBe('room-b');
+    expect(
+      container.querySelector('[data-testid="room-breadcrumb"]')?.textContent,
+    ).toContain('#room-b');
+    expect(writes).toEqual([]);
+  });
+
+  it('an SSE delta for a room with NO open tab is ignored (no tab gains unread, fold is a no-op)', async () => {
+    // foldTabUnread early-returns for a room that is not open. Only room-a is open; a delta for
+    // room-b (closed) must not fabricate a tab or mark anything unread.
+    await mountBoard();
+    await clickRoom('room-a');
+    await flush();
+    await act(async () => {
+      FakeEventSource.last?.emitMessage(
+        JSON.stringify({
+          seq: 40,
+          type: 'room.replied',
+          actor: 'alice',
+          created_at: '2026-06-01T00:00:00.000Z',
+          payload: { room_id: 'room-b', body: 'ping' },
+        }),
+      );
+    });
+    await flush();
+    // Still exactly one tab (room-a), and it is not unread (the delta was for a non-open room).
+    const ids = tabs().map((t) => t.getAttribute('data-room-id'));
+    expect(ids).toEqual(['room-a']);
+    expect(tabs()[0]?.getAttribute('data-unread')).toBe('false');
+    expect(writes).toEqual([]);
+  });
+
+  it('closing the LAST tab clears the active room (back to the empty placeholder), still no write', async () => {
+    await mountBoard();
+    await clickRoom('room-a');
+    await flush();
+    const closeA = tabs()[0]?.querySelector<HTMLButtonElement>(
+      '[data-testid="room-tab-close"]',
+    );
+    await act(async () => {
+      closeA?.click();
+    });
+    await flush();
+    expect(tabs()).toHaveLength(0);
+    expect(container.querySelector('[data-testid="tab-strip"]')).toBeNull();
+    expect(container.querySelector('[data-testid="room-view"]')).toBeNull();
+    expect(container.querySelector('[data-testid="no-room"]')).not.toBeNull();
+    expect(writes).toEqual([]);
+  });
+
+  it('a BACKGROUND tab gains a leading • on SSE activity, which CLEARS when focused', async () => {
+    await mountBoard();
+    await clickRoom('room-a');
+    await flush();
+    await clickRoom('room-b');
+    await flush();
+    // room-a is now a BACKGROUND tab (room-b active). It has no unread • yet.
+    const tabA = () =>
+      tabs().find((t) => t.getAttribute('data-room-id') === 'room-a');
+    expect(tabA()?.getAttribute('data-unread')).toBe('false');
+
+    // Push a reply delta for the background room-a over SSE.
+    await act(async () => {
+      FakeEventSource.last?.emitMessage(
+        JSON.stringify({
+          seq: 30,
+          type: 'room.replied',
+          actor: 'alice',
+          created_at: '2026-06-01T00:00:00.000Z',
+          payload: { room_id: 'room-a', body: 'ping' },
+        }),
+      );
+    });
+
+    // room-a's background tab now shows the leading • (data-unread true + the dot element).
+    expect(tabA()?.getAttribute('data-unread')).toBe('true');
+    expect(
+      tabA()?.querySelector('[data-testid="room-tab-unread"]'),
+    ).not.toBeNull();
+
+    // Focus room-a → its unread • clears (focus-clears-unread).
+    await clickRoom('room-a');
+    await flush();
+    expect(tabA()?.getAttribute('data-unread')).toBe('false');
+    expect(tabA()?.querySelector('[data-testid="room-tab-unread"]')).toBeNull();
+    // SSE-driven unread + focus-clear are pure VIEW state — no board write.
+    expect(writes).toEqual([]);
+  });
+
+  it('the ACTIVE tab does NOT gain unread when its own room gets SSE activity (the operator is reading it)', async () => {
+    await mountBoard();
+    await clickRoom('room-a');
+    await flush();
+    // room-a is active. A reply delta for room-a must NOT mark it unread.
+    await act(async () => {
+      FakeEventSource.last?.emitMessage(
+        JSON.stringify({
+          seq: 31,
+          type: 'room.replied',
+          actor: 'alice',
+          created_at: '2026-06-01T00:00:00.000Z',
+          payload: { room_id: 'room-a', body: 'ping' },
+        }),
+      );
+    });
+    const tabA = tabs().find(
+      (t) => t.getAttribute('data-room-id') === 'room-a',
+    );
+    expect(tabA?.getAttribute('data-unread')).toBe('false');
+  });
+});

@@ -50,3 +50,10 @@
 2026-06-01T14:06:37Z	Story 9.7	qa_complete	spawn_at=2026-06-01T16:50:00Z model=claude-opus-4-8 tests_added=6 suite=1001-1007 first_run_failures=0 clarifications=0 closing_sections_present=true
 2026-06-01T14:11:37Z	Story 9.7	cr_complete	spawn_at=2026-06-01T17:00:00Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=2 high=0 med=0 low=0 clarifications=0 closing_sections_present=true
 2026-06-01T14:12:50Z	Story 9.7	smoke_complete	method=browser+api result=pass iterations=1 defects_caught=0 evidence=real-chrome@7395:watching+[join-room-to-post]->click-join->✓you-joined+field->type+send->posture-FLIPS-you:@operator(peer)+message-in-thread;ledger-confirms-real-reply-event(seq8-kind-reply-actor-operator)+operator-now-participant-SAME-CORE-no-backdoor model=claude-opus-4-8
+2026-06-01T14:12:55Z	Story 9.7	committed	sha=75e6e0b submodules=
+2026-06-01T14:13:58Z	Story 9.8	story_created	path=_bmad-output/implementation-artifacts/9-8-rooms-as-editor-tabs.md integration_ac=multi-tab-view-state(apps/web,close=no-board-write)
+2026-06-01T14:25:20Z	Story 9.8	dev_complete	spawn_at=2026-06-01T17:40:00Z model=claude-opus-4-8 files=6 tests_added=16 suite=1007-1023 clarifications=0 nfr_tripwires=0 adr_violations_surfaced=0 cycle_iteration=1 closing_sections_present=true
+2026-06-01T14:25:20Z	Story 9.8	adr_verifications_complete	result=none_required
+2026-06-01T14:32:02Z	Story 9.8	qa_complete	spawn_at=2026-06-01T18:05:00Z model=claude-opus-4-8 tests_added=3 suite=1023-1026 first_run_failures=0 clarifications=0 closing_sections_present=true
+2026-06-01T14:37:41Z	Story 9.8	cr_complete	spawn_at=2026-06-01T18:15:00Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=2 high=0 med=0 low=0 clarifications=0 closing_sections_present=true
+2026-06-01T14:38:54Z	Story 9.8	smoke_complete	method=browser result=pass iterations=1 defects_caught=0 evidence=real-chrome@7396:open-roomA+roomB->2-tabs-side-by-side;reclick-A->focus-no-duplicate;close-active-tab-via-×->removed+other-remains(logging-format)-no-error-no-board-write(room-still-reopenable-view-only) model=claude-opus-4-8
