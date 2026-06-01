@@ -38,6 +38,7 @@ class FakeUniquenessConflict extends Error {
 function memoryDataAccess(): DataAccess {
   let seq = 0;
   const store: Event[] = [];
+  const cursors = new Map<string, number>();
 
   /** Project the camelCase payload to the at-rest snake_case shape the guards see. */
   const atRest = (e: NewEvent): Record<string, unknown> => {
@@ -88,6 +89,11 @@ function memoryDataAccess(): DataAccess {
         store.filter((e) => e.actor === actor).sort((a, b) => a.seq - b.seq),
       ),
     maxSeq: () => Promise.resolve(seq),
+    getCursor: (handle) => Promise.resolve(cursors.get(handle) ?? 0),
+    setCursor: (handle, value) => {
+      cursors.set(handle, value);
+      return Promise.resolve();
+    },
   };
 }
 

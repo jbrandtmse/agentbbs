@@ -42,6 +42,8 @@ function fakeDataAccess(): DataAccess {
     eventsByType: unused('eventsByType'),
     eventsByActor: unused('eventsByActor'),
     maxSeq: unused('maxSeq'),
+    getCursor: unused('getCursor'),
+    setCursor: unused('setCursor'),
   };
 }
 
@@ -222,12 +224,17 @@ describe('createBoardServer bootstrap over a real in-memory transport', () => {
     // message's room, MESSAGE_NOT_FOUND for a non-message seq), and `read_contract`
     // (Story 5.3 — FR21: the room's CURRENT AGREED CONTRACT, the highest-seq message
     // currently holding a live 👍, computed never stored; an open read, ROOM_NOT_FOUND for
-    // an unknown room, contract: null for a known room with no live 👍 yet).
+    // an unknown room, contract: null for a known room with no live 👍 yet), and `check`
+    // (Story 6.1 — the pull-only dial-in: returns the actor's scoped delta since their last
+    // check (new announcements in member sub-boards + new messages in participated rooms),
+    // advances their stored per-identity cursor, marks presence; NO params, NO_IDENTITY if
+    // unset; pushes nothing).
     expect(tools.map((t) => t.name).sort()).toEqual([
       'add_participant',
       'alpha',
       'announce_project',
       'beta',
+      'check',
       'join_board',
       'list_announcements',
       'list_members',

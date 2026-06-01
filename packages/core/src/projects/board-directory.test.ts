@@ -100,6 +100,8 @@ function fakeDataAccess(events: Event[]): DataAccess {
     eventsByType: reject('eventsByType'),
     eventsByActor: reject('eventsByActor'),
     maxSeq: reject('maxSeq'),
+    getCursor: reject('getCursor'),
+    setCursor: reject('setCursor'),
   } as unknown as DataAccess;
 }
 

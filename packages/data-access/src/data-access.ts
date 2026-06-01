@@ -14,6 +14,7 @@
 import { createAppend } from './sqlite/append.js';
 import { createAppendGuarded } from './sqlite/append-guarded.js';
 import { openDatabase } from './sqlite/connection.js';
+import { createCursorQueries } from './sqlite/cursors.js';
 import { migrate } from './sqlite/migrate.js';
 import { createReadQueries } from './sqlite/queries.js';
 
@@ -63,6 +64,7 @@ export function fromConnection(db: DatabaseInstance): DataAccessHandle {
   const append = createAppend(db);
   const appendGuarded = createAppendGuarded(db);
   const reads = createReadQueries(db);
+  const cursors = createCursorQueries(db);
 
   const dataAccess = {
     append,
@@ -71,6 +73,10 @@ export function fromConnection(db: DatabaseInstance): DataAccessHandle {
     eventsByType: reads.eventsByType,
     eventsByActor: reads.eventsByActor,
     maxSeq: reads.maxSeq,
+    // The per-identity `check` cursor (Story 6.1) — the ONE mutable bookkeeping
+    // store (the `cursors` table), SEPARATE from the append-only `events` ledger.
+    getCursor: cursors.getCursor,
+    setCursor: cursors.setCursor,
     close(): void {
       db.close();
     },

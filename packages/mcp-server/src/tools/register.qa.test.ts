@@ -56,6 +56,8 @@ function spyDataAccess(): {
     eventsByType: make('eventsByType'),
     eventsByActor: make('eventsByActor'),
     maxSeq: make('maxSeq'),
+    getCursor: make('getCursor'),
+    setCursor: make('setCursor'),
   } satisfies Record<keyof DataAccess, ReturnType<typeof vi.fn>>;
   const da = spies as unknown as DataAccess;
   return { da, spies };

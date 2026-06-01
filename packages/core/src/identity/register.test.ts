@@ -37,6 +37,7 @@ class FakeUniquenessConflict extends Error {
 function memoryDataAccess(opts?: { createdAt?: () => string }): DataAccess {
   let seq = 0;
   const store: Event[] = [];
+  const cursors = new Map<string, number>();
   const clock = opts?.createdAt ?? ((): string => new Date().toISOString());
 
   const appendAll = (events: NewEvent[]): number[] => {
@@ -75,6 +76,11 @@ function memoryDataAccess(opts?: { createdAt?: () => string }): DataAccess {
         store.filter((e) => e.actor === actor).sort((a, b) => a.seq - b.seq),
       ),
     maxSeq: () => Promise.resolve(seq),
+    getCursor: (handle) => Promise.resolve(cursors.get(handle) ?? 0),
+    setCursor: (handle, value) => {
+      cursors.set(handle, value);
+      return Promise.resolve();
+    },
   };
 }
 

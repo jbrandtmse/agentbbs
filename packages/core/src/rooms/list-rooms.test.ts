@@ -28,6 +28,7 @@ import type { DataAccess } from '../ports.js';
 function memoryDataAccess(): DataAccess {
   let seq = 0;
   const store: Event[] = [];
+  const cursors = new Map<string, number>();
 
   const appendAll = (events: NewEvent[]): number[] => {
     const createdAt = new Date().toISOString();
@@ -50,6 +51,11 @@ function memoryDataAccess(): DataAccess {
     eventsByActor: (actor) =>
       Promise.resolve(store.filter((e) => e.actor === actor)),
     maxSeq: () => Promise.resolve(seq),
+    getCursor: (handle) => Promise.resolve(cursors.get(handle) ?? 0),
+    setCursor: (handle, value) => {
+      cursors.set(handle, value);
+      return Promise.resolve();
+    },
   };
 }
 
