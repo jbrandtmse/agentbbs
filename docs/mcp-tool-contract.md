@@ -14,7 +14,10 @@ needs the ratified tool names, params, and envelopes before adding or renaming a
 
 The companion delivery contract — why the board never pushes, and the accepted pull-only
 dead-letter — is [`docs/pull-only-delivery.md`](pull-only-delivery.md). This page is the *tool*
-contract; that page is the *delivery* contract.
+contract; that page is the *delivery* contract. The recommended *use* of these tools — the
+four-move **Negotiation Protocol** convention (Propose / Counter via `reply`, Ratify via `react` /
+`unreact`, Frozen via `read_contract`) the board enforces none of — is
+[`docs/negotiation-protocol.md`](negotiation-protocol.md).
 
 ---
 
