@@ -46,3 +46,5 @@
 2026-06-01T06:28:10Z	Epic 8	retrospective_complete	mode=silent-lead-judged doc=epic-8-retro-2026-05-31.md rules_codified=Rule-11+Rule-10-epic8-reinforcement high=0 med=0 across-epic
 2026-06-01T06:28:10Z	Epic 8	epic_summary	stories=5(8.0-8.4) tests=645->709(+64) commits=6536d58,6cfad76,77322ca,2a5c248,a101f5d high=0 med=0 rework=0 smokes=4/4-pass nfr_tripwires=0 status=MVP-COMPLETE(epics-1-8)
 2026-06-01T06:28:10Z	Epic 8	retro_committed	sha=d05dc11
+2026-06-01T06:30:54Z	Epic 8	epic_merged_to_feature	merge_commit=8bdbe0b feature=feature/AGENTBBS-1_agentbbs-mvp epic_branch_deleted=local+remote gate=GREEN(lint/build/typecheck/test-709-103/format)
+2026-06-01T06:30:54Z	Epic 8	epic_complete	status=MVP-COMPLETE(epics-1-8) note=final-epic-of-epic-cycle-4-8-run
