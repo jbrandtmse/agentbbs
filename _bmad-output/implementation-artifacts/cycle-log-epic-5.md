@@ -22,3 +22,10 @@
 2026-05-31T23:36:08Z	Story 5.2	qa_complete	spawn_at=2026-05-31T23:20:00Z model=claude-opus-4-8 tests_added=2 first_run_failures=0 clarifications=0 closing_sections_present=true
 2026-05-31T23:44:22Z	Story 5.2	cr_complete	spawn_at=2026-05-31T23:20:40Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=7 high=0 med=0 low=0 clarifications=0 closing_sections_present=true
 2026-05-31T23:45:03Z	Story 5.2	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=_bmad-output/implementation-artifacts/tests/smoke-5-2.mjs model=claude-opus-4-8
+2026-05-31T23:45:05Z	Story 5.2	committed	sha=c1eb1d4 submodules=
+2026-05-31T23:47:50Z	Story 5.3	story_created	path=_bmad-output/implementation-artifacts/5-3-compute-the-current-agreed-contract.md integration_ac=present service_introducing=true consumed_by=epic7_protocol,ui
+2026-06-01T00:00:53Z	Story 5.3	dev_complete	spawn_at=2026-05-31T23:35:00Z model=claude-opus-4-8 files=8 tests_added=27 clarifications=0 nfr_tripwires=0 adr_violations_surfaced=0 cycle_iteration=1 closing_sections_present=true
+2026-06-01T00:00:53Z	Story 5.3	adr_verifications_complete	result=none_required
+2026-06-01T00:05:13Z	Story 5.3	qa_complete	spawn_at=2026-05-31T23:45:00Z model=claude-opus-4-8 tests_added=3 first_run_failures=0 clarifications=0 closing_sections_present=true
+2026-06-01T00:12:54Z	Story 5.3	cr_complete	spawn_at=2026-05-31T23:45:40Z model=claude-opus-4-8 resolved=1 deferred=0 dismissed=0 high=0 med=0 low=1 clarifications=0 closing_sections_present=true
+2026-06-01T00:13:35Z	Story 5.3	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=_bmad-output/implementation-artifacts/tests/smoke-5-3.mjs model=claude-opus-4-8

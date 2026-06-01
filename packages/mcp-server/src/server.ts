@@ -26,6 +26,7 @@ import { registerListRoomsTool } from './tools/list-rooms.js';
 import { registerLoginTool } from './tools/login.js';
 import { registerPostAnnouncementTool } from './tools/post-announcement.js';
 import { registerReactTool } from './tools/react.js';
+import { registerReadContractTool } from './tools/read-contract.js';
 import { registerReadRoomTool } from './tools/read-room.js';
 import { registerRegisterTool } from './tools/register.js';
 import { registerReplyTool } from './tools/reply.js';
@@ -166,6 +167,17 @@ export function createBoardServer(deps: BoardServerDeps): McpServer {
   //     appends only the actor's own event; liveness is per-actor). The LIVE 👍 state is DERIVED by
   //     latest-react-wins, never stored — read_room surfaces each message's live reactors. Each
   //     returns { message_seq, reactions } (the message's live reactors after the op).
+  //   - read_contract (Story 5.3 — FR21, the marquee Epic 5 capability): a ROOM READ tool —
+  //     SESSION-REQUIRED (established identity required, rejects NO_IDENTITY if unset) but NO
+  //     membership: the CURRENT AGREED CONTRACT is "computed by ANY reader" (FR9 open read). Takes
+  //     a room_id; returns { room_id, contract } where contract is the message with the HIGHEST seq
+  //     currently holding a live 👍 (seq/actor/body/kind/reactions) or null ("no contract yet").
+  //     COMPUTED by query every call, NEVER stored (THE APPEND INVARIANT) — so it reverts
+  //     automatically on retraction (a re-read yields the next-highest live-👍'd message, or null).
+  //     The seeding announcement (#1) can itself be the contract. Rejects ROOM_NOT_FOUND for an
+  //     unknown room (DISTINCT from contract: null — a known room with no live 👍 yet). Reads only;
+  //     NO new event type / error code (currentContract folds announcement.posted/room.replied +
+  //     message.reacted/unreacted; ROOM_NOT_FOUND/NO_IDENTITY reused).
   registerRegisterTool(server, deps.dataAccess, sessionIdentity);
   registerLoginTool(server, deps.dataAccess, sessionIdentity);
   registerUpdateFocusTool(server, deps.dataAccess, sessionIdentity);
@@ -181,6 +193,7 @@ export function createBoardServer(deps: BoardServerDeps): McpServer {
   registerAddParticipantTool(server, deps.dataAccess, sessionIdentity);
   registerReactTool(server, deps.dataAccess, sessionIdentity);
   registerUnreactTool(server, deps.dataAccess, sessionIdentity);
+  registerReadContractTool(server, deps.dataAccess, sessionIdentity);
 
   return server;
 }

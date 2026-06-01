@@ -152,3 +152,20 @@ export {
 export type { ResolvedMessage } from './rooms/reactions.js';
 export { react, unreact } from './rooms/react.js';
 export type { ReactResult } from './rooms/react.js';
+
+// --- Current-agreed-contract projection (Story 5.3) — FR21, the marquee Epic 5 capability.
+// `currentContract(events, roomId)` is the room's CURRENT CONTRACT: of its messages (roomMessages,
+// each carrying its live 👍 reactions via liveReactors), the HIGHEST-`seq` one holding ≥1 live 👍;
+// `null` if none ("no contract yet"). COMPUTED by query every call, NEVER stored (THE APPEND
+// INVARIANT) — so reversion-on-retract needs NO special logic (a fresh query yields the
+// next-highest live-👍'd message, or null). Reuses roomMessages (does NOT re-fold reactions); the
+// announcement (message #1) can be the contract. An OPEN read (FR9 — "computed by ANY reader");
+// the read_contract tool (Story 5.3) gates only on NO_IDENTITY + resolves findRoom → ROOM_NOT_FOUND
+// (existence) so an unknown room is DISTINCT from a known room with contract:null.
+// `currentContract(events, roomId)` is the PURE projection (existence-agnostic — null for an
+// unknown/empty room); `readContract(dataAccess, roomId)` is the thin read op the read_contract
+// tool delegates to — it layers the findRoom → ROOM_NOT_FOUND existence check (mirroring readRoom)
+// over a single stream read, so an unknown room (throws) is DISTINCT from a known room with no live
+// reaction yet (returns null). ---
+export { currentContract } from './rooms/contract.js';
+export { readContract } from './rooms/read-contract.js';
