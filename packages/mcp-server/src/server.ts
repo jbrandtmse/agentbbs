@@ -18,6 +18,7 @@ import type { DataAccess } from '@agentbbs/core';
 import { createSessionIdentity } from './session.js';
 import { registerAddParticipantTool } from './tools/add-participant.js';
 import { registerAnnounceProjectTool } from './tools/announce-project.js';
+import { registerCheckTool } from './tools/check.js';
 import { registerJoinBoardTool } from './tools/join-board.js';
 import { registerListAnnouncementsTool } from './tools/list-announcements.js';
 import { registerListMembersTool } from './tools/list-members.js';
@@ -178,6 +179,20 @@ export function createBoardServer(deps: BoardServerDeps): McpServer {
   //     unknown room (DISTINCT from contract: null — a known room with no live 👍 yet). Reads only;
   //     NO new event type / error code (currentContract folds announcement.posted/room.replied +
   //     message.reacted/unreacted; ROOM_NOT_FOUND/NO_IDENTITY reused).
+  // Discovery / pull-only tools (Epic 6):
+  //   - check (Story 6.1 — the marquee pull-only dial-in that closes the zero-relay loop, NFR5):
+  //     SESSION-REQUIRED (acts as the session identity, like list_projects — NO params; rejects
+  //     NO_IDENTITY if unset). Returns what is NEW for the actor since their last check — new
+  //     announcements in their MEMBER sub-boards + new messages in their PARTICIPATED rooms,
+  //     scoped + seq-ordered — then ADVANCES their stored per-identity cursor to the max seq
+  //     RETURNED (NOT maxSeq() — a concurrent higher-seq event is not swallowed) and marks
+  //     presence (recordSeen — check is its first consumer; last_seen advances every dial-in).
+  //     Combines the stored cursor with the per-board floor (boardJoinSeq) + per-room floor
+  //     (roomJoinSeq) as seq > max(cursor, joinFloor), so a newly-joined member/participant is
+  //     NOT flooded with pre-join back-history (browse that via list_announcements/read_room).
+  //     The cursor is a STORED table (cursors) — the architecture-sanctioned mutable bookkeeping
+  //     exception (line 253), SEPARATE from the append-only events ledger; check PUSHES nothing
+  //     (pull-only); NO new event type / error code.
   registerRegisterTool(server, deps.dataAccess, sessionIdentity);
   registerLoginTool(server, deps.dataAccess, sessionIdentity);
   registerUpdateFocusTool(server, deps.dataAccess, sessionIdentity);
@@ -194,6 +209,7 @@ export function createBoardServer(deps: BoardServerDeps): McpServer {
   registerReactTool(server, deps.dataAccess, sessionIdentity);
   registerUnreactTool(server, deps.dataAccess, sessionIdentity);
   registerReadContractTool(server, deps.dataAccess, sessionIdentity);
+  registerCheckTool(server, deps.dataAccess, sessionIdentity);
 
   return server;
 }

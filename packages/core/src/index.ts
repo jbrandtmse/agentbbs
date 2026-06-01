@@ -60,6 +60,15 @@ export type { DirectoryMember } from './projects/board-directory.js';
 // Epic 4 post tools (4.1 / 4.3 / 4.5), per the Rule 1 escape clause. ---
 export { isMember, requireMembership } from './projects/membership.js';
 
+// --- Per-(identity, board) JOIN-CURSOR projection (Story 6.1) — the per-board announcement
+// FLOOR `check` uses so a newly-joined sub-board member is NOT flooded with the board's pre-join
+// back-history (the analogue of Story 4.6's per-room `roomJoinSeq`, for announcements). Derives
+// the `seq` of a handle's EARLIEST `board.joined` for a board (MIN over their `board.joined`;
+// `undefined` if not a member) — DERIVED, never stored (THE APPEND INVARIANT). The consumer
+// (`check`) combines it with the stored per-identity cursor as `seq > max(checkCursor,
+// boardJoinSeq)` and gates a non-member out on `=== undefined` (never `?? 0`). ---
+export { boardJoinSeq } from './projects/join-cursor.js';
+
 // --- Project board operations (Story 3.1 / 3.2) ---
 export { announceProject } from './projects/announce-project.js';
 export type { AnnounceProjectInput } from './projects/announce-project.js';
@@ -169,3 +178,15 @@ export type { ReactResult } from './rooms/react.js';
 // reaction yet (returns null). ---
 export { currentContract } from './rooms/contract.js';
 export { readContract } from './rooms/read-contract.js';
+
+// --- The `check` discovery op (Story 6.1) — the marquee pull-only dial-in that closes the
+// zero-relay loop (NFR5). `check(dataAccess, actor)` returns the actor's SCOPED delta since
+// their last dial-in (NEW announcements in their member sub-boards + NEW messages in their
+// participated rooms, `seq`-ordered), ADVANCES their stored per-identity cursor to the max
+// `seq` RETURNED (NOT `maxSeq()` — so a concurrent higher-`seq` event is not swallowed, AC #3),
+// and marks presence (`recordSeen`, its FIRST consumer). Combines the stored cursor with the
+// per-board floor (`boardJoinSeq`) + per-room floor (`roomJoinSeq`) as `seq > max(cursor,
+// joinFloor)` so a new member/participant is NOT flooded with pre-join back-history. PUSHES
+// nothing (pull-only); NO new event type / error code (the cursor is a table, not an event). ---
+export { check } from './discovery/check.js';
+export type { CheckMessage, CheckResult } from './discovery/check.js';

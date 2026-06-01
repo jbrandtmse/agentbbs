@@ -234,8 +234,12 @@ describe('recordSeen over a real createDataAccess ledger (AC #2)', () => {
     // directly (WAL allows a concurrent reader alongside the writer connection).
     const probe = new Database(dbPath, { readonly: true });
     try {
-      // (a) The ONLY user table is `events` — no `identities` table, no derived-state
-      //     table. (sqlite_* internal tables are excluded.)
+      // (a) The user tables are the append-only `events` ledger + the `cursors` per-identity
+      //     check-cursor table (Story 6.1 — the architecture-sanctioned mutable BOOKKEEPING
+      //     table, line 253; SEPARATE from `events`). Crucially there is NO `identities` table
+      //     and NO derived-IDENTITY-STATE table — `last_seen`/`current_focus`/membership stay
+      //     DERIVED from the event stream. The `cursors` table holds only a transient position
+      //     (handle → seq), never identity content. (sqlite_* internal tables are excluded.)
       const tables = (
         probe
           .prepare(
@@ -243,7 +247,17 @@ describe('recordSeen over a real createDataAccess ledger (AC #2)', () => {
           )
           .all() as MasterRow[]
       ).map((t) => t.name);
-      expect(tables).toEqual(['events']);
+      expect(tables.sort()).toEqual(['cursors', 'events']);
+      expect(tables).not.toContain('identities'); // identity state is DERIVED, never a table
+
+      // (a2) The `cursors` table is the per-identity check-cursor bookkeeping ONLY — its columns
+      //      are exactly (handle, seq), a position cache; it carries NO `last_seen` / focus /
+      //      membership (those remain derived from `events`).
+      const cursorColumns = (
+        probe.prepare('PRAGMA table_info(cursors)').all() as ColumnInfo[]
+      ).map((c) => c.name);
+      expect(cursorColumns.sort()).toEqual(['handle', 'seq'].sort());
+      expect(cursorColumns).not.toContain('last_seen');
 
       // (b) The events table has EXACTLY the five append-only columns — and crucially
       //     NO `last_seen` (nor any other derived-state) column.

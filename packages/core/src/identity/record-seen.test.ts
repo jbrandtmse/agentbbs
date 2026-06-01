@@ -32,6 +32,7 @@ import type { DataAccess } from '../ports.js';
 function memoryDataAccess(opts?: { clock?: () => string }): DataAccess {
   let seq = 0;
   const store: Event[] = [];
+  const cursors = new Map<string, number>();
   // Default clock: a fresh monotonically-increasing instant per append call.
   let tick = 0;
   const defaultClock = (): string => {
@@ -61,6 +62,11 @@ function memoryDataAccess(opts?: { clock?: () => string }): DataAccess {
         store.filter((e) => e.actor === actor).sort((a, b) => a.seq - b.seq),
       ),
     maxSeq: () => Promise.resolve(seq),
+    getCursor: (handle) => Promise.resolve(cursors.get(handle) ?? 0),
+    setCursor: (handle, value) => {
+      cursors.set(handle, value);
+      return Promise.resolve();
+    },
   };
 }
 
@@ -294,6 +300,8 @@ describe('recordSeen — no phantom identity / guard-before-append (QA, AC #1, #
         return Promise.resolve(reads === 1 ? [registered] : []);
       },
       maxSeq: () => Promise.resolve(2),
+      getCursor: () => Promise.resolve(0),
+      setCursor: () => Promise.resolve(),
     };
 
     await expect(recordSeen(brokenSeam, 'ada')).rejects.toThrow(

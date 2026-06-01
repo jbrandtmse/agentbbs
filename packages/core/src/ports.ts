@@ -119,4 +119,41 @@ export interface DataAccess {
    * current max `seq`).
    */
   maxSeq(): Promise<number>;
+
+  /**
+   * The stored per-identity `check` cursor for `handle` — the high-water-mark its
+   * last `check` advanced to (the max `seq` that call RETURNED), or `0` if the
+   * identity has never run `check` (the unset sentinel).
+   *
+   * This is the ONE persisted MUTABLE position in the system — the architecture's
+   * "per-identity stored position … legitimate bookkeeping, not understanding
+   * content" (architecture.md line 253). It lives in a SEPARATE `cursors` table, NOT
+   * the append-only `events` ledger: THE APPEND INVARIANT governs `events` only, so an
+   * UPSERT-able cursor row does NOT violate it. The cursor is read at the start of
+   * every `check` and is the "since my last dial-in" lower bound (Story 6.1). It is
+   * TRANSIENT bookkeeping (NOT part of the FR32 export): on a fresh import each
+   * identity's cursor is `0` and they re-catch-up via the per-scope join floors.
+   *
+   * @param handle The canonical (lowercased) identity handle whose cursor to read.
+   * @returns The stored cursor `seq`, or `0` if `handle` has no stored cursor yet.
+   */
+  getCursor(handle: string): Promise<number>;
+
+  /**
+   * UPSERT the stored per-identity `check` cursor for `handle` to `seq` (Story 6.1).
+   * Inserts a `cursors` row if the identity has none, else overwrites the existing
+   * one (a single row per handle). `check` calls this at the end of every dial-in to
+   * advance the high-water-mark to the max `seq` it RETURNED (NOT the global
+   * `maxSeq()` — so a concurrent higher-`seq` event is not swallowed; AC #3).
+   *
+   * This is a mutation of the SEPARATE `cursors` bookkeeping table, NOT the `events`
+   * ledger — it does not violate THE APPEND INVARIANT (which forbids `UPDATE`/`DELETE`
+   * on `events`). The cursor never decreases on the happy path (`check` advances it
+   * monotonically), but this primitive is an unconditional UPSERT; the monotonicity is
+   * the caller's (`check`'s) contract, not the store's.
+   *
+   * @param handle The canonical (lowercased) identity handle whose cursor to set.
+   * @param seq The new cursor high-water-mark to persist for `handle`.
+   */
+  setCursor(handle: string, seq: number): Promise<void>;
 }

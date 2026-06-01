@@ -40,6 +40,7 @@ describe('DataAccess port (AC2)', () => {
     // in V1) AND by an async one (V2 HTTP) — the identical-interface swap claim.
     let seq = 0;
     const store: Event[] = [];
+    const cursors = new Map<string, number>();
     const append = (events: NewEvent[]): Promise<number[]> => {
       const assigned = events.map((e) => {
         seq += 1;
@@ -77,6 +78,11 @@ describe('DataAccess port (AC2)', () => {
       eventsByActor: (actor) =>
         Promise.resolve(store.filter((e) => e.actor === actor)),
       maxSeq: () => Promise.resolve(seq),
+      getCursor: (handle) => Promise.resolve(cursors.get(handle) ?? 0),
+      setCursor: (handle, value) => {
+        cursors.set(handle, value);
+        return Promise.resolve();
+      },
     };
 
     const seqs = await da.append([

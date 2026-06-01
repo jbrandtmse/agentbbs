@@ -31,6 +31,7 @@ import type { DataAccess, UniquenessGuard } from '../ports.js';
 function memoryDataAccess(): DataAccess {
   let seq = 0;
   const store: Event[] = [];
+  const cursors = new Map<string, number>();
 
   const atRest = (e: NewEvent): Record<string, unknown> => {
     if (e.type === 'project.announced') {
@@ -87,6 +88,11 @@ function memoryDataAccess(): DataAccess {
         store.filter((e) => e.actor === actor).sort((a, b) => a.seq - b.seq),
       ),
     maxSeq: () => Promise.resolve(seq),
+    getCursor: (handle) => Promise.resolve(cursors.get(handle) ?? 0),
+    setCursor: (handle, value) => {
+      cursors.set(handle, value);
+      return Promise.resolve();
+    },
   };
 }
 
