@@ -6,11 +6,18 @@
 // `createdAt`; the display timestamp is decoration only). The announcement and replies
 // both render as posts — `kind` distinguishes them, not their structure.
 //
-// a11y (Story 9.10 owns the full floor): the thread is a semantic list of posts (each post
-// is an <article>), so 9.10 can enrich it with roles/landmarks without reshaping it.
+// a11y (Story 9.10 — THE FLOOR): the thread is a `role="list"` whose posts are `role="listitem"`
+// (each announcing its `@handle` + timestamp + agreed state), PLUS a POLITE, COALESCING
+// `aria-live` region. New posts/👍 arrive in frequent bursts, so the live region announces a
+// debounced SUMMARY ("2 new posts") rather than spamming N separate announcements — it
+// REPLACES its text once per burst (the APG/Research-First batch pattern: aria-atomic + text
+// replacement = one announcement). Reading the thread itself is silent (the list is not the
+// live region); the off-screen `.sr-only` region carries the summary.
 //
 // PRESENTATION-ONLY (NFR2): no core/data-access import; prop-driven. React 19 automatic
 // JSX runtime.
+
+import { useEffect, useRef, useState } from 'react';
 
 import { MessagePost } from './MessagePost.js';
 
@@ -49,6 +56,12 @@ export interface MessageThreadProps {
    * `clientToken`). Passes through to each {@link MessagePost}; only a failed echo renders it.
    */
   onRetryPost?: (clientToken: string) => void;
+  /**
+   * Story 9.10 a11y — the debounce window (ms) the polite live region waits before announcing
+   * a SUMMARY of newly-arrived posts. A burst of deltas within the window collapses to ONE
+   * announcement ("n new posts") rather than n. Default 600ms. Set lower in tests.
+   */
+  liveRegionDebounceMs?: number;
 }
 
 /**
@@ -67,12 +80,43 @@ export function MessageThread({
   onToggleReaction,
   highContrast = false,
   onRetryPost,
+  liveRegionDebounceMs = 600,
 }: MessageThreadProps) {
   // Order STRICTLY by `seq` (never `createdAt`) — a copy so the caller's array is untouched.
   // Story 9.9: a pending/failed optimistic echo carries a synthetic LARGE seq (assigned by the
   // surface), so it sorts to the BOTTOM of the thread (after every confirmed post) until it
   // reconciles to its real seq. Confirmed posts keep their ledger seq order.
   const ordered = [...messages].sort((a, b) => a.seq - b.seq);
+
+  // --- Story 9.10 a11y — the POLITE, COALESCING live-region announcement. ---
+  // Count CONFIRMED posts (a pending echo is the operator's own draft — not "new arrivals" to
+  // announce). When that count GROWS, schedule a single debounced summary; a burst within the
+  // window collapses to ONE announcement. We REPLACE the region text (not append) so assistive
+  // tech announces it once (the APG batch pattern). The first render seeds the baseline silently.
+  const confirmedCount = ordered.filter(
+    (m) => m.pending !== true && m.failed !== true,
+  ).length;
+  const [announcement, setAnnouncement] = useState('');
+  const prevCountRef = useRef<number | null>(null);
+  const pendingDeltaRef = useRef(0);
+
+  useEffect(() => {
+    const prev = prevCountRef.current;
+    prevCountRef.current = confirmedCount;
+    // First observation seeds the baseline silently (the initial thread load is not "new").
+    if (prev === null) return;
+    const delta = confirmedCount - prev;
+    if (delta <= 0) return;
+    // Accumulate this burst's new-post count, then debounce a SINGLE summary announcement.
+    pendingDeltaRef.current += delta;
+    const handle = setTimeout(() => {
+      const n = pendingDeltaRef.current;
+      pendingDeltaRef.current = 0;
+      if (n <= 0) return;
+      setAnnouncement(n === 1 ? '1 new post' : `${n} new posts`);
+    }, liveRegionDebounceMs);
+    return () => clearTimeout(handle);
+  }, [confirmedCount, liveRegionDebounceMs]);
 
   const threadStyle: CSSProperties = {
     padding: '0 var(--space-7)',
@@ -83,8 +127,22 @@ export function MessageThread({
     <div
       className="message-thread"
       data-testid="message-thread"
+      role="list"
+      aria-label="room thread"
       style={threadStyle}
     >
+      {/* The polite, coalescing live region — off-screen (.sr-only) but announced. Replaces its
+          text once per burst (aria-atomic so the whole summary is read). Reading the thread is
+          silent; this carries only the "n new posts" summary. */}
+      <div
+        className="sr-only"
+        data-testid="thread-live-region"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {announcement}
+      </div>
       {ordered.map((post) => (
         <MessagePost
           // A pending/failed echo keys by its stable clientToken (its synthetic seq is

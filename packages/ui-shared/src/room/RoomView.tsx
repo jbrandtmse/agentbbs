@@ -156,7 +156,12 @@ export function RoomView({
   };
 
   return (
-    <section className="room-view" data-testid="room-view" style={columnStyle}>
+    <section
+      className="room-view"
+      data-testid="room-view"
+      style={columnStyle}
+      aria-label={`room #${room.roomId}`}
+    >
       {/* 1. Breadcrumb: sub-board › #room */}
       <div
         className="breadcrumb"

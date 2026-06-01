@@ -64,3 +64,10 @@
 2026-06-01T15:03:23Z	Story 9.9	qa_complete	spawn_at=2026-06-01T19:30:00Z model=claude-opus-4-8 tests_added=7 suite=1050-1057 first_run_failures=0 clarifications=0 closing_sections_present=true
 2026-06-01T15:09:22Z	Story 9.9	cr_complete	spawn_at=2026-06-01T19:40:00Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=5 high=0 med=0 low=0 clarifications=0 closing_sections_present=true
 2026-06-01T15:10:36Z	Story 9.9	smoke_complete	method=browser result=pass iterations=1 defects_caught=0 evidence=real-chrome@7397:optimistic-post-echo-immediate+reconciled-to-EXACTLY-1(de-dup-no-dup-when-SSE-arrives);out-of-band-reply-from-another-client-FOLDED-LIVE-into-open-thread(Mode-A);all-4-posts-present-my-post-single-no-drift model=claude-opus-4-8
+2026-06-01T15:10:46Z	Story 9.9	committed	sha=b2ec037 submodules=
+2026-06-01T15:12:12Z	Story 9.10	story_created	path=_bmad-output/implementation-artifacts/9-10-calm-states-connection-footer-voice-and-accessibility-floor.md integration_ac=calm-states+a11y-floor+connection-footer(apps/web)
+2026-06-01T15:34:02Z	Story 9.10	dev_complete	spawn_at=2026-06-01T20:30:00Z model=claude-opus-4-8 files=16 tests_added=36 suite=1057-1089 clarifications=0 nfr_tripwires=0 adr_violations_surfaced=0 cycle_iteration=1 closing_sections_present=true
+2026-06-01T15:34:02Z	Story 9.10	adr_verifications_complete	result=none_required
+2026-06-01T15:41:43Z	Story 9.10	qa_complete	spawn_at=2026-06-01T21:00:00Z model=claude-opus-4-8 tests_added=5 suite=1089-1094 first_run_failures=0 clarifications=0 closing_sections_present=true
+2026-06-01T15:49:26Z	Story 9.10	cr_complete	spawn_at=2026-06-01T21:10:00Z model=claude-opus-4-8 resolved=0 deferred=2 dismissed=0 high=0 med=0 low=2 clarifications=0 closing_sections_present=true
+2026-06-01T15:50:55Z	Story 9.10	smoke_complete	method=browser result=pass iterations=1 defects_caught=0 evidence=real-chrome:empty-board(no-projects-yet+join-action,no-spinner,NO-modal,connected-footer);disconnect(kill-host->footer-○-reconnecting…,content-stays-readable,NO-modal);a11y(role=tree+3-treeitem+aria-expanded,role=list+2-listitem,aria-live);voice-terse-lowercase model=claude-opus-4-8

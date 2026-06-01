@@ -38,7 +38,13 @@
 // concern (noted in DESIGN room-tab); the web strip just holds the models in memory.
 
 import { useEffect, useRef, useState } from 'react';
-import { Composer, NavTree, RoomView, TabStrip } from '@agentbbs/ui-shared';
+import {
+  Composer,
+  ConnectionFooter,
+  NavTree,
+  RoomView,
+  TabStrip,
+} from '@agentbbs/ui-shared';
 
 import {
   appendPendingPost,
@@ -59,6 +65,7 @@ import {
 } from './api-client.js';
 
 import type {
+  ConnectionStatus,
   MessagePostModel,
   NavTreeModel,
   RoomTabModel,
@@ -81,6 +88,18 @@ const mainStyle: CSSProperties = {
   height: '100vh',
   display: 'flex',
   flexDirection: 'column',
+};
+
+// The sidebar column: the nav tree fills it, the connection footer sits at the bottom (Story
+// 9.10). A fixed-width flex column matching the tree's --sidebar-w so the footer aligns under it.
+const sidebarColumnStyle: CSSProperties = {
+  width: 'var(--sidebar-w)',
+  flexShrink: 0,
+  height: '100vh',
+  display: 'flex',
+  flexDirection: 'column',
+  background: 'var(--surface-panel)',
+  borderRight: '1px solid var(--border)',
 };
 
 /**
@@ -125,6 +144,12 @@ export function App() {
   // composer controls so the operator does not double-submit (the rich optimistic echo +
   // failure-retry is Story 9.9).
   const [composerPending, setComposerPending] = useState(false);
+  // Story 9.10 — the live transport status for the calm connection footer (AC1). It starts
+  // `reconnecting` (the channel is not open until the EventSource fires `onopen`), flips to
+  // `connected` on open, and back to `reconnecting` on a dropped connection. NEVER a modal —
+  // already-loaded content stays readable while reconnecting (the live fold resumes on reopen).
+  const [connectionStatus, setConnectionStatus] =
+    useState<ConnectionStatus>('reconnecting');
 
   // Build the tree model once on mount (real ledger data over the JSON API).
   useEffect(() => {
@@ -149,11 +174,20 @@ export function App() {
   // open-tab unread flags (a BACKGROUND tab whose room gains activity shows a leading •; the
   // active tab stays read — the operator is looking at it). Same Story 9.4 delta signal.
   useEffect(() => {
-    const close = openEventStream((event) => {
-      setModel((prev) => (prev === null ? prev : foldTreeDelta(prev, event)));
-      foldTabUnread(event);
-      foldTabRoom(event);
-    });
+    const close = openEventStream(
+      (event) => {
+        setModel((prev) => (prev === null ? prev : foldTreeDelta(prev, event)));
+        foldTabUnread(event);
+        foldTabRoom(event);
+      },
+      '',
+      {
+        // Map the SSE transport to the calm footer LED (Story 9.10): `connected` on open,
+        // `reconnecting` on a dropped connection (the browser EventSource auto-reconnects;
+        // the 9.9 live fold resumes on the next open — idempotent by seq, no double-apply).
+        onStatus: setConnectionStatus,
+      },
+    );
     return close;
     // Subscribe once on mount. foldTabUnread reads the CURRENT active tab via activeRoomIdRef
     // (not a captured value), so the single subscription stays correct as the active tab changes.
@@ -572,16 +606,40 @@ export function App() {
 
   return (
     <div style={shellStyle} data-testid="web-shell">
-      {model !== null && (
-        <NavTree
-          model={model}
-          onSelectRoom={handleSelectRoom}
-          onJoinProject={handleJoinProject}
-        />
-      )}
-      <main style={mainStyle} data-testid="main-pane">
-        {error !== null && <p data-testid="error">Error: {error}</p>}
-        {model === null && error === null && <p>Loading the board…</p>}
+      {/* The SIDEBAR landmark column: the board nav tree (when loaded) over the quiet calm
+          connection footer (AC1 — the ONLY disconnection signal, never a modal). On COLD OPEN
+          (model still null) the column is present (no blocking overlay) with a calm skeleton. */}
+      <div style={sidebarColumnStyle} data-testid="sidebar-column">
+        {model !== null ? (
+          <NavTree
+            model={model}
+            onSelectRoom={handleSelectRoom}
+            onJoinProject={handleJoinProject}
+          />
+        ) : (
+          // COLD OPEN: a calm, non-blocking skeleton in place of the tree (no full-app spinner).
+          error === null && (
+            <div
+              data-testid="tree-skeleton"
+              style={{
+                flex: 1,
+                padding: 'var(--space-3)',
+                color: 'var(--text-dim)',
+                fontFamily: 'var(--ui-label-font)',
+                fontSize: 'var(--ui-label-size)',
+              }}
+            >
+              loading…
+            </div>
+          )
+        )}
+        {/* The calm connection footer — `● connected` / `○ reconnecting…`, never a modal. */}
+        <ConnectionFooter status={connectionStatus} />
+      </div>
+      <main style={mainStyle} data-testid="main-pane" aria-label="room">
+        {error !== null && (
+          <p data-testid="error">couldn’t load the board — {error}</p>
+        )}
 
         {/* Story 9.8 — the open-room editor tabs (side-by-side; active tab base+rail, the
             rest panel/dim; background unread •; × closes — a VIEW action, never a board op). */}
@@ -595,16 +653,18 @@ export function App() {
         )}
 
         {model !== null && openTabs.length === 0 && error === null && (
-          <p data-testid="no-room">Select a room from the sidebar.</p>
+          <p data-testid="no-room">select a room from the sidebar</p>
         )}
 
         {activeTab !== undefined && activeRoomError !== null && (
-          <p data-testid="room-error">Error: {activeRoomError}</p>
+          <p data-testid="room-error">
+            couldn’t open the room — {activeRoomError}
+          </p>
         )}
         {activeTab !== undefined &&
           activeRoom === null &&
           activeRoomError === null && (
-            <p data-testid="room-loading">Opening room…</p>
+            <p data-testid="room-loading">opening room…</p>
           )}
         {activeRoom !== null && (
           <RoomView

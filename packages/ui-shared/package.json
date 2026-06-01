@@ -10,7 +10,8 @@
     },
     "./tokens.css": "./src/tokens.css",
     "./markdown.css": "./src/markdown/markdown.css",
-    "./room.css": "./src/room/room.css"
+    "./room.css": "./src/room/room.css",
+    "./chrome.css": "./src/chrome/chrome.css"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -18,7 +19,8 @@
     "dist",
     "src/tokens.css",
     "src/markdown/markdown.css",
-    "src/room/room.css"
+    "src/room/room.css",
+    "src/chrome/chrome.css"
   ],
   "scripts": {
     "build": "tsc -b tsconfig.json"

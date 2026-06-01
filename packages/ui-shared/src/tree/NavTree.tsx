@@ -21,15 +21,21 @@
 // add_participant(@operator), NEVER from time/inactivity. NavTree only renders what the
 // model says; it has no clock. Warm, never red.
 //
-// a11y (Story 9.10 owns the full floor): the markup uses semantic <ul role="tree"> /
-// <li role="treeitem"> structure so 9.10 can add keyboard nav + ARIA without reshaping it.
-// React 19 automatic JSX runtime.
+// a11y (Story 9.10 — THE FLOOR): a single nav `role="tree"` with `role="treeitem"` rows,
+// `role="group"` child lists, `aria-expanded` on each collapsible project, ROVING TABINDEX
+// (exactly one row holds tabindex=0; the rest tabindex=-1), and APG arrow-key traversal
+// (ArrowUp/Down move between visible rows, ArrowRight expands-then-descends, ArrowLeft
+// collapses-then-ascends, Home/End jump, Enter/Space activate). The project twisty's
+// `aria-expanded` reflects the live collapsed state. Verified against the WAI-ARIA APG tree
+// pattern (Story 9.10 Research-First). React 19 automatic JSX runtime.
+
+import { useRef, useState } from 'react';
 
 import { SectionLabel } from './SectionLabel.js';
 import { SidebarTreeItem } from './SidebarTreeItem.js';
 import { NeedsYouItem } from './NeedsYouItem.js';
 
-import type { CSSProperties } from 'react';
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react';
 
 /** One room row in the tree model (decorations pre-derived by the surface). */
 export interface NavTreeRoom {
@@ -93,6 +99,16 @@ export interface NavTreeProps {
   onJoinProject?: () => void;
 }
 
+/** A flattened, currently-VISIBLE tree row — the roving-tabindex + arrow-nav order (APG). */
+interface FlatRow {
+  /** A stable id for the roving-focus DOM lookup (`data-tree-id`). */
+  treeId: string;
+  /** Whether this is a collapsible PROJECT header (vs a leaf bucket/room row). */
+  isProject: boolean;
+  /** For a project row: its project id (so ArrowRight/Left can toggle its collapse). */
+  projectId?: string;
+}
+
 /** Render the operator's global-read board navigation tree. */
 export function NavTree({
   model,
@@ -102,12 +118,152 @@ export function NavTree({
 }: NavTreeProps) {
   const { operatorHandle, activeRoomId, needsYou, projects } = model;
 
+  // Story 9.10 — interactive project COLLAPSE (the twisty) + the ROVING-TABINDEX active row.
+  // A project id is in `collapsed` when the operator has collapsed its group (aria-expanded
+  // reflects this live). `activeId` is the one row that holds tabindex=0 (the rest are -1).
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const treeRef = useRef<HTMLUListElement | null>(null);
+
+  const isCollapsed = (projectId: string): boolean => collapsed.has(projectId);
+
+  function toggleCollapse(projectId: string, next: boolean): void {
+    setCollapsed((prev) => {
+      const updated = new Set(prev);
+      if (next) updated.delete(projectId);
+      else updated.add(projectId);
+      return updated;
+    });
+  }
+
+  // Build the flat, VISIBLE row order (project header, then its bucket + rooms when expanded).
+  // This is the ArrowUp/Down traversal order + the roving-tabindex universe (APG tree pattern).
+  const flatRows: FlatRow[] = [];
+  for (const project of projects) {
+    const projectRowId = `project:${project.projectId}`;
+    flatRows.push({
+      treeId: projectRowId,
+      isProject: true,
+      projectId: project.projectId,
+    });
+    if (!isCollapsed(project.projectId)) {
+      flatRows.push({
+        treeId: `bucket:${project.projectId}`,
+        isProject: false,
+      });
+      for (const room of project.rooms) {
+        flatRows.push({ treeId: `room:${room.roomId}`, isProject: false });
+      }
+    }
+  }
+
+  // The active (tabindex=0) row defaults to the first visible row when nothing is active yet.
+  const effectiveActiveId =
+    activeId !== null && flatRows.some((r) => r.treeId === activeId)
+      ? activeId
+      : (flatRows[0]?.treeId ?? null);
+
+  /** Move roving focus to a row by its tree id (sets active + focuses the DOM node). */
+  function focusRow(treeId: string): void {
+    setActiveId(treeId);
+    const node = treeRef.current?.querySelector<HTMLElement>(
+      `[data-tree-id="${CSS.escape(treeId)}"]`,
+    );
+    node?.focus();
+  }
+
+  /** Move roving focus by an offset within the visible row order (ArrowUp/Down/Home/End). */
+  function focusByOffset(
+    fromId: string,
+    delta: number | 'first' | 'last',
+  ): void {
+    if (flatRows.length === 0) return;
+    if (delta === 'first') {
+      focusRow(flatRows[0]!.treeId);
+      return;
+    }
+    if (delta === 'last') {
+      focusRow(flatRows[flatRows.length - 1]!.treeId);
+      return;
+    }
+    const index = flatRows.findIndex((r) => r.treeId === fromId);
+    const next = Math.min(Math.max(index + delta, 0), flatRows.length - 1);
+    focusRow(flatRows[next]!.treeId);
+  }
+
+  /** The shared APG arrow-key handler for a tree row (roving tabindex + expand/collapse). */
+  function handleRowKeyDown(
+    event: ReactKeyboardEvent,
+    row: FlatRow,
+    activate: () => void,
+  ): void {
+    switch (event.key) {
+      case 'ArrowDown':
+        event.preventDefault();
+        focusByOffset(row.treeId, 1);
+        break;
+      case 'ArrowUp':
+        event.preventDefault();
+        focusByOffset(row.treeId, -1);
+        break;
+      case 'Home':
+        event.preventDefault();
+        focusByOffset(row.treeId, 'first');
+        break;
+      case 'End':
+        event.preventDefault();
+        focusByOffset(row.treeId, 'last');
+        break;
+      case 'ArrowRight':
+        // On a collapsed project → expand; on an expanded project → descend to its first child.
+        if (row.isProject && row.projectId !== undefined) {
+          event.preventDefault();
+          if (isCollapsed(row.projectId)) {
+            toggleCollapse(row.projectId, true);
+          } else {
+            focusByOffset(row.treeId, 1);
+          }
+        }
+        break;
+      case 'ArrowLeft':
+        // On an expanded project → collapse; on a child row → ascend to its project header.
+        if (row.isProject && row.projectId !== undefined) {
+          if (!isCollapsed(row.projectId)) {
+            event.preventDefault();
+            toggleCollapse(row.projectId, false);
+          }
+        } else {
+          event.preventDefault();
+          // Ascend to the nearest preceding project header.
+          const index = flatRows.findIndex((r) => r.treeId === row.treeId);
+          for (let i = index - 1; i >= 0; i--) {
+            if (flatRows[i]!.isProject) {
+              focusRow(flatRows[i]!.treeId);
+              break;
+            }
+          }
+        }
+        break;
+      case 'Enter':
+      case ' ':
+        event.preventDefault();
+        activate();
+        break;
+      default:
+        break;
+    }
+  }
+
+  // The tree fills its column (the apps/web sidebar column owns the fixed --sidebar-w width +
+  // the right border + the connection footer below it; Story 9.10). When mounted standalone
+  // (component tests / a surface that does not wrap it) it still renders at the sidebar width.
   const sidebarStyle: CSSProperties = {
-    width: 'var(--sidebar-w)',
+    width: '100%',
+    minWidth: 'var(--sidebar-w)',
+    flex: 1,
+    minHeight: 0,
     background: 'var(--surface-panel)',
     color: 'var(--text)',
-    borderRight: '1px solid var(--border)',
-    height: '100%',
     overflowY: 'auto',
     boxSizing: 'border-box',
   };
@@ -153,16 +309,18 @@ export function NavTree({
         </div>
       )}
 
-      {/* The pinned NEEDS YOU section — ONLY when n>0 (a quiet board shows nothing). */}
+      {/* The pinned NEEDS YOU section — ONLY when n>0 (a quiet board shows nothing). A flat
+          escalation list (role="list"), distinct from the project nav tree below. */}
       {needsYou.length > 0 && (
         <section
           className="nav-needs-you-section"
           data-testid="needs-you-section"
+          aria-label={`needs you (${needsYou.length})`}
         >
           <SectionLabel testId="needs-you-label" color="var(--flag-warm-text)">
-            Needs you ({needsYou.length})
+            needs you ({needsYou.length})
           </SectionLabel>
-          <ul role="tree" style={listReset}>
+          <ul role="list" style={listReset}>
             {needsYou.map((room) => (
               <NeedsYouItem
                 key={room.roomId}
@@ -177,52 +335,149 @@ export function NavTree({
         </section>
       )}
 
-      {/* One collapsible section per project — global read (every project, FR28). */}
-      <ul role="tree" style={listReset}>
-        {projects.map((project) => (
-          <li
-            key={project.projectId}
-            className="nav-project"
-            data-project-id={project.projectId}
-            role="treeitem"
-            aria-expanded="true"
-          >
-            <SectionLabel>{project.title}</SectionLabel>
-            <ul role="group" style={listReset}>
-              {/* The announcements bucket (`* announcements`). */}
-              <SidebarTreeItem
-                label={`announcements (${project.announcementCount})`}
-                leadingGlyph="*"
-                depth={1}
-                dataAttrs={{ 'data-testid': 'announcements-bucket' }}
-                onClick={
-                  onOpenAnnouncements
-                    ? () => onOpenAnnouncements(project.projectId)
-                    : undefined
-                }
-              />
-              {/* The room rows. */}
-              {project.rooms.map((room) => (
-                <SidebarTreeItem
-                  key={room.roomId}
-                  label={`#${room.roomId}`}
-                  readState={room.unread ? 'unread' : 'read'}
-                  needsYou={room.needsYou}
-                  activityCount={room.activityCount}
-                  selected={room.roomId === activeRoomId}
-                  depth={1}
-                  dataAttrs={{ 'data-room-id': room.roomId }}
-                  onClick={
-                    onSelectRoom ? () => onSelectRoom(room.roomId) : undefined
-                  }
-                />
-              ))}
-            </ul>
-          </li>
-        ))}
-      </ul>
+      {/* CALM EMPTY BOARD (AC1): no projects → a quiet `no projects yet` line + ONE next
+          action (the join row below). No spinner-over-everything, no splashy onboarding. */}
+      {projects.length === 0 && (
+        <p
+          className="nav-empty"
+          data-testid="nav-empty"
+          style={{
+            color: 'var(--text-dim)',
+            fontFamily: 'var(--ui-label-font)',
+            fontSize: 'var(--ui-label-size)',
+            padding: 'var(--space-3)',
+            margin: 0,
+          }}
+        >
+          no projects yet
+        </p>
+      )}
 
-      {/* The join-a-project action — clickable; the JOIN flow itself is Story 9.7 (stub). */}
+      {/* The board nav TREE — one collapsible treeitem per project (global read, FR28). A
+          SINGLE role="tree" with roving tabindex + APG arrow-key traversal (Story 9.10). */}
+      {projects.length > 0 && (
+        <ul role="tree" aria-label="projects" style={listReset} ref={treeRef}>
+          {projects.map((project) => {
+            const expanded = !isCollapsed(project.projectId);
+            const projectRowId = `project:${project.projectId}`;
+            const projectRow: FlatRow = {
+              treeId: projectRowId,
+              isProject: true,
+              projectId: project.projectId,
+            };
+            const bucketRow: FlatRow = {
+              treeId: `bucket:${project.projectId}`,
+              isProject: false,
+            };
+            return (
+              <li
+                key={project.projectId}
+                className="nav-project"
+                data-project-id={project.projectId}
+                role="treeitem"
+                aria-expanded={expanded}
+                aria-label={project.title}
+                tabIndex={effectiveActiveId === projectRowId ? 0 : -1}
+                data-tree-id={projectRowId}
+                onKeyDown={(event) => {
+                  // The project <li> WRAPS its room group; a child row's key/click event bubbles
+                  // up to here. Only act when the event originated on THIS project header (its
+                  // nearest [data-tree-id] is this project), never on a nested room/bucket row.
+                  if (
+                    (event.target as HTMLElement).closest('[data-tree-id]') !==
+                    event.currentTarget
+                  ) {
+                    return;
+                  }
+                  handleRowKeyDown(event, projectRow, () =>
+                    toggleCollapse(project.projectId, !expanded),
+                  );
+                }}
+                onClick={(event) => {
+                  if (
+                    (event.target as HTMLElement).closest('[data-tree-id]') !==
+                    event.currentTarget
+                  ) {
+                    return;
+                  }
+                  setActiveId(projectRowId);
+                  toggleCollapse(project.projectId, !expanded);
+                }}
+              >
+                <SectionLabel>
+                  <span aria-hidden="true">{expanded ? '▾ ' : '▸ '}</span>
+                  {project.title}
+                </SectionLabel>
+                {expanded && (
+                  <ul role="group" style={listReset}>
+                    {/* The announcements bucket (`* announcements`). */}
+                    <SidebarTreeItem
+                      label={`announcements (${project.announcementCount})`}
+                      leadingGlyph="*"
+                      depth={1}
+                      dataAttrs={{ 'data-testid': 'announcements-bucket' }}
+                      treeId={bucketRow.treeId}
+                      tabIndex={effectiveActiveId === bucketRow.treeId ? 0 : -1}
+                      ariaLabel={`announcements (${project.announcementCount})`}
+                      onKeyDown={(event) =>
+                        handleRowKeyDown(event, bucketRow, () =>
+                          onOpenAnnouncements?.(project.projectId),
+                        )
+                      }
+                      onClick={() => {
+                        setActiveId(bucketRow.treeId);
+                        onOpenAnnouncements?.(project.projectId);
+                      }}
+                    />
+                    {/* The room rows. */}
+                    {project.rooms.map((room) => {
+                      const roomRowId = `room:${room.roomId}`;
+                      const roomRow: FlatRow = {
+                        treeId: roomRowId,
+                        isProject: false,
+                      };
+                      // The SR label announces the room id + its read/escalation state.
+                      const stateWords = [
+                        room.unread ? 'unread' : 'read',
+                        room.needsYou ? 'needs you' : '',
+                      ]
+                        .filter(Boolean)
+                        .join(', ');
+                      return (
+                        <SidebarTreeItem
+                          key={room.roomId}
+                          label={`#${room.roomId}`}
+                          readState={room.unread ? 'unread' : 'read'}
+                          needsYou={room.needsYou}
+                          activityCount={room.activityCount}
+                          selected={room.roomId === activeRoomId}
+                          depth={1}
+                          dataAttrs={{ 'data-room-id': room.roomId }}
+                          treeId={roomRowId}
+                          tabIndex={effectiveActiveId === roomRowId ? 0 : -1}
+                          ariaLabel={`#${room.roomId}, ${stateWords}`}
+                          onKeyDown={(event) =>
+                            handleRowKeyDown(event, roomRow, () =>
+                              onSelectRoom?.(room.roomId),
+                            )
+                          }
+                          onClick={() => {
+                            setActiveId(roomRowId);
+                            onSelectRoom?.(room.roomId);
+                          }}
+                        />
+                      );
+                    })}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {/* The join-a-project action — the SINGLE next action on an empty board (AC1), always
+          present. Clickable; the JOIN flow itself is Story 9.7 (stub). */}
       <button
         type="button"
         className="nav-join-project"

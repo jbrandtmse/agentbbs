@@ -219,6 +219,22 @@ export function foldDelta(state: LiveState, event: EventWire): LiveState {
   };
 }
 
+/** The live transport status surfaced to the connection footer (Story 9.10). */
+export type ConnectionStatus = 'connected' | 'reconnecting';
+
+/** Optional connection-status hooks for {@link openEventStream} (Story 9.10, the footer LED). */
+export interface EventStreamOptions {
+  /**
+   * Called with the live transport status whenever it changes: `connected` on the
+   * `EventSource` `onopen` (the channel is live), `reconnecting` on `onerror` (the browser's
+   * built-in `EventSource` auto-reconnect is in flight — `readyState` is CONNECTING). This is
+   * the prop the calm inline ConnectionFooter renders (NEVER a modal — AC1/DESIGN). The 9.9
+   * live fold resumes automatically on the next `onopen` (the SSE redelivery is de-duped by
+   * `foldRoomDelta`'s idempotent-by-seq append; no double-apply).
+   */
+  onStatus?: (status: ConnectionStatus) => void;
+}
+
 /**
  * Open an SSE connection to the host's event channel and invoke `onDelta` for each
  * delta frame. Returns a disposer that closes the `EventSource`. Uses the browser-global
@@ -226,13 +242,21 @@ export function foldDelta(state: LiveState, event: EventWire): LiveState {
  * `text/event-stream`). NFR5: this is the operator browser's OWN live view — not an
  * agent push.
  *
+ * CONNECTION STATUS (Story 9.10): the web `EventSource` exposes `onopen` (the channel is
+ * OPEN/live → `connected`) and `onerror` (the connection dropped; the browser auto-reconnects,
+ * `readyState` CONNECTING → `reconnecting`). When `options.onStatus` is supplied, those events
+ * are mapped to the calm footer status. EventSource auto-reconnects on its own — the host is
+ * never modal-alerted; the operator's already-loaded content stays readable while reconnecting.
+ *
  * @param onDelta Called with each decoded {@link EventWire}.
  * @param baseUrl The host origin (defaults to current origin).
+ * @param options Optional connection-status hooks (the footer LED).
  * @returns A function that closes the connection.
  */
 export function openEventStream(
   onDelta: (event: EventWire) => void,
   baseUrl = '',
+  options: EventStreamOptions = {},
 ): () => void {
   const source = new EventSource(`${baseUrl}/api/events`);
   source.addEventListener('message', (ev: MessageEvent<string>) => {
@@ -242,6 +266,14 @@ export function openEventStream(
       // A malformed frame is ignored — the operator's view degrades gracefully.
     }
   });
+  if (options.onStatus) {
+    const { onStatus } = options;
+    // onopen: the channel is live (initial open AND every successful auto-reconnect) → connected.
+    source.addEventListener('open', () => onStatus('connected'));
+    // onerror: the connection dropped; the browser EventSource auto-reconnects (readyState
+    // CONNECTING). A calm inline `reconnecting…`, never a modal — already-loaded content stays.
+    source.addEventListener('error', () => onStatus('reconnecting'));
+  }
   return () => source.close();
 }
 

@@ -102,3 +102,12 @@ export { RoomTab } from './room/RoomTab.js';
 export type { RoomTabProps, RoomTabModel } from './room/RoomTab.js';
 export { TabStrip } from './room/TabStrip.js';
 export type { TabStripProps } from './room/TabStrip.js';
+
+// Story 9.10 — the calm/a11y capstone chrome: the quiet sidebar connection footer (the
+// `● connected` / `○ reconnecting…` LED, NEVER a modal — DESIGN components.connection-footer).
+// Prop-driven + presentation-only (NFR2); the surface maps the live transport to the status.
+export { ConnectionFooter } from './chrome/ConnectionFooter.js';
+export type {
+  ConnectionFooterProps,
+  ConnectionStatus,
+} from './chrome/ConnectionFooter.js';

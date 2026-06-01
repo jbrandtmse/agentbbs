@@ -19,7 +19,7 @@
 
 import { useState } from 'react';
 
-import type { CSSProperties, FormEvent } from 'react';
+import type { CSSProperties, FormEvent, KeyboardEvent } from 'react';
 
 export interface ComposerProps {
   /**
@@ -45,6 +45,12 @@ export interface ComposerProps {
    * `false`.
    */
   pending?: boolean;
+  /**
+   * Story 9.10 a11y — fired when the operator presses Esc in the composer field so the surface
+   * can RETURN FOCUS to the thread/tree (EXPERIENCE.md keyboard floor: "Esc returns focus to the
+   * thread/tree"). Optional; the surface owns where focus goes.
+   */
+  onEscape?: () => void;
 }
 
 /**
@@ -57,6 +63,7 @@ export function Composer({
   onJoin,
   onSend,
   pending = false,
+  onEscape,
 }: ComposerProps) {
   const [draft, setDraft] = useState('');
 
@@ -114,6 +121,15 @@ export function Composer({
     setDraft('');
   }
 
+  // Esc returns focus to the thread/tree (EXPERIENCE.md keyboard floor) — the surface decides
+  // where. Enter-to-send is the form submit (the field is in a <form>), so plain Enter sends.
+  function handleFieldKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      onEscape?.();
+    }
+  }
+
   const joinedOkStyle: CSSProperties = {
     fontFamily: 'var(--ui-label-font)',
     fontSize: 'var(--ui-label-size)',
@@ -160,6 +176,7 @@ export function Composer({
       data-joined="true"
       style={containerStyle}
       onSubmit={handleSubmit}
+      aria-label="post a message"
     >
       <div style={rowStyle}>
         <span
@@ -174,9 +191,11 @@ export function Composer({
           className="composer-field"
           data-testid="composer-field"
           placeholder="type to post…"
+          aria-label="message"
           value={draft}
           disabled={pending}
           onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={handleFieldKeyDown}
           style={fieldStyle}
         />
         <button

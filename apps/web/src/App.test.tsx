@@ -41,6 +41,18 @@ class FakeEventSource {
       fn({ data } as MessageEvent<string>);
     }
   }
+  /** Story 9.10 — fire the SSE `open` (channel live → connected footer LED). */
+  emitOpen(): void {
+    for (const fn of this.listeners.open ?? []) {
+      fn({} as MessageEvent<string>);
+    }
+  }
+  /** Story 9.10 — fire the SSE `error` (dropped; auto-reconnect → reconnecting footer LED). */
+  emitError(): void {
+    for (const fn of this.listeners.error ?? []) {
+      fn({} as MessageEvent<string>);
+    }
+  }
   close(): void {
     this.closed = true;
   }
@@ -1884,10 +1896,420 @@ describe('App shell — join FAILURE shows inline retry, no half-joined state (S
     expect(
       container.querySelector('[data-testid="composer-join"]')?.textContent,
     ).toBe('[ join room to post ]');
-    // A calm inline error surfaced (not a modal).
+    // A calm inline error surfaced (not a modal). Story 9.10 voice: lowercase `couldn’t …`.
     expect(container.querySelector('[role="dialog"]')).toBeNull();
     expect(
       container.querySelector('[data-testid="room-error"]')?.textContent,
-    ).toContain('Error:');
+    ).toContain('couldn’t open the room');
+  });
+});
+
+// --- Story 9.10 — CALM STATES + the CONNECTION FOOTER through the real App shell (Rule 3
+// real-runtime DOM evidence). Three calm-posture proofs: (a) an EMPTY board renders
+// `no projects yet` + the single `＋ join a project…` next action with NO full-app spinner;
+// (b) a DISCONNECTED transport shows the inline `○ reconnecting…` footer while the
+// already-loaded tree STAYS in the DOM (no modal/overlay), then recovers to `● connected`;
+// (c) a quiet/idle room carries NO warning/nag decoration (healthy). ---
+describe('App shell — calm states + connection footer (Story 9.10)', () => {
+  const EMPTY_RESPONSES: Record<string, unknown> = {
+    '/api/me': { handle: 'operator' },
+    '/api/needs-you': { rooms: [] },
+    '/api/directory': { projects: [] },
+  };
+
+  function stubFetch(responses: Record<string, unknown>): void {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const body = responses[url];
+        if (body === undefined) return new Response('nope', { status: 404 });
+        return new Response(JSON.stringify(body), { status: 200 });
+      }),
+    );
+    vi.stubGlobal(
+      'EventSource',
+      FakeEventSource as unknown as typeof EventSource,
+    );
+  }
+
+  it('AC1 — an EMPTY board renders `no projects yet` + the single next action, with NO full-app spinner', async () => {
+    stubFetch(EMPTY_RESPONSES);
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await flush();
+
+    // The empty-board calm copy + the single next action (the join row), inside the tree.
+    expect(
+      container.querySelector('[data-testid="nav-empty"]')?.textContent,
+    ).toBe('no projects yet');
+    expect(
+      container.querySelector('[data-testid="nav-join-project"]'),
+    ).not.toBeNull();
+    // The loaded tree is present (no full-app blocking spinner / overlay over everything).
+    expect(container.querySelector('[data-testid="tree-skeleton"]')).toBeNull();
+    expect(container.querySelector('.nav-tree')).not.toBeNull();
+    // No modal/dialog anywhere.
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it('AC1 — DISCONNECTED: the footer shows inline `○ reconnecting…`; already-loaded content stays; recovers to `● connected`', async () => {
+    stubFetch(EMPTY_RESPONSES);
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await flush();
+
+    // The SSE channel opens → connected.
+    await act(async () => {
+      FakeEventSource.last?.emitOpen();
+    });
+    const footer = () =>
+      container.querySelector('[data-testid="connection-footer"]');
+    expect(footer()?.getAttribute('data-status')).toBe('connected');
+    expect(
+      footer()?.querySelector('[data-testid="connection-footer-label"]')
+        ?.textContent,
+    ).toBe('connected');
+
+    // The transport drops → the footer flips to the INLINE reconnecting state.
+    await act(async () => {
+      FakeEventSource.last?.emitError();
+    });
+    expect(footer()?.getAttribute('data-status')).toBe('reconnecting');
+    expect(
+      footer()?.querySelector('[data-testid="connection-footer-label"]')
+        ?.textContent,
+    ).toBe('reconnecting…');
+    // CALM POSTURE: no modal/overlay blocks the UI; the already-loaded tree stays readable.
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(container.querySelector('.nav-tree')).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="nav-empty"]')?.textContent,
+    ).toBe('no projects yet');
+
+    // Reconnect → back to connected (the live fold resumes on the next open).
+    await act(async () => {
+      FakeEventSource.last?.emitOpen();
+    });
+    expect(footer()?.getAttribute('data-status')).toBe('connected');
+  });
+
+  it('AC1 — a quiet/idle room carries NO warning/nag/stalled decoration (healthy)', async () => {
+    // A board with one room, no escalation, no activity — the "quiet = healthy" state.
+    stubFetch({
+      '/api/me': { handle: 'operator' },
+      '/api/needs-you': { rooms: [] },
+      '/api/directory': {
+        projects: [
+          {
+            project_id: 'p1',
+            title: 'Project One',
+            description: 'd',
+            announcer: 'alice',
+            members: ['alice'],
+          },
+        ],
+      },
+      '/api/projects/p1/rooms': {
+        rooms: [
+          {
+            room_id: 'quiet-room',
+            project_id: 'p1',
+            subject: 'Quiet room',
+            body: '',
+            posted_by: 'alice',
+            seq: 5,
+            active: true,
+          },
+        ],
+      },
+      '/api/projects/p1/announcements': { announcements: [] },
+    });
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await flush();
+
+    const row = container.querySelector(
+      '[data-room-id="quiet-room"]',
+    ) as HTMLElement;
+    expect(row).not.toBeNull();
+    // A quiet room shows the READ (°) glyph — never a needs-you (!) flag, never a warning/nag.
+    expect(row.querySelector('[data-testid="unread-glyph"]')?.textContent).toBe(
+      '°',
+    );
+    expect(row.querySelector('[data-testid="needs-you-glyph"]')).toBeNull();
+    // No NEEDS YOU section at all (a quiet board surfaces nothing).
+    expect(
+      container.querySelector('[data-testid="needs-you-section"]'),
+    ).toBeNull();
+    // No warning/alarm vocabulary or red decoration anywhere in the tree.
+    const treeHtml = (
+      container.querySelector('.nav-tree') as HTMLElement
+    ).outerHTML.toLowerCase();
+    expect(treeHtml).not.toContain('stalled');
+    expect(treeHtml).not.toContain('warning');
+    expect(treeHtml).not.toContain('red');
+  });
+});
+
+// --- Story 9.10 — THE CALM-POSTURE INVARIANT: NO MODAL ANYWHERE, IN ANY STATE (QA hardening).
+// The marquee brand guarantee (DESIGN §Elevation — "the elevation language has no modal scrim";
+// Do/Don't — "never spam modal alerts"). The dev's per-state tests check `[role="dialog"]` (and
+// sometimes `alertdialog`) piecemeal; the post-failure test checks ONLY `role="dialog"`. This
+// suite pins the invariant STRUCTURALLY with ONE comprehensive sweep over EVERY modal affordance
+// (`dialog`, `alertdialog`, `aria-modal`, the `alert` live-alarm, a backdrop/scrim overlay)
+// across the full state matrix the app can enter: empty, cold-load-in-flight, disconnected, and
+// post-failure. Disconnection + failure surface INLINE only; reading stays unobstructed. ---
+describe('App shell — NO MODAL ANYWHERE, in any state (Story 9.10 calm-posture invariant)', () => {
+  /** Assert the WHOLE rendered app contains no modal/blocking-alert affordance of any kind. */
+  function assertNoModalAnywhere(): void {
+    const root = container; // the entire mounted app subtree
+    // No dialog/alertdialog role, no aria-modal, no `alert` (the blocking live-alarm role).
+    expect(root.querySelector('[role="dialog"]')).toBeNull();
+    expect(root.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(root.querySelector('[aria-modal="true"]')).toBeNull();
+    expect(root.querySelector('[role="alert"]')).toBeNull();
+    // No <dialog> element (the native modal). No backdrop/scrim overlay class.
+    expect(root.querySelector('dialog')).toBeNull();
+    const html = root.innerHTML.toLowerCase();
+    expect(html).not.toContain('modal');
+    expect(html).not.toContain('backdrop');
+    expect(html).not.toContain('scrim');
+    expect(html).not.toContain('overlay');
+  }
+
+  it('EMPTY board → no modal; the calm tree is the whole UI', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const body = {
+          '/api/me': { handle: 'operator' },
+          '/api/needs-you': { rooms: [] },
+          '/api/directory': { projects: [] },
+        }[url];
+        if (body === undefined) return new Response('nope', { status: 404 });
+        return new Response(JSON.stringify(body), { status: 200 });
+      }),
+    );
+    vi.stubGlobal(
+      'EventSource',
+      FakeEventSource as unknown as typeof EventSource,
+    );
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await flush();
+    expect(container.querySelector('[data-testid="nav-empty"]')).not.toBeNull();
+    assertNoModalAnywhere();
+  });
+
+  it('COLD OPEN (board fetch in flight, not yet resolved) → no modal/blocking overlay, even before the tree loads', async () => {
+    // Hold the directory fetch open so the app is mid-cold-load when we assert. A calm skeleton
+    // is allowed; a modal/blocking overlay is NOT — reading must never be gated behind a scrim.
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((res) => {
+      release = res;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url === '/api/directory') {
+          await gate; // never resolves until we release → the app stays in its cold-load state
+        }
+        const body = {
+          '/api/me': { handle: 'operator' },
+          '/api/needs-you': { rooms: [] },
+          '/api/directory': { projects: [] },
+        }[url];
+        if (body === undefined) return new Response('nope', { status: 404 });
+        return new Response(JSON.stringify(body), { status: 200 });
+      }),
+    );
+    vi.stubGlobal(
+      'EventSource',
+      FakeEventSource as unknown as typeof EventSource,
+    );
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    // Let the synchronous mount + the resolvable fetches settle, but the directory is still pending.
+    await act(async () => {
+      for (let i = 0; i < 3; i++) await Promise.resolve();
+    });
+    // Mid-cold-load: NO modal/scrim blocks the (still-loading) UI.
+    assertNoModalAnywhere();
+    // Release so the test tears down cleanly.
+    release?.();
+    await flush();
+  });
+
+  it('DISCONNECTED → no modal; the already-loaded tree stays in the DOM behind the inline footer', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const body = {
+          '/api/me': { handle: 'operator' },
+          '/api/needs-you': { rooms: [] },
+          '/api/directory': { projects: [] },
+        }[url];
+        if (body === undefined) return new Response('nope', { status: 404 });
+        return new Response(JSON.stringify(body), { status: 200 });
+      }),
+    );
+    vi.stubGlobal(
+      'EventSource',
+      FakeEventSource as unknown as typeof EventSource,
+    );
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await flush();
+    await act(async () => {
+      FakeEventSource.last?.emitOpen();
+    });
+    await act(async () => {
+      FakeEventSource.last?.emitError(); // drop the transport → reconnecting
+    });
+    // The footer flipped INLINE; the tree is still present + readable; NO modal blocks it.
+    expect(
+      container
+        .querySelector('[data-testid="connection-footer"]')
+        ?.getAttribute('data-status'),
+    ).toBe('reconnecting');
+    expect(container.querySelector('.nav-tree')).not.toBeNull();
+    assertNoModalAnywhere();
+  });
+
+  it('POST FAILURE → the failure is INLINE in the thread; NO modal/alertdialog/aria-modal anywhere', async () => {
+    // A room ops already participates in; the reply POST rejects → the echo flips to inline
+    // `post failed — retry`. The dev's 9.9 failure test only checks `[role="dialog"]`; here we
+    // sweep the FULL modal surface (alertdialog/aria-modal/alert/scrim) to pin the invariant.
+    const confirmed = [
+      {
+        seq: 5,
+        actor: 'alice',
+        body: 'Seed.',
+        kind: 'announcement',
+        reactions: [] as string[],
+        created_at: '2026-06-01T08:00:00.000Z',
+      },
+    ];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const method = init?.method ?? 'GET';
+        if (method === 'POST') {
+          if (url === '/api/rooms/fail-room/reply')
+            return new Response('nope', { status: 500 });
+          return new Response('nope', { status: 404 });
+        }
+        if (url === '/api/rooms/fail-room') {
+          return new Response(
+            JSON.stringify({
+              room: {
+                room_id: 'fail-room',
+                project_id: 'p1',
+                subject: 'Fail room',
+                body: 'Seed.',
+                posted_by: 'alice',
+                seq: 5,
+                active: true,
+                activated_by: 'alice',
+                activated_at_seq: 6,
+              },
+              messages: confirmed,
+              participants: ['alice', 'operator'],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url === '/api/rooms/fail-room/contract') {
+          return new Response(
+            JSON.stringify({ room_id: 'fail-room', contract: null }),
+            { status: 200 },
+          );
+        }
+        const body = {
+          '/api/me': { handle: 'operator' },
+          '/api/needs-you': { rooms: [] },
+          '/api/directory': {
+            projects: [
+              {
+                project_id: 'p1',
+                title: 'P1',
+                description: 'd',
+                announcer: 'alice',
+                members: ['alice', 'operator'],
+              },
+            ],
+          },
+          '/api/projects/p1/rooms': {
+            rooms: [
+              {
+                room_id: 'fail-room',
+                project_id: 'p1',
+                subject: 'Fail room',
+                body: '',
+                posted_by: 'alice',
+                seq: 5,
+                active: true,
+              },
+            ],
+          },
+          '/api/projects/p1/announcements': { announcements: [] },
+        }[url];
+        if (body === undefined) return new Response('nope', { status: 404 });
+        return new Response(JSON.stringify(body), { status: 200 });
+      }),
+    );
+    vi.stubGlobal(
+      'EventSource',
+      FakeEventSource as unknown as typeof EventSource,
+    );
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await flush();
+    await act(async () => {
+      container
+        .querySelector<HTMLElement>(
+          '[data-project-id="p1"] [data-room-id="fail-room"]',
+        )
+        ?.click();
+    });
+    await flush();
+    // Type + send → the POST rejects → inline failure.
+    const field = container.querySelector<HTMLInputElement>(
+      '[data-testid="composer-field"]',
+    );
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )?.set;
+      setter?.call(field, 'this will fail');
+      field?.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="composer-send"]')
+        ?.click();
+    });
+    await flush();
+    // The failure surfaced INLINE in the thread (post failed — retry), NOT in any modal.
+    const failedPost = container.querySelector('[data-failed="true"]');
+    expect(failedPost).not.toBeNull();
+    expect(failedPost?.textContent).toContain('post failed');
+    assertNoModalAnywhere();
   });
 });

@@ -12,6 +12,9 @@ import '@agentbbs/ui-shared/tokens.css';
 // MarkdownView) + Story 9.5 room structural classes — both side-effecting stylesheets.
 import '@agentbbs/ui-shared/markdown.css';
 import '@agentbbs/ui-shared/room.css';
+// Story 9.10 — the a11y/calm-chrome floor: the AA focus ring (:focus-visible), the
+// prefers-reduced-motion gate, and the .sr-only live-region helper. Side-effecting stylesheet.
+import '@agentbbs/ui-shared/chrome.css';
 
 import { App } from './App.js';
 

@@ -240,6 +240,19 @@ export function MessagePost({
 
   const timestamp = post.createdAt ? formatTimestamp(post.createdAt) : '';
 
+  // Story 9.10 a11y — the screen-reader label announcing this post: its author `@handle`, the
+  // display timestamp, and (only on the converged contract) the agreed state. A pending echo
+  // announces "sending"; a failed echo announces "post failed". The visible body is read after.
+  const ariaLabel = [
+    `@${post.actor}`,
+    timestamp.length > 0 ? timestamp : '',
+    agreed && !optimistic ? 'agreed' : '',
+    pending ? 'sending' : '',
+    failed ? 'post failed' : '',
+  ]
+    .filter(Boolean)
+    .join(', ');
+
   return (
     <article
       className={agreed ? 'message-post message-post--agreed' : 'message-post'}
@@ -249,6 +262,8 @@ export function MessagePost({
       data-agreed={agreed ? 'true' : 'false'}
       data-pending={pending ? 'true' : 'false'}
       data-failed={failed ? 'true' : 'false'}
+      role="listitem"
+      aria-label={ariaLabel}
       style={articleStyle}
     >
       <header className="message-post-head" style={headerStyle}>

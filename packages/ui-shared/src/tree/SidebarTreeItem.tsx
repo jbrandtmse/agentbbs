@@ -10,14 +10,21 @@
 //   * announcements (the announcements bucket uses this)
 // A room row may carry BOTH an unread/read glyph AND a needs `!` glyph (escalated + unread).
 //
-// Presentation-only (NFR2 — no core/data-access import). The row is a semantic list item
-// with a button-like role hook left for Story 9.10 (full a11y); 9.4 structures the markup
-// (role="treeitem", a real <li>) so 9.10 can layer keyboard nav + ARIA without reshaping it.
-// React 19 automatic JSX runtime.
+// Presentation-only (NFR2 — no core/data-access import). The row is a semantic
+// `role="treeitem"` <li> within the NavTree's `role="tree"`. Story 9.10 layers the a11y
+// floor: a ROVING TABINDEX (`tabIndex` is 0 for the one active row, -1 otherwise), an
+// `onKeyDown` for APG arrow-key traversal, an `aria-label` so a screen reader announces the
+// row meaningfully, and a `data-tree-id` for the roving-focus DOM lookup. The visible focus
+// ring (AA, ≥3:1) is the `.nav-row:focus-visible` rule in tree.css. React 19 automatic JSX
+// runtime.
 
 import { UnreadBadge } from './UnreadBadge.js';
 
-import type { CSSProperties, ReactNode } from 'react';
+import type {
+  CSSProperties,
+  KeyboardEvent as ReactKeyboardEvent,
+  ReactNode,
+} from 'react';
 
 /** Which leading read/unread glyph a row shows (rooms only; sections pass `none`). */
 export type ReadState = 'unread' | 'read' | 'none';
@@ -41,6 +48,20 @@ export interface SidebarTreeItemProps {
   leadingGlyph?: string;
   /** `data-room-id` / `data-project-id` style attributes for DOM-test targeting. */
   dataAttrs?: Record<string, string>;
+  /**
+   * Story 9.10 a11y — the roving-tabindex value: `0` for the ONE active row in the tree, `-1`
+   * for every other row (the WAI-ARIA tree pattern). Default `-1`.
+   */
+  tabIndex?: number;
+  /** Story 9.10 a11y — the row's stable id for the tree's roving-focus DOM lookup. */
+  treeId?: string;
+  /** Story 9.10 a11y — the tree's shared key handler (APG arrow-key traversal). */
+  onKeyDown?: (event: ReactKeyboardEvent) => void;
+  /**
+   * Story 9.10 a11y — the screen-reader label announcing the row (e.g. the room id + its
+   * read/needs-you state). Falls back to the visible label text when omitted.
+   */
+  ariaLabel?: string;
 }
 
 /** Render one mono sidebar nav row with its glyphs, optional badge, and selection rail. */
@@ -54,6 +75,10 @@ export function SidebarTreeItem({
   onClick,
   leadingGlyph,
   dataAttrs,
+  tabIndex = -1,
+  treeId,
+  onKeyDown,
+  ariaLabel,
 }: SidebarTreeItemProps) {
   const rowStyle: CSSProperties = {
     display: 'flex',
@@ -81,7 +106,11 @@ export function SidebarTreeItem({
       style={rowStyle}
       role="treeitem"
       aria-selected={selected}
+      aria-label={ariaLabel}
+      tabIndex={tabIndex}
+      data-tree-id={treeId}
       onClick={onClick}
+      onKeyDown={onKeyDown}
       {...dataAttrs}
     >
       {leadingGlyph !== undefined && (
