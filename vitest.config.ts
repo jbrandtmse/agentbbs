@@ -88,8 +88,13 @@ export default defineConfig({
           // DOM env in the separate 'ui-shared-dom' project below. Exclude those
           // .test.tsx from this node project so each UI test runs in exactly one
           // env (never twice). Pure-node ui-shared tests (e.g. contrast.test.ts)
-          // stay here. .test.tsx in OTHER packages still run node here.
-          exclude: ['packages/ui-shared/src/**/*.test.tsx'],
+          // stay here. Story 9.3 adds apps/web's React shell render test (App.test.tsx),
+          // which is ALSO a DOM-project test — excluded here, included in ui-shared-dom
+          // below. Pure-node apps/web tests (api-client.test.ts) stay here.
+          exclude: [
+            'packages/ui-shared/src/**/*.test.tsx',
+            'apps/web/src/**/*.test.tsx',
+          ],
           passWithNoTests: true,
         },
       },
@@ -109,7 +114,13 @@ export default defineConfig({
         test: {
           name: 'ui-shared-dom',
           environment: 'happy-dom',
-          include: ['packages/ui-shared/src/**/*.test.tsx'],
+          // The DOM-env React component tests: ui-shared's own (Story 9.1/9.2) plus
+          // apps/web's shell render test (Story 9.3) — the first CROSS-package DOM
+          // consumer of ui-shared. Both run under happy-dom with the shared act() setup.
+          include: [
+            'packages/ui-shared/src/**/*.test.tsx',
+            'apps/web/src/**/*.test.tsx',
+          ],
           // Story 9.2 / 9.1-L1: set IS_REACT_ACT_ENVIRONMENT=true so React act()
           // semantics are correct and the act(...) stderr warning is silenced for
           // every DOM-project component test.

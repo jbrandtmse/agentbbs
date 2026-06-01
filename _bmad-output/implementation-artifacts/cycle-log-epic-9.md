@@ -15,3 +15,10 @@
 2026-06-01T10:46:12Z	Story 9.2	qa_complete	spawn_at=2026-06-01T10:45:00Z model=claude-opus-4-8 tests_added=18 suite=780-798 first_run_failures=0 clarifications=0 closing_sections_present=true
 2026-06-01T10:52:21Z	Story 9.2	cr_complete	spawn_at=2026-06-01T10:58:00Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=0 high=0 med=0 low=0 clarifications=0 closing_sections_present=true
 2026-06-01T10:53:53Z	Story 9.2	smoke_complete	method=browser result=pass iterations=1 defects_caught=0 evidence=real-chrome:canaryHits=0,scripts=0,iframes=0,inline-handlers=0,js-hrefs=0,no-content-network-request;code-spans-class=4/inline-style=0;table+blockquote+inlinecode-render;xss-survives-as-escaped-text model=claude-opus-4-8
+2026-06-01T10:54:09Z	Story 9.2	committed	sha=11b9fb7 submodules=
+2026-06-01T10:57:03Z	Story 9.3	story_created	path=_bmad-output/implementation-artifacts/9-3-on-demand-web-host-with-json-api-and-sse.md integration_ac=present(AC3-real-http+sse-over-real-ledger)
+2026-06-01T11:17:58Z	Story 9.3	dev_complete	spawn_at=2026-06-01T11:30:00Z model=claude-opus-4-8 files=24 tests_added=9files clarifications=0 nfr_tripwires=0 adr_violations_surfaced=0 cycle_iteration=1 closing_sections_present=true
+2026-06-01T11:17:58Z	Story 9.3	adr_verifications_complete	result=none_required
+2026-06-01T11:28:40Z	Story 9.3	qa_complete	spawn_at=2026-06-01T11:55:00Z model=claude-opus-4-8 tests_added=14 suite=841-855 first_run_failures=0 clarifications=0 closing_sections_present=true
+2026-06-01T11:36:26Z	Story 9.3	cr_complete	spawn_at=2026-06-01T12:05:00Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=3 high=0 med=0 low=3 clarifications=0 closing_sections_present=true
+2026-06-01T11:39:22Z	Story 9.3	smoke_complete	method=browser+api result=pass iterations=1 defects_caught=0 evidence=real-chrome@127.0.0.1:7391:json-api-returns-real-seeded-board(taskflow-render-engine-contract,by-amelia-dev);sse-text/event-stream-headers;out-of-band-append->browser-EventSource-received-3-deltas-seq4-5-6(identity.registered+project.announced-livewire+board.joined) model=claude-opus-4-8

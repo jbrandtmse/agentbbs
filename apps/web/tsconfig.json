@@ -1,9 +1,23 @@
 {
+  // apps/web is a Vite + React SPA (Story 9.3). Vite/esbuild does the transpile +
+  // bundle (`vite build` → dist/), so tsc is used here for TYPE-CHECKING only
+  // (noEmit). The aggregate root pass (tsconfig.typecheck.json) is the CI gate that
+  // actually runs over apps/*/src; this per-app config mirrors its React settings so
+  // an IDE / a standalone `tsc -p` check sees the same surface.
+  //
+  // NOT composite / not a project-reference target: a Vite app is a leaf consumer,
+  // never imported as a library, so it does not participate in the `tsc -b` graph
+  // (its `build` script is `vite build`, not `tsc -b`). The DOM lib + react-jsx are
+  // needed because this package authors React components against the browser DOM.
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": "src",
-    "outDir": "dist"
+    "noEmit": true,
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "jsx": "react-jsx",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node"]
   },
-  "include": ["src/**/*.ts"],
-  "references": [{ "path": "../../packages/ui-shared" }]
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
 }

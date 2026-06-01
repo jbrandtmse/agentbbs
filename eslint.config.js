@@ -35,9 +35,21 @@ import globals from 'globals';
  * better-sqlite3 rules need (we never need to resolve to a file on disk).
  */
 const NO_DEEP_CROSS_PACKAGE = {
-  group: ['@agentbbs/*/*'],
+  // ui-shared deliberately PUBLISHES CSS assets as `exports` subpaths
+  // (`./tokens.css`, `./markdown.css`) — they are intended public entry points a
+  // consumer imports as a side-effecting stylesheet (Story 9.1), NOT internal TS
+  // deep paths. The barrel-only rule targets reaching into another package's TS
+  // internals; a declared asset subpath is the package's public API, so those exact
+  // specifiers are NEGATED out of the ban here (Story 9.3, apps/web's first
+  // consumption of tokens.css). A negation glob in `group` is the minimatch-supported
+  // way to exempt specific specifiers from a broader pattern.
+  group: [
+    '@agentbbs/*/*',
+    '!@agentbbs/ui-shared/tokens.css',
+    '!@agentbbs/ui-shared/markdown.css',
+  ],
   message:
-    'Cross-package imports must target the package barrel (@agentbbs/<x>), never a deep path. Re-export from the package index.ts.',
+    "Cross-package imports must target the package barrel (@agentbbs/<x>) — except a package's PUBLISHED asset subpath (e.g. @agentbbs/ui-shared/tokens.css). Never reach a deep TS path; re-export from index.ts.",
 };
 
 const NO_BETTER_SQLITE3 = {
@@ -149,10 +161,16 @@ export default tseslint.config(
   },
 
   // 3. React components: PascalCase.tsx, one per file, default export allowed.
+  //    `main.tsx` is the conventional Vite/React APP ENTRY filename (lowercase) — it
+  //    mounts the root, it is not a component module — so it is ignored by the
+  //    PascalCase rule (mirrors how `.config.js` is ignored above). Story 9.3.
   {
     files: ['**/*.tsx'],
     rules: {
-      'unicorn/filename-case': ['error', { case: 'pascalCase' }],
+      'unicorn/filename-case': [
+        'error',
+        { case: 'pascalCase', ignore: [/^main\.tsx$/u] },
+      ],
       'import-x/no-default-export': 'off',
     },
   },
