@@ -61,6 +61,26 @@ export interface MessagePostModel {
    * — NOT rendered here. Present so the thread model is complete at the 9.5 boundary.
    */
   reactions: string[];
+  /**
+   * Story 9.9 — OPTIMISTIC POST STATE. When the operator sends, the surface echoes the post
+   * into the thread immediately in a `pending` state (dimmed + "sending…") with a synthetic
+   * negative `seq` and a `clientToken`; on the POST response it RECONCILES (replaces the
+   * pending echo with the confirmed message at its real `seq`). `pending` → a confirmed
+   * message simply omits it (default `false`). A CONFIRMED message never carries a token.
+   */
+  pending?: boolean;
+  /**
+   * Story 9.9 — the optimistic post FAILED (the POST errored). The surface flips the pending
+   * echo to `failed` (the draft is preserved — the body is still here) and shows an inline
+   * `post failed — retry` affordance (no modal). Retry re-sends the SAME body. Default `false`.
+   */
+  failed?: boolean;
+  /**
+   * Story 9.9 — the client-side correlation token for an optimistic echo (a pending/failed
+   * post). The surface uses it to reconcile (replace) the echo with the confirmed message and
+   * to target a retry. Absent on a confirmed (server-derived) message.
+   */
+  clientToken?: string;
 }
 
 export interface MessagePostProps {
@@ -100,6 +120,12 @@ export interface MessagePostProps {
    * Defaults to `false` (web V1 is non-HC). Story 9.10 owns the real a11y/HC floor.
    */
   highContrast?: boolean;
+  /**
+   * Story 9.9 — fired when the operator clicks `retry` on a FAILED optimistic post (carries
+   * the post's `clientToken`). The surface re-sends the same body. Only rendered/fired when
+   * `post.failed` and a `clientToken` is present.
+   */
+  onRetryPost?: (clientToken: string) => void;
 }
 
 /** The default whole-post collapse threshold (DESIGN.md "> ~30 lines"). */
@@ -125,7 +151,15 @@ export function MessagePost({
   canReact = false,
   onToggleReaction,
   highContrast = false,
+  onRetryPost,
 }: MessagePostProps) {
+  // Story 9.9 — optimistic post state. A pending echo is dimmed + "sending…"; a failed echo
+  // shows the inline `post failed — retry` affordance (no modal; the draft body is preserved
+  // right here in the post). Both are PRE-CONFIRMATION — they have no real seq yet, so the
+  // 👍 chip + agreed mark are suppressed until reconciliation.
+  const pending = post.pending === true;
+  const failed = post.failed === true;
+  const optimistic = pending || failed;
   const isLong = sourceLineCount(post.body) > collapseLineThreshold;
   // Long posts start COLLAPSED (a calm preview); the operator opts in to the full body.
   const [expanded, setExpanded] = useState(false);
@@ -145,6 +179,10 @@ export function MessagePost({
           background: highContrast ? 'transparent' : AGREED_POST_WASH,
         }
       : {}),
+    // A PENDING optimistic echo is dimmed (the small token-based "sending…" affordance —
+    // DESIGN/EXPERIENCE.md "optimistic post echo"); a FAILED echo returns to full opacity so
+    // the inline retry reads clearly. The dim is opacity-only (no layout shift on reconcile).
+    ...(pending ? { opacity: 0.55 } : {}),
   };
 
   const headerStyle: CSSProperties = {
@@ -209,6 +247,8 @@ export function MessagePost({
       data-message-seq={post.seq}
       data-kind={post.kind}
       data-agreed={agreed ? 'true' : 'false'}
+      data-pending={pending ? 'true' : 'false'}
+      data-failed={failed ? 'true' : 'false'}
       style={articleStyle}
     >
       <header className="message-post-head" style={headerStyle}>
@@ -219,9 +259,21 @@ export function MessagePost({
         >
           @{post.actor}
         </span>
-        {/* The agreed-mark HEAD mirror (DESIGN.md) — only on the converged post. */}
-        {agreed && <AgreedMark placement="head" />}
-        {timestamp.length > 0 && (
+        {/* The agreed-mark HEAD mirror (DESIGN.md) — only on the converged post (never on an
+            optimistic echo, which has no real seq/contract yet). */}
+        {agreed && !optimistic && <AgreedMark placement="head" />}
+        {/* A PENDING echo shows a calm "sending…" affordance in place of the timestamp (the
+            token-based pending style); a confirmed post shows its display timestamp. */}
+        {pending && (
+          <span
+            className="message-post-sending"
+            data-testid="message-post-sending"
+            style={timestampStyle}
+          >
+            sending…
+          </span>
+        )}
+        {!optimistic && timestamp.length > 0 && (
           <time
             className="message-post-timestamp"
             data-testid="message-post-timestamp"
@@ -260,22 +312,62 @@ export function MessagePost({
 
       {/* FOOTER: the per-message 👍 reaction chip, plus the agreed-mark on the converged
           post (beside the 👍). The chip RENDERS for any operator (open read); it toggles
-          only for a participant (canReact) — else the disabled "join to react" hand-off. */}
+          only for a participant (canReact) — else the disabled "join to react" hand-off.
+          An OPTIMISTIC echo (pending/failed, no real seq) suppresses the chip + agreed mark:
+          a pending post cannot be reacted to, and a failed post shows the inline retry. */}
       <footer
         className="message-post-footer"
         data-testid="message-post-footer"
         style={footerStyle}
       >
-        <ReactionChip
-          count={post.reactions.length}
-          reacted={operatorReacted}
-          canReact={canReact}
-          onToggle={
-            onToggleReaction ? () => onToggleReaction(post.seq) : undefined
-          }
-          highContrast={highContrast}
-        />
-        {agreed && <AgreedMark placement="footer" />}
+        {!optimistic && (
+          <ReactionChip
+            count={post.reactions.length}
+            reacted={operatorReacted}
+            canReact={canReact}
+            onToggle={
+              onToggleReaction ? () => onToggleReaction(post.seq) : undefined
+            }
+            highContrast={highContrast}
+          />
+        )}
+        {agreed && !optimistic && <AgreedMark placement="footer" />}
+        {/* INLINE failure-retry (AC2): no modal, no lost draft — the body above IS the
+            preserved draft; `retry` re-sends the same post. Calm error text, not red-alarm. */}
+        {failed && (
+          <span
+            className="message-post-failed"
+            data-testid="message-post-failed"
+            style={{
+              fontFamily: 'var(--ui-label-font)',
+              fontSize: 'var(--ui-label-size)',
+              color: 'var(--text-muted)',
+            }}
+          >
+            post failed —{' '}
+            <button
+              type="button"
+              className="message-post-retry"
+              data-testid="message-post-retry"
+              onClick={
+                onRetryPost && post.clientToken !== undefined
+                  ? () => onRetryPost(post.clientToken as string)
+                  : undefined
+              }
+              style={{
+                background: 'transparent',
+                border: 'none',
+                padding: 0,
+                color: 'var(--accent)',
+                fontFamily: 'var(--ui-label-font)',
+                fontSize: 'var(--ui-label-size)',
+                cursor: 'pointer',
+              }}
+            >
+              retry
+            </button>
+          </span>
+        )}
       </footer>
     </article>
   );

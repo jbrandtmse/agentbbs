@@ -665,3 +665,225 @@ export async function loadRoomViewModel(
   ]);
   return buildRoomViewModel(room, me.handle, contract);
 }
+
+// =============================================================================
+// Story 9.9 — LIVE updates + OPTIMISTIC posting + reconciliation, ALL on the OPEN room
+// thread (Mode A watch-live). The open RoomViewModel folds SSE deltas IMMUTABLY (a NEW model
+// — the 9.3 `foldDelta`/9.4 `foldTreeDelta` discipline, extended to the thread itself), the
+// operator's post echoes PENDING then reconciles to confirmed, and failures revert inline.
+//
+// NFR5 (re-affirmed, do NOT blur): every helper below derives the OPERATOR'S OWN open view
+// from the host→browser SSE deltas. There is NO agent push surface here — agents stay strictly
+// pull-only via `check`. These are pure client-side reducers over deltas the operator's chosen
+// kept-open view receives; nothing here pushes anything to any agent.
+// =============================================================================
+
+/**
+ * The base `seq` for a PENDING optimistic echo (Story 9.9). A pending post is given a synthetic
+ * seq AT OR ABOVE this base so it sorts to the BOTTOM of the seq-ordered thread (after every
+ * real ledger message, whose seqs are far below) until it reconciles to its real seq. Chosen
+ * well above any plausible real `seq` but safely inside `Number.MAX_SAFE_INTEGER`.
+ */
+export const PENDING_SEQ_BASE = 1e15;
+
+/** Monotonic counter so concurrent pending echoes get distinct (ordered) synthetic seqs. */
+let pendingSeqCounter = 0;
+
+/**
+ * Mint a unique client-side token for an optimistic echo (Story 9.9) — correlates the pending
+ * post to its confirmation (for reconciliation) and to a retry. Opaque; never sent to the host.
+ */
+export function newClientToken(): string {
+  pendingSeqCounter += 1;
+  return `pending-${Date.now()}-${pendingSeqCounter}`;
+}
+
+/**
+ * Build a PENDING optimistic echo post for the operator's just-sent `body` (Story 9.9, AC2).
+ * Dimmed "sending…" in the thread; a synthetic seq (≥ {@link PENDING_SEQ_BASE}) sorts it last;
+ * the `clientToken` correlates it to its confirmation / retry. No `createdAt` (it is in flight).
+ */
+export function makePendingPost(
+  actor: string,
+  body: string,
+  clientToken: string,
+): MessagePostModel {
+  pendingSeqCounter += 1;
+  return {
+    seq: PENDING_SEQ_BASE + pendingSeqCounter,
+    actor,
+    body,
+    kind: 'reply',
+    reactions: [],
+    pending: true,
+    clientToken,
+  };
+}
+
+/**
+ * Append a PENDING optimistic echo to a room model IMMUTABLY (Story 9.9, AC2). Returns a NEW
+ * model with the echo added to the end of the thread; the prior model + its `messages` array
+ * are untouched (the 9.3 immutability discipline).
+ */
+export function appendPendingPost(
+  model: RoomViewModel,
+  post: MessagePostModel,
+): RoomViewModel {
+  return { ...model, messages: [...model.messages, post] };
+}
+
+/**
+ * Mark a pending echo (by `clientToken`) as FAILED IMMUTABLY (Story 9.9, AC2 failure). The post
+ * keeps its body (the draft is PRESERVED — the inline `post failed — retry` re-sends it) and
+ * flips `pending → failed`. A NEW model; no in-place mutation. A no-op if the token is gone
+ * (e.g. already reconciled).
+ */
+export function markPendingPostFailed(
+  model: RoomViewModel,
+  clientToken: string,
+): RoomViewModel {
+  let changed = false;
+  const messages = model.messages.map((m) => {
+    if (m.clientToken !== clientToken) return m;
+    changed = true;
+    return { ...m, pending: false, failed: true };
+  });
+  return changed ? { ...model, messages } : model;
+}
+
+/**
+ * Remove a pending/failed echo (by `clientToken`) from a room model IMMUTABLY (Story 9.9). Used
+ * on reconciliation — once the confirmed message is present (via a refetch that already includes
+ * it, or an SSE delta), the optimistic echo for that token is dropped so there is NO DUPLICATE.
+ * A NEW model; no in-place mutation.
+ */
+export function removePendingPost(
+  model: RoomViewModel,
+  clientToken: string,
+): RoomViewModel {
+  const messages = model.messages.filter((m) => m.clientToken !== clientToken);
+  return messages.length === model.messages.length
+    ? model
+    : { ...model, messages };
+}
+
+/**
+ * Derive the CONTRACT seq — the highest-`seq` message currently holding a live 👍 (FR21) — from
+ * a model's messages (Story 9.9). The model's per-post `reactions` array IS the net live-reactor
+ * set (the host computes react-minus-later-unreact), so the converged message is the
+ * highest-`seq` post with a non-empty `reactions`. `null` when no message holds a live 👍.
+ * OPTIMISTIC echoes (no real seq, empty reactions) never qualify. Mirrors the host's
+ * `/api/rooms/:id/contract` derivation so the live ✓ agreed mark MOVES/DISAPPEARS on a reaction
+ * delta without a refetch.
+ */
+export function deriveAgreedSeq(messages: MessagePostModel[]): number | null {
+  let agreed: number | null = null;
+  for (const m of messages) {
+    if (m.pending === true || m.failed === true) continue;
+    if (m.reactions.length > 0 && (agreed === null || m.seq > agreed)) {
+      agreed = m.seq;
+    }
+  }
+  return agreed;
+}
+
+/**
+ * Fold ONE SSE delta into the OPEN room's {@link RoomViewModel} IMMUTABLY (Story 9.9, AC1 — the
+ * open thread updates live, Mode A watch-live). Returns a NEW model (no in-place mutation),
+ * mirroring `foldDelta`/`foldTreeDelta`:
+ *
+ *   - `room.replied` for THIS room → APPEND the post (seq = the event's own seq; body from the
+ *     payload). IDEMPOTENT by seq: a delta whose seq is already present is dropped (so an SSE
+ *     redelivery across a reconnect does not double-append). DE-DUP vs. an OPTIMISTIC echo by
+ *     THIS operator: if a pending/failed echo matches (same actor + same body), it is REPLACED
+ *     by the confirmed post (the reconciliation path) rather than appended alongside.
+ *   - `message.reacted` / `message.unreacted` → ADD/REMOVE the event's `actor` from the target
+ *     message's `reactions` (the delta carries only `message_seq`, not the post-state reactors,
+ *     so the fold re-derives), then RE-DERIVE the agreed mark ({@link deriveAgreedSeq}).
+ *
+ * A delta for a DIFFERENT room, or any other type, returns the model unchanged. `operatorHandle`
+ * lets the de-dup recognize the operator's OWN reply (the reconciliation case); pass the model's
+ * own `operatorHandle`. Never throws.
+ *
+ * @param model The current OPEN room model.
+ * @param event The decoded SSE delta (snake_case payload).
+ * @returns A NEW model with the delta folded (or the same reference on a no-op).
+ */
+export function foldRoomDelta(
+  model: RoomViewModel,
+  event: EventWire,
+): RoomViewModel {
+  const payloadRoomId = event.payload['room_id'];
+  if (typeof payloadRoomId === 'string' && payloadRoomId !== model.roomId) {
+    return model;
+  }
+
+  if (event.type === 'room.replied') {
+    return foldReplied(model, event);
+  }
+  if (event.type === 'message.reacted' || event.type === 'message.unreacted') {
+    return foldReaction(model, event);
+  }
+  return model;
+}
+
+/** Fold a `room.replied` delta: idempotent append, with optimistic-echo de-dup (reconcile). */
+function foldReplied(model: RoomViewModel, event: EventWire): RoomViewModel {
+  // Idempotent by seq: the confirmed message is already in the thread (e.g. a refetch landed it
+  // first, or an SSE redelivery) → no double-append.
+  if (model.messages.some((m) => m.seq === event.seq && m.pending !== true)) {
+    return model;
+  }
+  const body =
+    typeof event.payload['body'] === 'string'
+      ? (event.payload['body'] as string)
+      : '';
+  const confirmed: MessagePostModel = {
+    seq: event.seq,
+    actor: event.actor,
+    body,
+    kind: 'reply',
+    reactions: [],
+    createdAt: event.created_at,
+  };
+
+  // De-dup vs. THIS operator's optimistic echo: a pending/failed echo with the same actor + body
+  // is the same post arriving over SSE → REPLACE it (reconcile) instead of appending a duplicate.
+  const echoIndex = model.messages.findIndex(
+    (m) =>
+      (m.pending === true || m.failed === true) &&
+      m.actor === event.actor &&
+      m.body === body,
+  );
+  if (echoIndex !== -1) {
+    const messages = model.messages.map((m, i) =>
+      i === echoIndex ? confirmed : m,
+    );
+    return { ...model, messages };
+  }
+
+  return { ...model, messages: [...model.messages, confirmed] };
+}
+
+/** Fold a `message.reacted`/`message.unreacted` delta: add/remove the actor + re-derive agreed. */
+function foldReaction(model: RoomViewModel, event: EventWire): RoomViewModel {
+  const targetSeq = event.payload['message_seq'];
+  if (typeof targetSeq !== 'number') return model;
+  const add = event.type === 'message.reacted';
+  let changed = false;
+  const messages = model.messages.map((m) => {
+    if (m.seq !== targetSeq) return m;
+    const has = m.reactions.includes(event.actor);
+    if (add && !has) {
+      changed = true;
+      return { ...m, reactions: [...m.reactions, event.actor] };
+    }
+    if (!add && has) {
+      changed = true;
+      return { ...m, reactions: m.reactions.filter((r) => r !== event.actor) };
+    }
+    return m;
+  });
+  if (!changed) return model;
+  return { ...model, messages, agreedSeq: deriveAgreedSeq(messages) };
+}

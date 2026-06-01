@@ -41,9 +41,15 @@ import { useEffect, useRef, useState } from 'react';
 import { Composer, NavTree, RoomView, TabStrip } from '@agentbbs/ui-shared';
 
 import {
+  appendPendingPost,
+  deriveAgreedSeq,
+  foldRoomDelta,
   foldTreeDelta,
   loadRoomViewModel,
   loadTreeModel,
+  makePendingPost,
+  markPendingPostFailed,
+  newClientToken,
   openEventStream,
   postJoin,
   postReact,
@@ -53,6 +59,7 @@ import {
 } from './api-client.js';
 
 import type {
+  MessagePostModel,
   NavTreeModel,
   RoomTabModel,
   RoomViewModel,
@@ -145,6 +152,7 @@ export function App() {
     const close = openEventStream((event) => {
       setModel((prev) => (prev === null ? prev : foldTreeDelta(prev, event)));
       foldTabUnread(event);
+      foldTabRoom(event);
     });
     return close;
     // Subscribe once on mount. foldTabUnread reads the CURRENT active tab via activeRoomIdRef
@@ -173,6 +181,31 @@ export function App() {
         }
         changed = true;
         return { ...tab, unread: true };
+      });
+      return changed ? next : prev;
+    });
+  }
+
+  /**
+   * Story 9.9 — fold one SSE delta into each OPEN tab's LOADED room view model IMMUTABLY (the
+   * AC1 live-thread fold, Mode A watch-live): a `room.replied` in an open room appends the post
+   * (de-dup vs. an optimistic echo by this operator); a `message.reacted`/`message.unreacted`
+   * updates the affected post's reactions + re-derives the ✓ agreed mark. `foldRoomDelta` is
+   * pure + immutable (new model objects) and a no-op for a delta targeting a different room, so
+   * mapping it over every tab only touches the tab(s) the delta concerns. Never throws.
+   *
+   * NFR5: this is the operator's OWN kept-open live view folding host→browser deltas — NOT an
+   * agent push. Agents stay pull-only via `check`; nothing here pushes to any agent.
+   */
+  function foldTabRoom(event: EventWire): void {
+    setOpenTabs((prev) => {
+      let changed = false;
+      const next = prev.map((tab) => {
+        if (tab.room === null) return tab;
+        const folded = foldRoomDelta(tab.room, event);
+        if (folded === tab.room) return tab;
+        changed = true;
+        return { ...tab, room: folded };
       });
       return changed ? next : prev;
     });
@@ -303,33 +336,61 @@ export function App() {
     );
   }
 
-  // Story 9.6 — toggle a 👍 on a post in the ACTIVE room. Decide react-vs-unreact from the
-  // operator's CURRENT live state on that post, fire the write, then RE-LOAD the room view
-  // model so the live count, the operator's chip state, AND the agreed-mark POSITION re-derive
-  // (a basic refetch/fold — the rich optimistic echo is Story 9.9). The agreed mark is COMPUTED
-  // from the re-fetched contract, never stored (FR21).
+  /** Apply an immutable patch to ONE post (by seq) in a tab's room model, re-deriving agreed. */
+  function patchTabPostReactions(
+    roomId: string,
+    seq: number,
+    nextReactions: string[],
+  ): void {
+    setOpenTabs((prev) =>
+      prev.map((tab) => {
+        if (tab.roomId !== roomId || tab.room === null) return tab;
+        const messages = tab.room.messages.map((m) =>
+          m.seq === seq ? { ...m, reactions: nextReactions } : m,
+        );
+        return {
+          ...tab,
+          room: { ...tab.room, messages, agreedSeq: deriveAgreedSeq(messages) },
+        };
+      }),
+    );
+  }
+
+  // Story 9.9 — OPTIMISTIC 👍 toggle on a post in the ACTIVE room (AC2). Decide react-vs-unreact
+  // from the operator's CURRENT live state, OPTIMISTICALLY apply the toggle (add/remove the
+  // operator from the post's reactions + re-derive the ✓ agreed mark) so the chip + count + mark
+  // update INSTANTLY, then fire the write. On success the ReactResult `reactions` is the
+  // AUTHORITATIVE post-state (apply it — collapses any divergence). On failure the optimistic
+  // toggle REVERTS to the exact prior reactions (NO count drift — the snapshot is restored).
   function handleToggleReaction(seq: number): void {
     const room = activeTab?.room ?? null;
     if (room === null) return;
     const roomId = room.roomId;
     const operator = room.operatorHandle ?? null;
+    if (operator === null) return;
     const post = room.messages.find((m) => m.seq === seq);
-    const alreadyReacted =
-      operator !== null && post !== undefined
-        ? post.reactions.includes(operator)
-        : false;
+    if (post === undefined) return;
+    // Snapshot the EXACT prior reactions so a failure reverts with no drift.
+    const priorReactions = [...post.reactions];
+    const alreadyReacted = priorReactions.includes(operator);
+    const optimisticReactions = alreadyReacted
+      ? priorReactions.filter((r) => r !== operator)
+      : [...priorReactions, operator];
+
+    // Optimistic apply — instant chip/count/agreed update.
+    patchTabPostReactions(roomId, seq, optimisticReactions);
+
     const write = alreadyReacted ? postUnreact : postReact;
     write(roomId, seq)
-      .then(() => loadRoomViewModel(roomId))
-      .then((rebuilt) => {
-        setOpenTabs((prev) =>
-          prev.map((tab) =>
-            tab.roomId === roomId ? { ...tab, room: rebuilt } : tab,
-          ),
-        );
+      .then((result) => {
+        // The ReactResult reactions are authoritative — apply them (idempotent if they match
+        // the optimistic state; corrective if a concurrent change diverged).
+        patchTabPostReactions(roomId, seq, result.reactions);
       })
       .catch((err: unknown) => {
-        // A 403 (NOT_A_MEMBER / NO_OPERATOR) or transient failure — surface a calm error.
+        // REVERT the optimistic toggle to the exact prior reactions (no count drift), then
+        // surface a calm inline error.
+        patchTabPostReactions(roomId, seq, priorReactions);
         setOpenTabs((prev) =>
           prev.map((tab) =>
             tab.roomId === roomId
@@ -386,40 +447,117 @@ export function App() {
       .finally(() => setComposerPending(false));
   }
 
-  // Story 9.7 — SEND a message as a peer over the SAME core `reply` agents use (no operator
-  // backdoor). Grant-on-act makes the operator a ROOM PARTICIPANT, so after the refetch the
-  // posture flips `you: watching` → `you: @operator (peer)`. Basic refetch (optimistic echo is
-  // Story 9.9).
+  // Story 9.9 — OPTIMISTIC SEND + reconciliation (AC2), over the SAME core `reply` agents use
+  // (no operator backdoor). Flow:
+  //   1. ECHO the operator's message into the thread PENDING (dimmed "sending…") immediately,
+  //      with a clientToken; the composer is NOT blocked (composerPending stays false so the
+  //      operator can keep typing the next post).
+  //   2. POST the reply. On SUCCESS, REFETCH the room (grant-on-act flips the posture to peer +
+  //      lands the confirmed message at its real seq) and RECONCILE: drop the pending echo (the
+  //      refetch already carries the confirmed post) so there is NO DUPLICATE; preserve any
+  //      OTHER in-flight echoes (concurrent sends).
+  //   3. On FAILURE, flip the echo to FAILED inline (`post failed — retry`) — the body is
+  //      PRESERVED in the echo, so retry re-sends the SAME body. No modal, no lost draft.
+  //
+  // RECONCILIATION KEY (Research-First, recorded in Dev Notes): the reply POST returns the ROOM,
+  // NOT the new message seq (`roomToWire`'s seq is the activation seq, not the post). So we do
+  // NOT key on a POST-response message seq; we REFETCH (authoritative) + de-dup the pending echo
+  // by clientToken, and the redundant SSE `room.replied` is de-duped by `foldRoomDelta`
+  // (idempotent by seq + the same actor/body echo replacement).
   function handleSendMessage(body: string): void {
     const room = activeTab?.room ?? null;
     if (room === null) return;
     const roomId = room.roomId;
-    setComposerPending(true);
-    postReply(roomId, body)
+    const operator = room.operatorHandle ?? activeTab?.label ?? 'you';
+    const clientToken = newClientToken();
+    const echo: MessagePostModel = makePendingPost(operator, body, clientToken);
+
+    // 1. Optimistic echo — append immediately (no composer block).
+    setOpenTabs((prev) =>
+      prev.map((tab) =>
+        tab.roomId === roomId && tab.room !== null
+          ? { ...tab, room: appendPendingPost(tab.room, echo) }
+          : tab,
+      ),
+    );
+
+    void sendReplyAndReconcile(roomId, body, clientToken);
+  }
+
+  /** POST a reply for an existing pending echo, then reconcile (success) or fail it inline. */
+  function sendReplyAndReconcile(
+    roomId: string,
+    body: string,
+    clientToken: string,
+  ): Promise<void> {
+    return postReply(roomId, body)
       .then(() => loadRoomViewModel(roomId))
       .then((rebuilt) => {
+        // RECONCILE: the refetched model is authoritative (it has the confirmed post at its real
+        // seq + the flipped posture). Carry over any OTHER still-in-flight echoes (concurrent
+        // sends); drop THIS reconciled echo so there is no duplicate.
         setOpenTabs((prev) =>
-          prev.map((tab) =>
-            tab.roomId === roomId ? { ...tab, room: rebuilt } : tab,
-          ),
+          prev.map((tab) => {
+            if (tab.roomId !== roomId) return tab;
+            const inflight = (tab.room?.messages ?? []).filter(
+              (m) =>
+                (m.pending === true || m.failed === true) &&
+                m.clientToken !== clientToken,
+            );
+            const messages = [...rebuilt.messages, ...inflight];
+            return {
+              ...tab,
+              room: {
+                ...rebuilt,
+                messages,
+                agreedSeq: deriveAgreedSeq(messages),
+              },
+            };
+          }),
         );
       })
-      .catch((err: unknown) => {
+      .catch(() => {
+        // FAILURE: flip the echo to failed inline (draft preserved in the echo body; retry
+        // re-sends it). No modal; the failure is shown ON THE POST itself, calm + inline.
         setOpenTabs((prev) =>
           prev.map((tab) =>
-            tab.roomId === roomId
-              ? {
-                  ...tab,
-                  roomError:
-                    err instanceof Error
-                      ? err.message
-                      : 'Could not post the message.',
-                }
+            tab.roomId === roomId && tab.room !== null
+              ? { ...tab, room: markPendingPostFailed(tab.room, clientToken) }
               : tab,
           ),
         );
-      })
-      .finally(() => setComposerPending(false));
+      });
+  }
+
+  /**
+   * Story 9.9 — RETRY a FAILED optimistic post (AC2): flip the failed echo back to pending and
+   * re-POST the SAME preserved body. No lost draft (the body lives in the echo). A no-op if the
+   * token is gone (already reconciled).
+   */
+  function handleRetryPost(clientToken: string): void {
+    const room = activeTab?.room ?? null;
+    if (room === null) return;
+    const roomId = room.roomId;
+    const failedPost = room.messages.find(
+      (m) => m.clientToken === clientToken && m.failed === true,
+    );
+    if (failedPost === undefined) return;
+    const body = failedPost.body;
+
+    // Flip failed → pending (re-dim "sending…") immutably.
+    setOpenTabs((prev) =>
+      prev.map((tab) => {
+        if (tab.roomId !== roomId || tab.room === null) return tab;
+        const messages = tab.room.messages.map((m) =>
+          m.clientToken === clientToken
+            ? { ...m, pending: true, failed: false }
+            : m,
+        );
+        return { ...tab, room: { ...tab.room, messages } };
+      }),
+    );
+
+    void sendReplyAndReconcile(roomId, body, clientToken);
   }
 
   const tabModels: RoomTabModel[] = openTabs.map((tab) => ({
@@ -472,6 +610,7 @@ export function App() {
           <RoomView
             room={activeRoom}
             onToggleReaction={handleToggleReaction}
+            onRetryPost={handleRetryPost}
             composerSlot={
               <Composer
                 // The composer shows its JOINED (field + send) state when the operator is a true

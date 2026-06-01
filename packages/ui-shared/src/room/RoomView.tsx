@@ -72,6 +72,11 @@ export interface RoomViewProps {
   onToggleReaction?: (seq: number) => void;
   /** High-contrast mode (passes through to the thread/posts). Default `false` (web V1). */
   highContrast?: boolean;
+  /**
+   * Story 9.9 — fired when the operator retries a FAILED optimistic post (carries its
+   * `clientToken`). Passes through to the thread; only a failed echo renders it.
+   */
+  onRetryPost?: (clientToken: string) => void;
 }
 
 /** Render the room main-column layout. */
@@ -80,6 +85,7 @@ export function RoomView({
   composerSlot,
   onToggleReaction,
   highContrast = false,
+  onRetryPost,
 }: RoomViewProps) {
   const columnStyle: CSSProperties = {
     display: 'flex',
@@ -208,6 +214,7 @@ export function RoomView({
           canReact={posture.kind === 'peer'}
           onToggleReaction={onToggleReaction}
           highContrast={highContrast}
+          onRetryPost={onRetryPost}
         />
       </div>
 

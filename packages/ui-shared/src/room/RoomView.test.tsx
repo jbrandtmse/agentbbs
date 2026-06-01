@@ -206,6 +206,55 @@ describe('MessagePost (AC #1)', () => {
   });
 });
 
+describe('MessagePost optimistic states (Story 9.9 AC2 — pending/failed/retry)', () => {
+  it('a PENDING echo dims + shows "sending…" + suppresses the chip/timestamp', async () => {
+    const el = await render(
+      <MessagePost
+        post={post({ pending: true, clientToken: 't', createdAt: undefined })}
+      />,
+    );
+    const article = el.querySelector('[data-testid="message-post"]');
+    expect(article?.getAttribute('data-pending')).toBe('true');
+    expect(
+      el.querySelector('[data-testid="message-post-sending"]')?.textContent,
+    ).toBe('sending…');
+    // No 👍 chip on an unconfirmed echo.
+    expect(el.querySelector('[data-testid="reaction-chip"]')).toBeNull();
+  });
+
+  it('a FAILED echo shows `post failed — retry` inline (no modal) + fires onRetryPost with its token', async () => {
+    let retried: string | null = null;
+    const el = await render(
+      <MessagePost
+        post={post({ failed: true, clientToken: 'tok-9', body: 'preserved' })}
+        onRetryPost={(t) => {
+          retried = t;
+        }}
+      />,
+    );
+    expect(
+      el
+        .querySelector('[data-testid="message-post"]')
+        ?.getAttribute('data-failed'),
+    ).toBe('true');
+    // The draft body is preserved in the post (no lost draft).
+    expect(
+      el.querySelector('[data-testid="message-post-body"]')?.textContent,
+    ).toContain('preserved');
+    const failedEl = el.querySelector('[data-testid="message-post-failed"]');
+    expect(failedEl?.textContent).toContain('post failed');
+    // No modal/dialog.
+    expect(el.querySelector('[role="dialog"]')).toBeNull();
+    // Clicking retry passes the clientToken back to the surface.
+    await act(async () => {
+      el.querySelector<HTMLButtonElement>(
+        '[data-testid="message-post-retry"]',
+      )?.click();
+    });
+    expect(retried).toBe('tok-9');
+  });
+});
+
 describe('MessageThread (AC #1)', () => {
   it('orders posts strictly by seq even on an UNSORTED input (order key is seq, not createdAt)', async () => {
     // A later-seq message with an EARLIER createdAt must STILL sort after the earlier-seq

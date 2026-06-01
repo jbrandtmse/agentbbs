@@ -44,6 +44,11 @@ export interface MessageThreadProps {
   onToggleReaction?: (seq: number) => void;
   /** High-contrast mode (passes through to each post). Default `false` (web V1). */
   highContrast?: boolean;
+  /**
+   * Story 9.9 — fired when the operator retries a FAILED optimistic post (carries its
+   * `clientToken`). Passes through to each {@link MessagePost}; only a failed echo renders it.
+   */
+  onRetryPost?: (clientToken: string) => void;
 }
 
 /**
@@ -61,8 +66,12 @@ export function MessageThread({
   canReact = false,
   onToggleReaction,
   highContrast = false,
+  onRetryPost,
 }: MessageThreadProps) {
   // Order STRICTLY by `seq` (never `createdAt`) — a copy so the caller's array is untouched.
+  // Story 9.9: a pending/failed optimistic echo carries a synthetic LARGE seq (assigned by the
+  // surface), so it sorts to the BOTTOM of the thread (after every confirmed post) until it
+  // reconciles to its real seq. Confirmed posts keep their ledger seq order.
   const ordered = [...messages].sort((a, b) => a.seq - b.seq);
 
   const threadStyle: CSSProperties = {
@@ -78,7 +87,9 @@ export function MessageThread({
     >
       {ordered.map((post) => (
         <MessagePost
-          key={post.seq}
+          // A pending/failed echo keys by its stable clientToken (its synthetic seq is
+          // transient); a confirmed post keys by its ledger seq.
+          key={post.clientToken ?? post.seq}
           post={post}
           collapseLineThreshold={collapseLineThreshold}
           agreed={agreedSeq !== null && post.seq === agreedSeq}
@@ -88,6 +99,7 @@ export function MessageThread({
           canReact={canReact}
           onToggleReaction={onToggleReaction}
           highContrast={highContrast}
+          onRetryPost={onRetryPost}
         />
       ))}
     </div>

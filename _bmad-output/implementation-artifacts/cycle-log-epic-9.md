@@ -57,3 +57,10 @@
 2026-06-01T14:32:02Z	Story 9.8	qa_complete	spawn_at=2026-06-01T18:05:00Z model=claude-opus-4-8 tests_added=3 suite=1023-1026 first_run_failures=0 clarifications=0 closing_sections_present=true
 2026-06-01T14:37:41Z	Story 9.8	cr_complete	spawn_at=2026-06-01T18:15:00Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=2 high=0 med=0 low=0 clarifications=0 closing_sections_present=true
 2026-06-01T14:38:54Z	Story 9.8	smoke_complete	method=browser result=pass iterations=1 defects_caught=0 evidence=real-chrome@7396:open-roomA+roomB->2-tabs-side-by-side;reclick-A->focus-no-duplicate;close-active-tab-via-×->removed+other-remains(logging-format)-no-error-no-board-write(room-still-reopenable-view-only) model=claude-opus-4-8
+2026-06-01T14:38:57Z	Story 9.8	committed	sha=2758762 submodules=
+2026-06-01T14:40:10Z	Story 9.9	story_created	path=_bmad-output/implementation-artifacts/9-9-live-updates-optimistic-posting-and-reconciliation.md integration_ac=live-fold+optimistic-reconcile+inline-failure(apps/web)
+2026-06-01T14:56:22Z	Story 9.9	dev_complete	spawn_at=2026-06-01T19:00:00Z model=claude-opus-4-8 files=7 tests_added=24 suite=1026-1050 clarifications=0 nfr_tripwires=0 adr_violations_surfaced=0 cycle_iteration=1 closing_sections_present=true
+2026-06-01T14:56:22Z	Story 9.9	adr_verifications_complete	result=none_required
+2026-06-01T15:03:23Z	Story 9.9	qa_complete	spawn_at=2026-06-01T19:30:00Z model=claude-opus-4-8 tests_added=7 suite=1050-1057 first_run_failures=0 clarifications=0 closing_sections_present=true
+2026-06-01T15:09:22Z	Story 9.9	cr_complete	spawn_at=2026-06-01T19:40:00Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=5 high=0 med=0 low=0 clarifications=0 closing_sections_present=true
+2026-06-01T15:10:36Z	Story 9.9	smoke_complete	method=browser result=pass iterations=1 defects_caught=0 evidence=real-chrome@7397:optimistic-post-echo-immediate+reconciled-to-EXACTLY-1(de-dup-no-dup-when-SSE-arrives);out-of-band-reply-from-another-client-FOLDED-LIVE-into-open-thread(Mode-A);all-4-posts-present-my-post-single-no-drift model=claude-opus-4-8

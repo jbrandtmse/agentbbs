@@ -8,16 +8,22 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  appendPendingPost,
   buildRoomViewModel,
+  deriveAgreedSeq,
   fetchDirectory,
   fetchRoom,
   foldDelta,
+  foldRoomDelta,
   foldTreeDelta,
   INITIAL_LIVE_STATE,
   loadTreeModel,
+  makePendingPost,
+  markPendingPostFailed,
   postAddParticipant,
   postJoin,
   postReply,
+  removePendingPost,
   selectRoom,
 } from './api-client.js';
 
@@ -26,7 +32,7 @@ import type {
   EventWire,
   RoomResponse,
 } from './api-client.js';
-import type { NavTreeModel } from '@agentbbs/ui-shared';
+import type { NavTreeModel, RoomViewModel } from '@agentbbs/ui-shared';
 
 describe('fetchDirectory', () => {
   it('returns the parsed { projects } envelope on 200', async () => {
@@ -551,5 +557,287 @@ describe('postJoin / postReply / postAddParticipant write helpers (Story 9.7)', 
     await expect(
       postAddParticipant('need-a-reviewer', 'cleo', '', add.fetch),
     ).rejects.toThrow(/HTTP 403/);
+  });
+});
+
+// =============================================================================
+// Story 9.9 — the OPEN-room live SSE fold + optimistic-post helpers (pure, immutable).
+// =============================================================================
+
+/** A minimal open-room model fixture (ops is a peer; two confirmed messages, no live 👍). */
+function roomModel(): RoomViewModel {
+  return {
+    roomId: 'ledger-rollover',
+    projectId: 'payments',
+    subject: 'Ledger rollover',
+    participants: ['alice', 'ops'],
+    messages: [
+      {
+        seq: 9,
+        actor: 'alice',
+        body: 'How do we roll the ledger?',
+        kind: 'announcement',
+        reactions: [],
+      },
+      { seq: 10, actor: 'ops', body: 'Discuss.', kind: 'reply', reactions: [] },
+    ],
+    operatorPosture: { kind: 'peer', handle: 'ops' },
+    agreedSeq: null,
+    operatorHandle: 'ops',
+  };
+}
+
+const repliedDelta = (seq: number, actor: string, body: string): EventWire => ({
+  seq,
+  type: 'room.replied',
+  actor,
+  created_at: '2026-06-01T09:00:00.000Z',
+  payload: { room_id: 'ledger-rollover', body },
+});
+
+const reactDelta = (
+  type: 'message.reacted' | 'message.unreacted',
+  actor: string,
+  messageSeq: number,
+): EventWire => ({
+  seq: 999,
+  type,
+  actor,
+  created_at: '2026-06-01T09:00:00.000Z',
+  payload: { room_id: 'ledger-rollover', message_seq: messageSeq },
+});
+
+describe('foldRoomDelta — live SSE fold into the OPEN thread (AC1), immutable', () => {
+  it('appends a room.replied for THIS room to the thread (new message at the event seq)', () => {
+    const before = roomModel();
+    const after = foldRoomDelta(before, repliedDelta(11, 'bob', 'A new reply'));
+    expect(after.messages.map((m) => m.seq)).toEqual([9, 10, 11]);
+    const added = after.messages.find((m) => m.seq === 11);
+    expect(added?.actor).toBe('bob');
+    expect(added?.body).toBe('A new reply');
+    expect(added?.kind).toBe('reply');
+  });
+
+  it('is IMMUTABLE — the prior model + its messages array are not mutated', () => {
+    const before = roomModel();
+    const beforeMessages = before.messages;
+    const beforeLen = before.messages.length;
+    const after = foldRoomDelta(before, repliedDelta(11, 'bob', 'x'));
+    expect(after).not.toBe(before);
+    expect(after.messages).not.toBe(beforeMessages);
+    expect(before.messages).toBe(beforeMessages);
+    expect(before.messages).toHaveLength(beforeLen); // prior array untouched
+  });
+
+  it('is idempotent by seq — a re-delivered room.replied does NOT double-append', () => {
+    const before = roomModel();
+    const once = foldRoomDelta(before, repliedDelta(11, 'bob', 'x'));
+    const twice = foldRoomDelta(once, repliedDelta(11, 'bob', 'x'));
+    expect(twice.messages.map((m) => m.seq)).toEqual([9, 10, 11]);
+    expect(twice).toBe(once); // no-op returns the same reference
+  });
+
+  it('ignores a room.replied for a DIFFERENT room (returns the same model)', () => {
+    const before = roomModel();
+    const other: EventWire = {
+      seq: 12,
+      type: 'room.replied',
+      actor: 'bob',
+      created_at: '2026-06-01T09:00:00.000Z',
+      payload: { room_id: 'some-other-room', body: 'x' },
+    };
+    expect(foldRoomDelta(before, other)).toBe(before);
+  });
+
+  it('a message.reacted adds the actor to the post reactions + re-derives the agreed seq', () => {
+    const before = roomModel();
+    const after = foldRoomDelta(
+      before,
+      reactDelta('message.reacted', 'cleo', 10),
+    );
+    const post10 = after.messages.find((m) => m.seq === 10);
+    expect(post10?.reactions).toEqual(['cleo']);
+    // The highest-seq live-👍'd message is the contract (FR21).
+    expect(after.agreedSeq).toBe(10);
+    // Immutable: prior post #10 untouched.
+    expect(before.messages.find((m) => m.seq === 10)?.reactions).toEqual([]);
+  });
+
+  it('a message.unreacted removes the actor + the agreed mark reverts when no 👍 remains', () => {
+    const reacted = foldRoomDelta(
+      roomModel(),
+      reactDelta('message.reacted', 'cleo', 10),
+    );
+    expect(reacted.agreedSeq).toBe(10);
+    const unreacted = foldRoomDelta(
+      reacted,
+      reactDelta('message.unreacted', 'cleo', 10),
+    );
+    expect(unreacted.messages.find((m) => m.seq === 10)?.reactions).toEqual([]);
+    expect(unreacted.agreedSeq).toBeNull();
+  });
+
+  it('agreed mark tracks the HIGHEST-seq live-👍 message (not the most reactors)', () => {
+    // 👍 post #9 by two actors, 👍 post #10 by one → #10 wins (highest seq, FR21).
+    let m = foldRoomDelta(roomModel(), reactDelta('message.reacted', 'a', 9));
+    m = foldRoomDelta(m, reactDelta('message.reacted', 'b', 9));
+    m = foldRoomDelta(m, reactDelta('message.reacted', 'c', 10));
+    expect(m.agreedSeq).toBe(10);
+  });
+});
+
+describe('optimistic-post helpers (AC2) — pending echo, fail, reconcile, immutable', () => {
+  it('makePendingPost + appendPendingPost echo a pending post at the END, immutably', () => {
+    const before = roomModel();
+    const token = 'tok-1';
+    const echo = makePendingPost('ops', 'optimistic body', token);
+    expect(echo.pending).toBe(true);
+    expect(echo.clientToken).toBe(token);
+    expect(echo.seq).toBeGreaterThan(1e14); // synthetic large seq → sorts last
+    const after = appendPendingPost(before, echo);
+    expect(after).not.toBe(before);
+    expect(after.messages).toHaveLength(before.messages.length + 1);
+    expect(after.messages.at(-1)?.clientToken).toBe(token);
+    expect(before.messages).toHaveLength(2); // prior untouched
+  });
+
+  it('markPendingPostFailed flips pending → failed for the matching token (draft body kept)', () => {
+    const echo = makePendingPost('ops', 'keep me', 'tok-2');
+    const withEcho = appendPendingPost(roomModel(), echo);
+    const failed = markPendingPostFailed(withEcho, 'tok-2');
+    const post = failed.messages.find((m) => m.clientToken === 'tok-2');
+    expect(post?.failed).toBe(true);
+    expect(post?.pending).toBe(false);
+    expect(post?.body).toBe('keep me'); // draft preserved
+    expect(failed).not.toBe(withEcho); // immutable
+  });
+
+  it('removePendingPost drops the echo (the reconciliation de-dup path)', () => {
+    const echo = makePendingPost('ops', 'x', 'tok-3');
+    const withEcho = appendPendingPost(roomModel(), echo);
+    const reconciled = removePendingPost(withEcho, 'tok-3');
+    expect(reconciled.messages.some((m) => m.clientToken === 'tok-3')).toBe(
+      false,
+    );
+    expect(reconciled.messages).toHaveLength(2);
+  });
+
+  it('foldRoomDelta DE-DUPS: a room.replied matching a pending echo (actor+body) REPLACES it (no duplicate)', () => {
+    const echo = makePendingPost('ops', 'my optimistic post', 'tok-4');
+    const withEcho = appendPendingPost(roomModel(), echo);
+    expect(withEcho.messages).toHaveLength(3); // 9, 10, pending echo
+    // The SSE confirmation for the operator's own reply arrives.
+    const confirmed = foldRoomDelta(
+      withEcho,
+      repliedDelta(11, 'ops', 'my optimistic post'),
+    );
+    // The pending echo is REPLACED (reconciled), not appended alongside → still 3 messages,
+    // and the confirmed message #11 (no longer pending) is present.
+    expect(confirmed.messages).toHaveLength(3);
+    const post11 = confirmed.messages.find((m) => m.seq === 11);
+    expect(post11).toBeDefined();
+    expect(post11?.pending).toBeUndefined();
+    // No pending echo remains.
+    expect(confirmed.messages.some((m) => m.pending === true)).toBe(false);
+  });
+});
+
+describe('deriveAgreedSeq (FR21) — highest-seq live-👍 message, ignoring optimistic echoes', () => {
+  it('returns null when no message holds a live 👍', () => {
+    expect(deriveAgreedSeq(roomModel().messages)).toBeNull();
+  });
+
+  it('returns the highest seq among messages with a non-empty reactions array', () => {
+    const messages = roomModel().messages.map((m) =>
+      m.seq === 9 ? { ...m, reactions: ['a', 'b'] } : m,
+    );
+    expect(deriveAgreedSeq(messages)).toBe(9);
+  });
+
+  it('never counts a pending optimistic echo (no real seq)', () => {
+    const echo = { ...makePendingPost('ops', 'x', 't'), reactions: ['ops'] };
+    const messages = [...roomModel().messages, echo];
+    // The echo has reactions but is pending → excluded; no real message has a 👍 → null.
+    expect(deriveAgreedSeq(messages)).toBeNull();
+  });
+});
+
+// =============================================================================
+// Story 9.9 QA HARDENING — the brief asks every fold to be proven IMMUTABLE at the
+// REFERENCE level (not just by value) and IDEMPOTENT (a re-delivered delta does not
+// double-apply). The append-fold immutability is covered above; these pin the REACTION
+// fold (the under-covered fold) to the same discipline, plus reaction idempotency.
+// =============================================================================
+describe('foldRoomDelta reaction fold — immutability (reference + deep) + idempotency (QA)', () => {
+  it('a message.reacted does NOT mutate the prior model, its messages array, or the target post reactions array (reference-level)', () => {
+    const before = roomModel();
+    const beforeModelRef = before;
+    const beforeMessagesRef = before.messages;
+    const beforePost10 = before.messages.find((m) => m.seq === 10)!;
+    const beforePost10ReactionsRef = beforePost10.reactions;
+
+    const after = foldRoomDelta(
+      before,
+      reactDelta('message.reacted', 'cleo', 10),
+    );
+
+    // A NEW model + a NEW messages array + a NEW post object + a NEW reactions array.
+    expect(after).not.toBe(before);
+    expect(after.messages).not.toBe(beforeMessagesRef);
+    const afterPost10 = after.messages.find((m) => m.seq === 10)!;
+    expect(afterPost10).not.toBe(beforePost10);
+    expect(afterPost10.reactions).not.toBe(beforePost10ReactionsRef);
+
+    // The PRIOR state is byte-for-byte untouched (reference identity preserved + empty).
+    expect(before).toBe(beforeModelRef);
+    expect(before.messages).toBe(beforeMessagesRef);
+    expect(beforePost10.reactions).toBe(beforePost10ReactionsRef);
+    expect(beforePost10ReactionsRef).toEqual([]); // not pushed into in place
+    expect(before.agreedSeq).toBeNull(); // prior agreed mark not re-derived in place
+  });
+
+  it('a message.unreacted does NOT mutate the prior (already-reacted) post reactions array', () => {
+    const reacted = foldRoomDelta(
+      roomModel(),
+      reactDelta('message.reacted', 'cleo', 10),
+    );
+    const reactedPost10 = reacted.messages.find((m) => m.seq === 10)!;
+    const reactedReactionsRef = reactedPost10.reactions;
+    expect(reactedReactionsRef).toEqual(['cleo']);
+
+    const after = foldRoomDelta(
+      reacted,
+      reactDelta('message.unreacted', 'cleo', 10),
+    );
+    expect(after.messages.find((m) => m.seq === 10)?.reactions).toEqual([]);
+    // The PRIOR (reacted) state's reactions array is untouched — filtered into a NEW array.
+    expect(reactedPost10.reactions).toBe(reactedReactionsRef);
+    expect(reactedReactionsRef).toEqual(['cleo']);
+  });
+
+  it('is IDEMPOTENT — a re-delivered message.reacted (same actor already present) is a no-op (no double-add, same reference)', () => {
+    const once = foldRoomDelta(
+      roomModel(),
+      reactDelta('message.reacted', 'cleo', 10),
+    );
+    const twice = foldRoomDelta(
+      once,
+      reactDelta('message.reacted', 'cleo', 10),
+    );
+    // No double-apply: still exactly one 'cleo', and the no-op returns the SAME reference.
+    expect(twice.messages.find((m) => m.seq === 10)?.reactions).toEqual([
+      'cleo',
+    ]);
+    expect(twice).toBe(once);
+  });
+
+  it('a message.unreacted for an actor NOT holding a 👍 is a no-op (same reference, no negative drift)', () => {
+    const before = roomModel();
+    const after = foldRoomDelta(
+      before,
+      reactDelta('message.unreacted', 'ghost', 10),
+    );
+    expect(after).toBe(before); // nothing to remove → unchanged reference
+    expect(after.messages.find((m) => m.seq === 10)?.reactions).toEqual([]);
   });
 });

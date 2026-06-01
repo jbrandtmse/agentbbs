@@ -1210,3 +1210,684 @@ describe('App shell — rooms as editor tabs (Story 9.8)', () => {
     expect(tabA?.getAttribute('data-unread')).toBe('false');
   });
 });
+
+// --- Story 9.9 — LIVE updates + OPTIMISTIC posting + reconciliation through the real App shell
+// (Rule 3 real-runtime DOM evidence). A single room `live-room` the operator (`ops`) is already
+// a participant of (so the composer is joined + 👍 chips enabled). A STATEFUL fetch stub models
+// the host so a reply POST + refetch lands the confirmed message; a togglable `failPost`/
+// `failReact` makes the write reject so the inline-failure paths are exercised. The fake
+// EventSource drives SSE deltas so the live-fold into the OPEN thread is observable. ---
+describe('App shell — live updates, optimistic posting + reconciliation (Story 9.9)', () => {
+  // Test-controlled host behavior.
+  let failPost: boolean;
+  let failReact: boolean;
+  let replyBodies: string[];
+
+  function roomEnvelope(messages: unknown[], participants: string[]) {
+    return {
+      room: {
+        room_id: 'live-room',
+        project_id: 'calling-interface',
+        subject: 'Live room',
+        body: 'Seed.',
+        posted_by: 'alice',
+        seq: 5,
+        active: true,
+        activated_by: 'alice',
+        activated_at_seq: 6,
+      },
+      messages,
+      participants,
+    };
+  }
+
+  // The host's confirmed message list grows as the operator posts (grant-on-act keeps ops a
+  // participant). reactions on #6 mutate as the operator toggles 👍.
+  let confirmed: {
+    seq: number;
+    actor: string;
+    body: string;
+    kind: string;
+    reactions: string[];
+    created_at: string;
+  }[];
+
+  beforeEach(() => {
+    failPost = false;
+    failReact = false;
+    replyBodies = [];
+    confirmed = [
+      {
+        seq: 5,
+        actor: 'alice',
+        body: 'Seed.',
+        kind: 'announcement',
+        reactions: [],
+        created_at: '2026-06-01T08:00:00.000Z',
+      },
+      {
+        seq: 6,
+        actor: 'ops',
+        body: 'First.',
+        kind: 'reply',
+        reactions: [],
+        created_at: '2026-06-01T08:01:00.000Z',
+      },
+    ];
+    let nextSeq = 7;
+
+    const STATIC: Record<string, unknown> = {
+      '/api/me': { handle: 'ops' },
+      '/api/needs-you': { rooms: [] },
+      '/api/directory': {
+        projects: [
+          {
+            project_id: 'calling-interface',
+            title: 'Calling Interface',
+            description: 'd',
+            announcer: 'alice',
+            members: ['alice', 'ops'],
+          },
+        ],
+      },
+      '/api/projects/calling-interface/rooms': {
+        rooms: [
+          {
+            room_id: 'live-room',
+            project_id: 'calling-interface',
+            subject: 'Live room',
+            body: '',
+            posted_by: 'alice',
+            seq: 5,
+            active: true,
+          },
+        ],
+      },
+      '/api/projects/calling-interface/announcements': { announcements: [] },
+    };
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const method = init?.method ?? 'GET';
+        if (method === 'POST') {
+          if (url === '/api/rooms/live-room/reply') {
+            const parsed = JSON.parse(
+              typeof init?.body === 'string' ? init.body : '{}',
+            ) as { body: string };
+            replyBodies.push(parsed.body);
+            if (failPost) return new Response('nope', { status: 500 });
+            // Grant-on-act: the confirmed message lands at a real seq.
+            confirmed.push({
+              seq: nextSeq++,
+              actor: 'ops',
+              body: parsed.body,
+              kind: 'reply',
+              reactions: [],
+              created_at: '2026-06-01T08:05:00.000Z',
+            });
+            return new Response(
+              JSON.stringify({
+                room: {
+                  room_id: 'live-room',
+                  project_id: 'calling-interface',
+                  subject: 'Live room',
+                  body: 'Seed.',
+                  posted_by: 'alice',
+                  seq: 5,
+                  active: true,
+                },
+              }),
+              { status: 200 },
+            );
+          }
+          const reactMatch = /\/messages\/(\d+)\/(react|unreact)$/.exec(url);
+          if (reactMatch) {
+            if (failReact) return new Response('nope', { status: 500 });
+            const seq = Number(reactMatch[1]);
+            const isReact = reactMatch[2] === 'react';
+            const msg = confirmed.find((m) => m.seq === seq);
+            if (msg) {
+              if (isReact && !msg.reactions.includes('ops')) {
+                msg.reactions.push('ops');
+              } else if (!isReact) {
+                msg.reactions = msg.reactions.filter((r) => r !== 'ops');
+              }
+            }
+            return new Response(
+              JSON.stringify({
+                message_seq: seq,
+                reactions: msg?.reactions ?? [],
+              }),
+              { status: 200 },
+            );
+          }
+          return new Response('nope', { status: 404 });
+        }
+        if (url === '/api/rooms/live-room') {
+          return new Response(
+            JSON.stringify(roomEnvelope(confirmed, ['alice', 'ops'])),
+            { status: 200 },
+          );
+        }
+        if (url === '/api/rooms/live-room/contract') {
+          // Contract = highest-seq message with a live 👍 (or null).
+          const live = [...confirmed]
+            .filter((m) => m.reactions.length > 0)
+            .sort((a, b) => b.seq - a.seq)[0];
+          return new Response(
+            JSON.stringify({
+              room_id: 'live-room',
+              contract: live ?? null,
+            }),
+            { status: 200 },
+          );
+        }
+        const body = STATIC[url];
+        if (body === undefined) return new Response('nope', { status: 404 });
+        return new Response(JSON.stringify(body), { status: 200 });
+      }),
+    );
+    vi.stubGlobal(
+      'EventSource',
+      FakeEventSource as unknown as typeof EventSource,
+    );
+  });
+
+  async function openLiveRoom(): Promise<void> {
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await flush();
+    const row = container.querySelector<HTMLElement>(
+      '[data-project-id="calling-interface"] [data-room-id="live-room"]',
+    );
+    await act(async () => {
+      row?.click();
+    });
+    await flush();
+  }
+
+  async function sendThroughComposer(text: string): Promise<void> {
+    const field = container.querySelector<HTMLInputElement>(
+      '[data-testid="composer-field"]',
+    );
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )?.set;
+      setter?.call(field, text);
+      field?.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="composer-send"]')
+        ?.click();
+    });
+  }
+
+  function posts(): HTMLElement[] {
+    return [
+      ...container.querySelectorAll<HTMLElement>(
+        '[data-testid="message-post"]',
+      ),
+    ];
+  }
+
+  it('AC1 — an SSE room.replied for the OPEN room folds into the thread live (immutably)', async () => {
+    await openLiveRoom();
+    expect(posts().map((p) => p.getAttribute('data-message-seq'))).toEqual([
+      '5',
+      '6',
+    ]);
+
+    // Another client posts; the host pushes the room.replied delta to this operator's open view.
+    await act(async () => {
+      FakeEventSource.last?.emitMessage(
+        JSON.stringify({
+          seq: 8,
+          type: 'room.replied',
+          actor: 'alice',
+          created_at: '2026-06-01T09:00:00.000Z',
+          payload: { room_id: 'live-room', body: 'Live append from alice' },
+        }),
+      );
+    });
+
+    // The open thread updated live — the new post appended at seq 8.
+    const live = posts();
+    expect(live.map((p) => p.getAttribute('data-message-seq'))).toEqual([
+      '5',
+      '6',
+      '8',
+    ]);
+    expect(
+      container.querySelector('[data-message-seq="8"]')?.textContent,
+    ).toContain('Live append from alice');
+  });
+
+  it('AC1 — an SSE message.reacted updates the chip count + re-derives the ✓ agreed mark live', async () => {
+    await openLiveRoom();
+    // No agreed mark initially.
+    expect(
+      container.querySelectorAll('[data-testid="agreed-mark-footer"]'),
+    ).toHaveLength(0);
+
+    await act(async () => {
+      FakeEventSource.last?.emitMessage(
+        JSON.stringify({
+          seq: 20,
+          type: 'message.reacted',
+          actor: 'cleo',
+          created_at: '2026-06-01T09:00:00.000Z',
+          payload: { room_id: 'live-room', message_seq: 6 },
+        }),
+      );
+    });
+
+    const post6 = container.querySelector('[data-message-seq="6"]');
+    // Chip count bumped to 1 live (no refetch needed).
+    expect(
+      post6?.querySelector('[data-testid="reaction-chip-count"]')?.textContent,
+    ).toBe('1');
+    // The ✓ agreed mark appeared on #6 (highest-seq live-👍'd message, FR21).
+    expect(post6?.getAttribute('data-agreed')).toBe('true');
+    expect(
+      post6?.querySelector('[data-testid="agreed-mark-footer"]'),
+    ).not.toBeNull();
+  });
+
+  it('AC2 — optimistic post: the echo appears PENDING immediately, then reconciles to confirmed (no duplicate)', async () => {
+    await openLiveRoom();
+    expect(posts()).toHaveLength(2);
+
+    // Type the draft, then click send in a SYNCHRONOUS act so only the synchronous optimistic
+    // append is flushed (the async POST/refetch has not run yet) — the pending echo is observable.
+    const field = container.querySelector<HTMLInputElement>(
+      '[data-testid="composer-field"]',
+    );
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )?.set;
+      setter?.call(field, 'Optimistic hello');
+      field?.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    act(() => {
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="composer-send"]')
+        ?.click();
+    });
+    const pendingPost = container.querySelector('[data-pending="true"]');
+    expect(pendingPost).not.toBeNull();
+    expect(pendingPost?.textContent).toContain('Optimistic hello');
+    expect(
+      pendingPost?.querySelector('[data-testid="message-post-sending"]')
+        ?.textContent,
+    ).toBe('sending…');
+
+    // Flush the POST + refetch → the pending echo reconciles to the confirmed post #7 (no dup).
+    await flush();
+    expect(container.querySelector('[data-pending="true"]')).toBeNull();
+    const seqs = posts().map((p) => p.getAttribute('data-message-seq'));
+    expect(seqs).toEqual(['5', '6', '7']);
+    // Exactly ONE post carries the body (no duplicate echo + confirmed).
+    const matches = posts().filter((p) =>
+      p.textContent?.includes('Optimistic hello'),
+    );
+    expect(matches).toHaveLength(1);
+    expect(replyBodies).toEqual(['Optimistic hello']);
+  });
+
+  it('AC2 — a redundant SSE room.replied for the operator OWN post does NOT double-append (de-dup by content) — SSE BEFORE refetch', async () => {
+    await openLiveRoom();
+    await sendThroughComposer('Dedup me');
+    // BEFORE the POST resolves, the redundant SSE delta for the same post arrives.
+    await act(async () => {
+      FakeEventSource.last?.emitMessage(
+        JSON.stringify({
+          seq: 7,
+          type: 'room.replied',
+          actor: 'ops',
+          created_at: '2026-06-01T08:05:00.000Z',
+          payload: { room_id: 'live-room', body: 'Dedup me' },
+        }),
+      );
+    });
+    await flush();
+    // The post 'Dedup me' appears EXACTLY once across the SSE-reconcile + POST-refetch paths.
+    const matches = posts().filter((p) => p.textContent?.includes('Dedup me'));
+    expect(matches).toHaveLength(1);
+  });
+
+  it('AC2 — de-dup holds in the OTHER interleaving: the POST refetch lands the confirmed post FIRST, then the redundant SSE delta arrives → still exactly one', async () => {
+    await openLiveRoom();
+    // Send + fully flush so the POST refetch reconciles the echo to the confirmed post #7.
+    await sendThroughComposer('Order matters');
+    await flush();
+    expect(container.querySelector('[data-pending="true"]')).toBeNull();
+    let seqs = posts().map((p) => p.getAttribute('data-message-seq'));
+    expect(seqs).toEqual(['5', '6', '7']);
+
+    // NOW the redundant SSE room.replied for the operator's own post arrives (late). Because the
+    // confirmed message #7 is already present (and not pending), foldRoomDelta is idempotent by
+    // seq → no double-append, no resurrection of a pending echo.
+    await act(async () => {
+      FakeEventSource.last?.emitMessage(
+        JSON.stringify({
+          seq: 7,
+          type: 'room.replied',
+          actor: 'ops',
+          created_at: '2026-06-01T08:05:00.000Z',
+          payload: { room_id: 'live-room', body: 'Order matters' },
+        }),
+      );
+    });
+    await flush();
+    seqs = posts().map((p) => p.getAttribute('data-message-seq'));
+    expect(seqs).toEqual(['5', '6', '7']); // no duplicate seq 7
+    const matches = posts().filter((p) =>
+      p.textContent?.includes('Order matters'),
+    );
+    expect(matches).toHaveLength(1);
+    expect(container.querySelector('[data-pending="true"]')).toBeNull();
+  });
+
+  it('AC2 — post FAILURE: inline `post failed — retry`, draft preserved, retry re-sends + reconciles', async () => {
+    await openLiveRoom();
+    failPost = true;
+    await sendThroughComposer('Will fail then retry');
+    await flush();
+
+    // The echo flipped to failed, inline (no modal), with the body (draft) preserved.
+    const failedPost = container.querySelector('[data-failed="true"]');
+    expect(failedPost).not.toBeNull();
+    expect(failedPost?.textContent).toContain('Will fail then retry');
+    expect(
+      failedPost?.querySelector('[data-testid="message-post-failed"]')
+        ?.textContent,
+    ).toContain('post failed');
+    // No modal/dialog anywhere.
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+
+    // Fix the host + click retry → re-sends the SAME body, reconciles to confirmed.
+    failPost = false;
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="message-post-retry"]')
+        ?.click();
+    });
+    await flush();
+    expect(container.querySelector('[data-failed="true"]')).toBeNull();
+    expect(container.querySelector('[data-pending="true"]')).toBeNull();
+    // Re-sent the SAME preserved body (twice total: the failed attempt + the retry).
+    expect(replyBodies).toEqual([
+      'Will fail then retry',
+      'Will fail then retry',
+    ]);
+    const matches = posts().filter((p) =>
+      p.textContent?.includes('Will fail then retry'),
+    );
+    expect(matches).toHaveLength(1);
+  });
+
+  it('AC2 — 👍 FAILURE reverts the optimistic toggle inline with NO count drift', async () => {
+    await openLiveRoom();
+    failReact = true;
+    const chip6 = () =>
+      container
+        .querySelector('[data-message-seq="6"]')
+        ?.querySelector<HTMLButtonElement>('[data-testid="reaction-chip"]');
+    // Resting, count 0.
+    expect(chip6()?.getAttribute('data-state')).toBe('resting');
+    expect(
+      container
+        .querySelector('[data-message-seq="6"]')
+        ?.querySelector('[data-testid="reaction-chip-count"]')?.textContent,
+    ).toBe('0');
+
+    await act(async () => {
+      chip6()?.click();
+    });
+    await flush();
+
+    // After the failed write, the optimistic toggle REVERTED — back to resting + count 0 (no drift).
+    expect(chip6()?.getAttribute('data-state')).toBe('resting');
+    expect(
+      container
+        .querySelector('[data-message-seq="6"]')
+        ?.querySelector('[data-testid="reaction-chip-count"]')?.textContent,
+    ).toBe('0');
+  });
+
+  it('AC2 — 👍 SUCCESS keeps the optimistic toggle (authoritative ReactResult, count 1)', async () => {
+    await openLiveRoom();
+    const chip6 = () =>
+      container
+        .querySelector('[data-message-seq="6"]')
+        ?.querySelector<HTMLButtonElement>('[data-testid="reaction-chip"]');
+    await act(async () => {
+      chip6()?.click();
+    });
+    await flush();
+    expect(chip6()?.getAttribute('data-state')).toBe('reacted');
+    expect(
+      container
+        .querySelector('[data-message-seq="6"]')
+        ?.querySelector('[data-testid="reaction-chip-count"]')?.textContent,
+    ).toBe('1');
+  });
+
+  it('AC2 — toggling 👍 on→off→on (each write succeeding) does NOT drift the count (settles at exactly 1, one reactor)', async () => {
+    await openLiveRoom();
+    const post6 = () => container.querySelector('[data-message-seq="6"]');
+    const chip6 = () =>
+      post6()?.querySelector<HTMLButtonElement>(
+        '[data-testid="reaction-chip"]',
+      );
+    const count6 = () =>
+      post6()?.querySelector('[data-testid="reaction-chip-count"]')
+        ?.textContent;
+
+    // ON.
+    await act(async () => {
+      chip6()?.click();
+    });
+    await flush();
+    expect(chip6()?.getAttribute('data-state')).toBe('reacted');
+    expect(count6()).toBe('1');
+
+    // OFF.
+    await act(async () => {
+      chip6()?.click();
+    });
+    await flush();
+    expect(chip6()?.getAttribute('data-state')).toBe('resting');
+    expect(count6()).toBe('0');
+
+    // ON again — settles at exactly one reactor (no leftover from the prior cycle, no drift).
+    await act(async () => {
+      chip6()?.click();
+    });
+    await flush();
+    expect(chip6()?.getAttribute('data-state')).toBe('reacted');
+    expect(count6()).toBe('1');
+    // The host's authoritative reactor set is exactly ['ops'] (no duplicate accumulation).
+    expect(confirmed.find((m) => m.seq === 6)?.reactions).toEqual(['ops']);
+  });
+
+  it('NFR5 — the live channel is operator→browser SSE only; no board write fires on a pure inbound delta', async () => {
+    // Re-affirm: folding an inbound SSE delta into the operator's OWN open view is a pure client
+    // reduction — it issues NO outbound write (agents stay pull-only; the host never pushes to
+    // agents). Count every non-GET request; an inbound delta must add none.
+    const fetchMock = globalThis.fetch as unknown as ReturnType<typeof vi.fn>;
+    await openLiveRoom();
+    const writesBefore = fetchMock.mock.calls.filter(
+      (c) => (c[1] as RequestInit | undefined)?.method === 'POST',
+    ).length;
+    await act(async () => {
+      FakeEventSource.last?.emitMessage(
+        JSON.stringify({
+          seq: 9,
+          type: 'room.replied',
+          actor: 'alice',
+          created_at: '2026-06-01T09:00:00.000Z',
+          payload: { room_id: 'live-room', body: 'inbound only' },
+        }),
+      );
+    });
+    await flush();
+    const writesAfter = fetchMock.mock.calls.filter(
+      (c) => (c[1] as RequestInit | undefined)?.method === 'POST',
+    ).length;
+    expect(writesAfter).toBe(writesBefore); // no write triggered by the inbound delta
+    // The delta still folded into the view (live, pull-only-preserving).
+    expect(
+      container.querySelector('[data-message-seq="9"]')?.textContent,
+    ).toContain('inbound only');
+  });
+});
+
+// --- Story 9.9 — JOIN FAILURE: NO half-joined state (AC2). A watching operator clicks
+// `[ join room to post ]`; the join POST REJECTS. The composer must NOT show its joined
+// (field) state — it returns to the `[ join room to post ]` gate, and a calm inline error
+// surfaces. (The 9.9 stateful suite above has ops already a participant, so its composer is
+// joined and never exercises the join gate; this suite isolates the watching-operator join.)
+describe('App shell — join FAILURE shows inline retry, no half-joined state (Story 9.9)', () => {
+  beforeEach(() => {
+    const roomEnvelope = () => ({
+      room: {
+        room_id: 'join-room',
+        project_id: 'calling-interface',
+        subject: 'Join then fail',
+        body: 'Agents are split.',
+        posted_by: 'alice',
+        seq: 5,
+        active: true,
+        activated_by: 'alice',
+        activated_at_seq: 6,
+      },
+      messages: [
+        {
+          seq: 5,
+          actor: 'alice',
+          body: 'Agents are split.',
+          kind: 'announcement',
+          reactions: [],
+          created_at: '2026-06-01T08:00:00.000Z',
+        },
+      ],
+      // ops stays a NON-participant — the join never succeeds, so participation never grants.
+      participants: ['alice'],
+    });
+    const responses: Record<string, unknown> = {
+      '/api/me': { handle: 'ops' },
+      '/api/needs-you': { rooms: [] },
+      '/api/directory': {
+        projects: [
+          {
+            project_id: 'calling-interface',
+            title: 'Calling Interface',
+            description: 'd',
+            announcer: 'alice',
+            members: ['alice'],
+          },
+        ],
+      },
+      '/api/projects/calling-interface/rooms': {
+        rooms: [
+          {
+            room_id: 'join-room',
+            project_id: 'calling-interface',
+            subject: 'Join then fail',
+            body: 'Agents are split.',
+            posted_by: 'alice',
+            seq: 5,
+            active: true,
+          },
+        ],
+      },
+      '/api/projects/calling-interface/announcements': { announcements: [] },
+      '/api/rooms/join-room/contract': { room_id: 'join-room', contract: null },
+    };
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const method = init?.method ?? 'GET';
+        if (method === 'POST') {
+          // The join write REJECTS (e.g. transient host failure).
+          if (url === '/api/projects/calling-interface/join') {
+            return new Response('nope', { status: 500 });
+          }
+          return new Response('nope', { status: 404 });
+        }
+        if (url === '/api/rooms/join-room') {
+          return new Response(JSON.stringify(roomEnvelope()), { status: 200 });
+        }
+        const body = responses[url];
+        if (body === undefined) return new Response('nope', { status: 404 });
+        return new Response(JSON.stringify(body), { status: 200 });
+      }),
+    );
+    vi.stubGlobal(
+      'EventSource',
+      FakeEventSource as unknown as typeof EventSource,
+    );
+  });
+
+  it('AC2 — a failed join returns to the `[ join room to post ]` gate (no half-joined field) + a calm inline error', async () => {
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await flush();
+    const row = container.querySelector<HTMLElement>(
+      '[data-project-id="calling-interface"] [data-room-id="join-room"]',
+    );
+    await act(async () => {
+      row?.click();
+    });
+    await flush();
+
+    // Watching: the composer shows the join gate, no field.
+    expect(
+      container
+        .querySelector('[data-testid="composer"]')
+        ?.getAttribute('data-joined'),
+    ).toBe('false');
+    expect(
+      container.querySelector('[data-testid="composer-join"]')?.textContent,
+    ).toBe('[ join room to post ]');
+
+    // Click join → the POST rejects.
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="composer-join"]')
+        ?.click();
+    });
+    await flush();
+
+    // NO half-joined state: the composer is BACK to the gate (data-joined=false, the field is
+    // NOT present, the `[ join room to post ]` button is shown again to retry).
+    expect(
+      container
+        .querySelector('[data-testid="composer"]')
+        ?.getAttribute('data-joined'),
+    ).toBe('false');
+    expect(
+      container.querySelector('[data-testid="composer-field"]'),
+    ).toBeNull();
+    expect(
+      container.querySelector('[data-testid="composer-join"]')?.textContent,
+    ).toBe('[ join room to post ]');
+    // A calm inline error surfaced (not a modal).
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(
+      container.querySelector('[data-testid="room-error"]')?.textContent,
+    ).toContain('Error:');
+  });
+});
