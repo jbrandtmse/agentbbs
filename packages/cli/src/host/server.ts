@@ -18,15 +18,110 @@
 
 import { createServer } from 'node:http';
 
+import { MAX_BODY_BYTES } from '@agentbbs/core';
+
 import { handleApiRequest } from './json-api.js';
 import { createSseChannel } from './sse.js';
 import { createStaticServer, resolveWebDist } from './static-assets.js';
 
+import type { RequestBody } from './json-api.js';
 import type { DataAccess } from '@agentbbs/core';
 import type { Server, IncomingMessage, ServerResponse } from 'node:http';
 
 /** The SSE endpoint path (the operator-browser live view channel). */
 export const SSE_PATH = '/api/events';
+
+/**
+ * The host-level request-body byte ceiling for a body-carrying WRITE (Story 9.7). Set
+ * generously ABOVE core's `MAX_BODY_BYTES` (the 256 KB message-body cap) plus slack for the
+ * JSON envelope (`{"body":"…"}` quoting/escaping), so a body just over the message cap still
+ * REACHES core and is rejected there with the contract `BODY_TOO_LARGE` → 413 (the AC-faithful
+ * code). This bound only guards against an UNBOUNDED stream — a body this large is rejected
+ * BEFORE buffering it all (a host-surface 413), without reading the whole malicious payload.
+ */
+export const MAX_REQUEST_BODY_BYTES = MAX_BODY_BYTES + 64 * 1024;
+
+/**
+ * A sentinel for a request body that exceeded {@link MAX_REQUEST_BODY_BYTES} (rejected
+ * before fully buffering) or was not valid JSON. The caller maps it to a 4xx; it is NEVER
+ * passed to a route handler.
+ */
+type BodyParse =
+  | { ok: true; body: RequestBody }
+  | { ok: false; status: number; code: string; message: string };
+
+/**
+ * Read + size-bound + JSON-parse a request body from the `IncomingMessage` stream (Node 24
+ * idiomatic async iteration). Enforces {@link MAX_REQUEST_BODY_BYTES} on the UTF-8 BYTE
+ * length — as soon as the accumulated size exceeds the bound the request is destroyed and a
+ * 413 sentinel returned (we never buffer the whole oversize payload). An empty body parses
+ * to `undefined` (a body-less POST); a non-empty body must be valid JSON, else a 400
+ * sentinel. The parsed value must be a JSON OBJECT (the write payloads are `{ … }`); a
+ * non-object JSON value is a 400. Pure transport — no board logic.
+ */
+async function readRequestBody(req: IncomingMessage): Promise<BodyParse> {
+  const chunks: Buffer[] = [];
+  let totalBytes = 0;
+  try {
+    for await (const chunk of req) {
+      // The request stream yields Buffers (no encoding is set on req), but the iterator's
+      // element type is loose — normalize defensively. A string chunk (if an encoding were
+      // ever set) is decoded as UTF-8; a Buffer passes through.
+      const buf: Buffer =
+        typeof chunk === 'string'
+          ? Buffer.from(chunk, 'utf8')
+          : (chunk as Buffer);
+      totalBytes += buf.length;
+      if (totalBytes > MAX_REQUEST_BODY_BYTES) {
+        // Stop buffering immediately (we never hold more than the bound). We do NOT destroy
+        // the request here — that would reset the socket before the 413 response flushes
+        // (the client would see ECONNRESET, not the status). The caller writes the 413 and
+        // ends the response; pausing the request lets that response reach the client.
+        req.pause();
+        return {
+          ok: false,
+          status: 413,
+          code: 'BODY_TOO_LARGE',
+          message: `Request body exceeds the ${MAX_REQUEST_BODY_BYTES}-byte host limit.`,
+        };
+      }
+      chunks.push(buf);
+    }
+  } catch {
+    return {
+      ok: false,
+      status: 400,
+      code: 'BAD_REQUEST',
+      message: 'Failed to read the request body.',
+    };
+  }
+
+  if (totalBytes === 0) {
+    return { ok: true, body: undefined };
+  }
+
+  const text = Buffer.concat(chunks, totalBytes).toString('utf8');
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return {
+      ok: false,
+      status: 400,
+      code: 'BAD_REQUEST',
+      message: 'Request body is not valid JSON.',
+    };
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return {
+      ok: false,
+      status: 400,
+      code: 'BAD_REQUEST',
+      message: 'Request body must be a JSON object.',
+    };
+  }
+  return { ok: true, body: parsed as RequestBody };
+}
 
 /** Options for {@link createHost}. */
 export interface CreateHostOptions {
@@ -120,12 +215,37 @@ export function createHost(options: CreateHostOptions): Host {
       return;
     }
 
-    // 2. The JSON API (read-first; mirrors core read ops). Returns null if not /api/.
+    // 2. The JSON API (read-first; mirrors core read ops). A POST may carry a JSON body
+    // (Story 9.7 reply/add_participant) — parse + size-bound it from the request stream and
+    // pass the parsed object in. A non-POST carries no body (GET/HEAD reads, PATH-only
+    // writes). An oversize/unparseable body is a 4xx raised here, BEFORE routing.
+    let parsedBody: RequestBody = undefined;
+    if (method === 'POST' && (path.startsWith('/api/') || path === '/api')) {
+      const result = await readRequestBody(req);
+      if (!result.ok) {
+        // The body was oversize or unparseable. Close the connection in the response so a
+        // still-uploading client does not stall on an unconsumed request body (the request
+        // was paused at the bound), and the client reliably reads the 4xx status.
+        const payload = JSON.stringify({
+          code: result.code,
+          message: result.message,
+        });
+        res.writeHead(result.status, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Content-Length': Buffer.byteLength(payload),
+          Connection: 'close',
+        });
+        res.end(payload);
+        return;
+      }
+      parsedBody = result.body;
+    }
     const apiResponse = await handleApiRequest(
       method,
       path,
       dataAccess,
       operatorHandle,
+      parsedBody,
     );
     if (apiResponse !== null) {
       writeJson(res, apiResponse.status, apiResponse.body);

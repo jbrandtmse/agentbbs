@@ -25,11 +25,17 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { announceProject, postAnnouncement, register } from '@agentbbs/core';
+import {
+  announceProject,
+  MAX_BODY_BYTES,
+  postAnnouncement,
+  register,
+  reply,
+} from '@agentbbs/core';
 import { createDataAccess } from '@agentbbs/data-access';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { startHost } from './server.js';
+import { MAX_REQUEST_BODY_BYTES, startHost } from './server.js';
 
 import type { RunningHost } from './server.js';
 import type { DataAccessHandle } from '@agentbbs/data-access';
@@ -198,5 +204,365 @@ describe('AC3 — on-demand host integration over the real stack', () => {
       })
       .find((e) => e?.seq === room.seq);
     expect(matching?.type).toBe('announcement.posted');
+  });
+});
+
+// --- Story 9.7: the BODY-carrying WRITE path over REAL HTTP — proves `server.ts` parses +
+// size-bounds the request stream (Node 24 async-iteration body parse) and the operator
+// posts as a peer over the SAME core `reply` agents use. The unit tests
+// (json-api.test.ts) call handleApiRequest with a parsed-object body directly; THIS test
+// drives the whole real `node:http` body-read path with a real `fetch` POST + JSON body. ---
+describe('Story 9.7 — body-carrying reply write over real HTTP (Mode B, same-core)', () => {
+  /** Seed a board + an active room (alice announces + replies) and return the room id. */
+  async function seedActiveRoom(): Promise<string> {
+    await register(dataAccess!, { handle: 'alice', currentFocus: 'wiring' });
+    await register(dataAccess!, { handle: 'ops', currentFocus: 'watching' });
+    await announceProject(dataAccess!, 'alice', {
+      title: 'Calling Interface',
+      description: 'How agents dial in.',
+    });
+    const room = await postAnnouncement(dataAccess!, 'alice', {
+      projectId: 'calling-interface',
+      subject: 'Need a decision',
+      body: 'announcement body',
+    });
+    await reply(dataAccess!, 'alice', {
+      roomId: room.roomId,
+      body: 'starting',
+    });
+    return room.roomId;
+  }
+
+  it('POST /api/rooms/:id/reply with a JSON body posts the operator message + grants room participation', async () => {
+    const roomId = await seedActiveRoom();
+    host = await startHost({
+      dataAccess: dataAccess!,
+      webDist: dir,
+      operatorHandle: 'ops',
+    });
+
+    const response = await fetch(`${host.url}/api/rooms/${roomId}/reply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body: 'Ship it — operator decision.' }),
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      room: { room_id: string; active: boolean };
+    };
+    expect(body.room.room_id).toBe(roomId);
+    expect(body.room.active).toBe(true);
+
+    // The operator is now a ROOM PARTICIPANT + their message is in the thread (real HTTP read).
+    const roomRes = await fetch(`${host.url}/api/rooms/${roomId}`);
+    const roomBody = (await roomRes.json()) as {
+      participants: string[];
+      messages: { actor: string; body: string }[];
+    };
+    expect(roomBody.participants).toContain('ops');
+    expect(
+      roomBody.messages.some(
+        (m) => m.actor === 'ops' && m.body === 'Ship it — operator decision.',
+      ),
+    ).toBe(true);
+  });
+
+  it('POST /api/rooms/:id/reply with NO operator (watching-only host) → 403 NO_OPERATOR', async () => {
+    const roomId = await seedActiveRoom();
+    // No operatorHandle → watching-only host.
+    host = await startHost({ dataAccess: dataAccess!, webDist: dir });
+    const response = await fetch(`${host.url}/api/rooms/${roomId}/reply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body: 'hello' }),
+    });
+    expect(response.status).toBe(403);
+    expect(((await response.json()) as { code: string }).code).toBe(
+      'NO_OPERATOR',
+    );
+  });
+
+  it('POST /api/rooms/:id/reply with an over-host-limit body → 413 BODY_TOO_LARGE (rejected before buffering it all)', async () => {
+    const roomId = await seedActiveRoom();
+    host = await startHost({
+      dataAccess: dataAccess!,
+      webDist: dir,
+      operatorHandle: 'ops',
+    });
+    // A body well over the host request-body ceiling (MAX_BODY_BYTES + slack). The host
+    // rejects it with 413 from its stream bound (the core cap would also be 413).
+    const huge = 'x'.repeat(MAX_BODY_BYTES + 200 * 1024);
+    const response = await fetch(`${host.url}/api/rooms/${roomId}/reply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body: huge }),
+    });
+    expect(response.status).toBe(413);
+    expect(((await response.json()) as { code: string }).code).toBe(
+      'BODY_TOO_LARGE',
+    );
+  });
+
+  it('POST /api/rooms/:id/reply with a malformed (non-JSON) body → 400 BAD_REQUEST', async () => {
+    const roomId = await seedActiveRoom();
+    host = await startHost({
+      dataAccess: dataAccess!,
+      webDist: dir,
+      operatorHandle: 'ops',
+    });
+    const response = await fetch(`${host.url}/api/rooms/${roomId}/reply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: 'this is not json{',
+    });
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { code: string }).code).toBe(
+      'BAD_REQUEST',
+    );
+  });
+});
+
+// --- QA hardening (Story 9.7 qa stage) — the 413 BODY-cap EDGE over REAL HTTP. Two distinct
+// rejection paths converge on 413 BODY_TOO_LARGE and the dev's host bound is the seam between
+// them; the dev-shipped integration test only covers the way-over (host-surface) case. These
+// pin the LOAD-BEARING boundary the dev's Completion Notes assert: the host request-body bound
+// (MAX_REQUEST_BODY_BYTES = MAX_BODY_BYTES + 64 KB) is set ABOVE the core cap deliberately so a
+// body OVER the CORE cap but UNDER the host bound REACHES core and is rejected with the CONTRACT
+// BODY_TOO_LARGE (not a premature host truncation), while an at-core-cap body still POSTS (200).
+// Plus the explicit no-ECONNRESET proof: the over-host-bound 413 must be a readable HTTP status
+// (the dev noted replacing an early req.destroy() that caused ECONNRESET — verify the fix holds
+// over a real socket). All over a real bound port + real SQLite (Rule 3). ---
+describe('Story 9.7 qa — 413 body-cap boundary over real HTTP (no premature truncation, no ECONNRESET)', () => {
+  async function seedActiveRoom(): Promise<string> {
+    await register(dataAccess!, { handle: 'alice', currentFocus: 'wiring' });
+    await register(dataAccess!, { handle: 'ops', currentFocus: 'watching' });
+    await announceProject(dataAccess!, 'alice', {
+      title: 'Calling Interface',
+      description: 'How agents dial in.',
+    });
+    const room = await postAnnouncement(dataAccess!, 'alice', {
+      projectId: 'calling-interface',
+      subject: 'Need a decision',
+      body: 'announcement body',
+    });
+    await reply(dataAccess!, 'alice', {
+      roomId: room.roomId,
+      body: 'starting',
+    });
+    return room.roomId;
+  }
+
+  /** The current MAX(seq) over the real ledger — to assert nothing landed on a rejection. */
+  async function maxSeq(): Promise<number> {
+    const events = await dataAccess!.eventsSince(0);
+    return events.reduce((max, e) => Math.max(max, e.seq), 0);
+  }
+
+  it('a body EXACTLY at the core cap POSTS (200) — the host does NOT truncate an at-cap body', async () => {
+    const roomId = await seedActiveRoom();
+    host = await startHost({
+      dataAccess: dataAccess!,
+      webDist: dir,
+      operatorHandle: 'ops',
+    });
+    // An ASCII body of EXACTLY MAX_BODY_BYTES chars → byteLength === MAX_BODY_BYTES (core's cap
+    // is `> MAX_BODY_BYTES`, so at-cap is accepted). The JSON envelope (`{"body":"…"}`) adds a
+    // few bytes but stays well under the host bound (MAX_BODY_BYTES + 64 KB), so it reaches core.
+    const atCap = 'a'.repeat(MAX_BODY_BYTES);
+    const response = await fetch(`${host.url}/api/rooms/${roomId}/reply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body: atCap }),
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { room: { room_id: string } };
+    expect(body.room.room_id).toBe(roomId);
+    // The at-cap message actually landed in the thread (real read-back).
+    const roomRes = await fetch(`${host.url}/api/rooms/${roomId}`);
+    const roomBody = (await roomRes.json()) as {
+      messages: { actor: string; body: string }[];
+    };
+    expect(
+      roomBody.messages.some(
+        (m) => m.actor === 'ops' && m.body.length === MAX_BODY_BYTES,
+      ),
+    ).toBe(true);
+  });
+
+  it('a body OVER the core cap but UNDER the host bound REACHES core → the CONTRACT 413 BODY_TOO_LARGE (not a host truncation), nothing appended', async () => {
+    const roomId = await seedActiveRoom();
+    host = await startHost({
+      dataAccess: dataAccess!,
+      webDist: dir,
+      operatorHandle: 'ops',
+    });
+    const before = await maxSeq();
+    // ONE byte over the CORE cap (MAX_BODY_BYTES + 1) — but well under the HOST request-body
+    // bound (MAX_BODY_BYTES + 64 KB), so the host does NOT short-circuit; the whole body is
+    // buffered + parsed + handed to core, and CORE's assertBodyWithinCap throws the contract
+    // BODY_TOO_LARGE. This is the AC-faithful code (the host bound is set above the core cap
+    // EXACTLY so this contract path fires rather than a premature host-surface 413).
+    const overCoreCap = 'a'.repeat(MAX_BODY_BYTES + 1);
+    // Confirm the test's own premise: this payload is under the host bound, so it must reach core.
+    expect(JSON.stringify({ body: overCoreCap }).length).toBeLessThan(
+      MAX_REQUEST_BODY_BYTES,
+    );
+    const response = await fetch(`${host.url}/api/rooms/${roomId}/reply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body: overCoreCap }),
+    });
+    expect(response.status).toBe(413);
+    expect(((await response.json()) as { code: string }).code).toBe(
+      'BODY_TOO_LARGE',
+    );
+    // Core rejected before appending — the ledger high-water-mark is unchanged.
+    expect(await maxSeq()).toBe(before);
+  });
+
+  it('a body OVER the host bound → 413 with a READABLE body (the host-surface reject does NOT ECONNRESET the socket)', async () => {
+    const roomId = await seedActiveRoom();
+    host = await startHost({
+      dataAccess: dataAccess!,
+      webDist: dir,
+      operatorHandle: 'ops',
+    });
+    const before = await maxSeq();
+    // WELL over the host request-body bound → the host rejects from its stream guard BEFORE
+    // fully buffering (it pauses the request + sends `Connection: close`). The dev noted an
+    // early `req.destroy()` here caused ECONNRESET (the client never read the status); the fix
+    // must let the client RELIABLY read the 413 JSON. If the socket were reset, `fetch` or
+    // `.json()` would REJECT (TypeError: fetch failed / terminated) instead of resolving — so
+    // a clean `.json()` IS the no-ECONNRESET proof.
+    const overHostBound = 'a'.repeat(MAX_REQUEST_BODY_BYTES + 4096);
+    let parsed: { code: string } | undefined;
+    let threw: unknown;
+    try {
+      const response = await fetch(`${host.url}/api/rooms/${roomId}/reply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body: overHostBound }),
+      });
+      expect(response.status).toBe(413);
+      parsed = (await response.json()) as { code: string };
+    } catch (err: unknown) {
+      threw = err;
+    }
+    // No socket reset: the request resolved AND the JSON body parsed cleanly.
+    expect(threw).toBeUndefined();
+    expect(parsed?.code).toBe('BODY_TOO_LARGE');
+    // Nothing landed (the oversize body never reached a core append).
+    expect(await maxSeq()).toBe(before);
+  });
+});
+
+// --- QA hardening (Story 9.7 qa stage) — the add_participant GATE over REAL HTTP. The
+// dev-shipped integration coverage drives the reply body-parse path; add_participant is the
+// OTHER body-carrying write and its participant gate / NO_OPERATOR gate are only exercised at
+// the unit layer (handleApiRequest with an object body). These prove the gate over the whole
+// real node:http body-parse → core path: a watching host → 403 NO_OPERATOR; a known operator
+// who has NOT yet posted → 403 NOT_A_MEMBER (nothing appended); AFTER the operator replies
+// (grant-on-act participant) → the target is actually added (real read-back). Rule 3. ---
+describe('Story 9.7 qa — add_participant gate over real HTTP (NO_OPERATOR / NOT_A_MEMBER / granted-after-reply)', () => {
+  async function seedActiveRoom(): Promise<string> {
+    await register(dataAccess!, { handle: 'alice', currentFocus: 'wiring' });
+    await register(dataAccess!, { handle: 'ops', currentFocus: 'watching' });
+    await register(dataAccess!, { handle: 'cleo', currentFocus: 'reviewing' });
+    await announceProject(dataAccess!, 'alice', {
+      title: 'Calling Interface',
+      description: 'How agents dial in.',
+    });
+    const room = await postAnnouncement(dataAccess!, 'alice', {
+      projectId: 'calling-interface',
+      subject: 'Need a decision',
+      body: 'announcement body',
+    });
+    await reply(dataAccess!, 'alice', {
+      roomId: room.roomId,
+      body: 'starting',
+    });
+    return room.roomId;
+  }
+
+  async function maxSeq(): Promise<number> {
+    const events = await dataAccess!.eventsSince(0);
+    return events.reduce((max, e) => Math.max(max, e.seq), 0);
+  }
+
+  it('a WATCHING host (no operator) add_participant → 403 NO_OPERATOR, nothing appended', async () => {
+    const roomId = await seedActiveRoom();
+    host = await startHost({ dataAccess: dataAccess!, webDist: dir });
+    const before = await maxSeq();
+    const response = await fetch(
+      `${host.url}/api/rooms/${roomId}/participants`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ handle: 'cleo' }),
+      },
+    );
+    expect(response.status).toBe(403);
+    expect(((await response.json()) as { code: string }).code).toBe(
+      'NO_OPERATOR',
+    );
+    expect(await maxSeq()).toBe(before);
+  });
+
+  it('an operator add_participant BEFORE they are a participant → 403 NOT_A_MEMBER, nothing appended', async () => {
+    const roomId = await seedActiveRoom();
+    host = await startHost({
+      dataAccess: dataAccess!,
+      webDist: dir,
+      operatorHandle: 'ops',
+    });
+    const before = await maxSeq();
+    // ops has NOT replied → it is not a ROOM PARTICIPANT → the core gate rejects.
+    const response = await fetch(
+      `${host.url}/api/rooms/${roomId}/participants`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ handle: 'cleo' }),
+      },
+    );
+    expect(response.status).toBe(403);
+    expect(((await response.json()) as { code: string }).code).toBe(
+      'NOT_A_MEMBER',
+    );
+    expect(await maxSeq()).toBe(before);
+  });
+
+  it('AFTER the operator replies (now a participant) add_participant → 200, the target is actually added (real read-back)', async () => {
+    const roomId = await seedActiveRoom();
+    host = await startHost({
+      dataAccess: dataAccess!,
+      webDist: dir,
+      operatorHandle: 'ops',
+    });
+    // 1. ops replies → grant-on-act makes it a ROOM PARTICIPANT, so the gate now passes.
+    const replyRes = await fetch(`${host.url}/api/rooms/${roomId}/reply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body: 'pulling cleo in' }),
+    });
+    expect(replyRes.status).toBe(200);
+    // 2. Now ops pulls cleo in.
+    const addRes = await fetch(`${host.url}/api/rooms/${roomId}/participants`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ handle: 'cleo' }),
+    });
+    expect(addRes.status).toBe(200);
+    const addBody = (await addRes.json()) as { participants: string[] };
+    expect(addBody.participants).toContain('cleo');
+    expect(addBody.participants).toContain('ops');
+    // Real read-back: cleo is a participant of the room (a pulled-in peer with no message).
+    const roomRes = await fetch(`${host.url}/api/rooms/${roomId}`);
+    const roomBody = (await roomRes.json()) as {
+      participants: string[];
+      messages: { actor: string }[];
+    };
+    expect(roomBody.participants).toContain('cleo');
+    expect(roomBody.messages.some((m) => m.actor === 'cleo')).toBe(false);
   });
 });

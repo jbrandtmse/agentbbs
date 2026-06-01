@@ -43,3 +43,10 @@
 2026-06-01T13:27:20Z	Story 9.6	qa_complete	spawn_at=2026-06-01T15:30:00Z model=claude-opus-4-8 tests_added=6 suite=960-966 first_run_failures=0 clarifications=0 closing_sections_present=true
 2026-06-01T13:34:15Z	Story 9.6	cr_complete	spawn_at=2026-06-01T15:40:00Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=5 high=0 med=0 low=0 clarifications=0 closing_sections_present=true
 2026-06-01T13:36:45Z	Story 9.6	smoke_complete	method=browser+api result=pass iterations=1 defects_caught=0 evidence=real-chrome@7394:operator-peer-can-react;👍M1(seq5)->✓agreed-on-M1;👍M2(seq6-higher)->agreed-MOVES-to-M2(contract-endpoint-seq5->seq6);unreact-M2->reverts-M1;unreact-M1->GONE;FR21-highest-seq-live-👍-computed-not-stored model=claude-opus-4-8
+2026-06-01T13:36:50Z	Story 9.6	committed	sha=1c2abbc submodules=
+2026-06-01T13:39:47Z	Story 9.7	story_created	path=_bmad-output/implementation-artifacts/9-7-join-gate-composer-and-participate-as-peer.md integration_ac=Mode-A->B-end-to-end(join+reply-same-core-real-ledger)
+2026-06-01T14:00:36Z	Story 9.7	dev_complete	spawn_at=2026-06-01T16:20:00Z model=claude-opus-4-8 files=12 tests_added=35 suite=966-1001 clarifications=0 nfr_tripwires=0 adr_violations_surfaced=0 cycle_iteration=1 closing_sections_present=true note=rule8-join-reconciliation-surfaced
+2026-06-01T14:00:36Z	Story 9.7	adr_verifications_complete	result=none_required
+2026-06-01T14:06:37Z	Story 9.7	qa_complete	spawn_at=2026-06-01T16:50:00Z model=claude-opus-4-8 tests_added=6 suite=1001-1007 first_run_failures=0 clarifications=0 closing_sections_present=true
+2026-06-01T14:11:37Z	Story 9.7	cr_complete	spawn_at=2026-06-01T17:00:00Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=2 high=0 med=0 low=0 clarifications=0 closing_sections_present=true
+2026-06-01T14:12:50Z	Story 9.7	smoke_complete	method=browser+api result=pass iterations=1 defects_caught=0 evidence=real-chrome@7395:watching+[join-room-to-post]->click-join->✓you-joined+field->type+send->posture-FLIPS-you:@operator(peer)+message-in-thread;ledger-confirms-real-reply-event(seq8-kind-reply-actor-operator)+operator-now-participant-SAME-CORE-no-backdoor model=claude-opus-4-8

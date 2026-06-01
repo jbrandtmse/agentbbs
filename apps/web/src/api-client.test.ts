@@ -15,6 +15,9 @@ import {
   foldTreeDelta,
   INITIAL_LIVE_STATE,
   loadTreeModel,
+  postAddParticipant,
+  postJoin,
+  postReply,
   selectRoom,
 } from './api-client.js';
 
@@ -461,5 +464,92 @@ describe('buildRoomViewModel — computed agreed-mark seq (Story 9.6 AC2, FR21)'
     expect(model.operatorHandle).toBe('bob');
     const nullOp = buildRoomViewModel(roomResponse(), null, contractAt(6));
     expect(nullOp.operatorHandle).toBeNull();
+  });
+});
+
+// --- Story 9.7 — the join/reply/add_participant WRITE helpers. They POST to the right
+// host endpoint with the right method + JSON body, parse the envelope, and propagate a
+// non-2xx as a throw (the composer surfaces a calm error). A capturing fake fetch records
+// the request shape so we pin the path/method/body the host expects. ---
+describe('postJoin / postReply / postAddParticipant write helpers (Story 9.7)', () => {
+  interface Captured {
+    url: string;
+    method?: string;
+    headers?: HeadersInit;
+    body?: string;
+  }
+
+  /** A fetch fake that records the request and returns `responseBody` at `status`. */
+  function capturingFetch(
+    responseBody: unknown,
+    status = 200,
+  ): { fetch: typeof fetch; calls: Captured[] } {
+    const calls: Captured[] = [];
+    const fn = (async (url: string, init?: RequestInit) => {
+      calls.push({
+        url,
+        method: init?.method,
+        headers: init?.headers,
+        body: typeof init?.body === 'string' ? init.body : undefined,
+      });
+      return new Response(JSON.stringify(responseBody), { status });
+    }) as unknown as typeof fetch;
+    return { fetch: fn, calls };
+  }
+
+  it('postJoin POSTs to /api/projects/:id/join (no body) and returns { project }', async () => {
+    const { fetch: fake, calls } = capturingFetch({
+      project: { project_id: 'calling-interface', members: ['ops'] },
+    });
+    const res = await postJoin('calling-interface', '', fake);
+    expect(calls[0].url).toBe('/api/projects/calling-interface/join');
+    expect(calls[0].method).toBe('POST');
+    expect(calls[0].body).toBeUndefined();
+    expect(res.project.project_id).toBe('calling-interface');
+  });
+
+  it('postReply POSTs to /api/rooms/:id/reply with a JSON { body } and returns { room }', async () => {
+    const { fetch: fake, calls } = capturingFetch({
+      room: { room_id: 'need-a-reviewer', active: true },
+    });
+    const res = await postReply('need-a-reviewer', 'ship it', '', fake);
+    expect(calls[0].url).toBe('/api/rooms/need-a-reviewer/reply');
+    expect(calls[0].method).toBe('POST');
+    // The body is the JSON-serialized { body } payload.
+    expect(JSON.parse(calls[0].body!)).toEqual({ body: 'ship it' });
+    expect(res.room.room_id).toBe('need-a-reviewer');
+  });
+
+  it('postAddParticipant POSTs to /api/rooms/:id/participants with a JSON { handle }', async () => {
+    const { fetch: fake, calls } = capturingFetch({
+      room: { room_id: 'need-a-reviewer' },
+      participants: ['ops', 'cleo'],
+    });
+    const res = await postAddParticipant('need-a-reviewer', 'cleo', '', fake);
+    expect(calls[0].url).toBe('/api/rooms/need-a-reviewer/participants');
+    expect(calls[0].method).toBe('POST');
+    expect(JSON.parse(calls[0].body!)).toEqual({ handle: 'cleo' });
+    expect(res.participants).toContain('cleo');
+  });
+
+  it('a non-2xx (e.g. 413 BODY_TOO_LARGE) propagates as a throw the composer surfaces', async () => {
+    const { fetch: fake } = capturingFetch(
+      { code: 'BODY_TOO_LARGE', message: 'too big' },
+      413,
+    );
+    await expect(postReply('need-a-reviewer', 'x', '', fake)).rejects.toThrow(
+      /HTTP 413/,
+    );
+  });
+
+  it('a 403 (NO_OPERATOR / NOT_A_MEMBER) on join/add_participant propagates as a throw', async () => {
+    const join = capturingFetch({ code: 'NO_OPERATOR' }, 403);
+    await expect(postJoin('calling-interface', '', join.fetch)).rejects.toThrow(
+      /HTTP 403/,
+    );
+    const add = capturingFetch({ code: 'NOT_A_MEMBER' }, 403);
+    await expect(
+      postAddParticipant('need-a-reviewer', 'cleo', '', add.fetch),
+    ).rejects.toThrow(/HTTP 403/);
   });
 });

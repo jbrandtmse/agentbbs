@@ -87,3 +87,9 @@ export type { ReactionChipProps } from './room/ReactionChip.js';
 export { AgreedMark } from './room/AgreedMark.js';
 export type { AgreedMarkProps } from './room/AgreedMark.js';
 export { AGREED_POST_WASH } from './room/MessagePost.js';
+
+// Story 9.7 — the join-gate composer (two states: not-joined `[ join room to post ]` button →
+// joined `✓ you joined` + field + send). The bottom of the RoomView stack; the operator's
+// participate-as-peer write surface (Mode B, FR31). Prop-driven + presentation-only (NFR2).
+export { Composer } from './room/Composer.js';
+export type { ComposerProps } from './room/Composer.js';

@@ -19,26 +19,39 @@
 //      events, core's RoomMessage + the ratified MCP message wire stay seq-only — Story 9.5)
 //   GET /api/rooms/:roomId/contract     → { room_id, contract }
 //
-// WRITE endpoints (Story 9.6 — the write seam's FIRST use):
-//   POST /api/rooms/:roomId/messages/:seq/react   → { message_seq, reactions }
-//   POST /api/rooms/:roomId/messages/:seq/unreact → { message_seq, reactions }
+// WRITE endpoints:
+//   POST /api/rooms/:roomId/messages/:seq/react   → { message_seq, reactions } (9.6)
+//   POST /api/rooms/:roomId/messages/:seq/unreact → { message_seq, reactions } (9.6)
+//   POST /api/projects/:projectId/join            → { project } (9.7, no body)
+//   POST /api/rooms/:roomId/reply  (body { body })→ { room } (9.7, BODY-carrying)
+//   POST /api/rooms/:roomId/participants (body { handle }) → { room, participants } (9.7)
 // The dispatch table is the documented extension seam: a write route slots in as a new
 // `{ method:'POST', pattern, handler }` entry — the SAME route-table shape as a read,
 // distinguished only by `method`. The write handlers are THIN (mirroring the read ones):
 // they resolve the operator handle the host already holds (Story 9.4 `--as`/
-// AGENTBBS_OPERATOR) as the `actor`, call the core op, and map the `ReactResult` to the
-// snake_case wire. They are PATH-ONLY (the message `seq` is in the path) — no request
-// body is parsed, keeping the first write minimal (the reply/join writes that DO carry a
-// body land with Story 9.7, slotting in the same way + adding body parsing then).
+// AGENTBBS_OPERATOR) as the `actor`, call the core op, and map the result to the
+// snake_case wire. The 9.6 react/unreact writes are PATH-ONLY (the message `seq` is in
+// the path); the 9.7 reply/add_participant writes CARRY a JSON BODY (`{ body }` /
+// `{ handle }`) — `server.ts` parses + size-bounds the request body and passes the parsed
+// object in here (see {@link handleApiRequest}'s `body` param + the body-cap note below).
+//
+// 9.7 join semantics (Design reconciliation, project-rules Rule 8 — surfaced to review):
+// the board (Epics 3–5) has NO standalone "join THIS ROOM as a participant" op. Room
+// PARTICIPATION (what react/add_participant gate on) is GRANTED ONLY by ACTING — `reply`
+// (grant-on-act: a non-member's reply bundles a board.joined + room.replied, "acting =
+// joining", FR10) or being `add_participant`'d. `joinBoard` joins the SUB-BOARD
+// (membership, needed for posting) but is NOT room participation. So the join-gate composer
+// maps to: `[ join room to post ]` → `joinBoard(operator, projectId)` (immediate sub-board
+// membership → ✓ you joined); SEND a message → `reply(operator, { roomId, body })` (the
+// post AND the grant-on-act that makes the operator a ROOM PARTICIPANT, idempotently a
+// member). After the first reply the operator is a room participant, so 👍/add_participant
+// (which gate on participation) light up — EXACTLY the agent rule, no operator backdoor.
 //
 // WRITE error model: a write with NO operator handle (watching-only) cannot act → 403
 // NO_OPERATOR (a host-surface code; core is never reached because there is no actor). A
-// non-participant operator → core throws NOT_A_MEMBER → 403 (the chip surfaces the
-// "join to react" handoff, Story 9.7 — the host does NOT silently swallow it). An unknown
-// message `seq` → MESSAGE_NOT_FOUND → 404.
-//
-// The remaining writes (reply / add_participant / join) land with Story 9.7, slotting in
-// the same way.
+// non-participant operator add_participant → core throws NOT_A_MEMBER → 403. An over-cap
+// reply body → core throws BODY_TOO_LARGE → 413. An unknown room/project → ROOM_NOT_FOUND/
+// BOARD_NOT_FOUND → 404. An unknown message `seq` (react/unreact) → MESSAGE_NOT_FOUND → 404.
 //
 // ERROR MODEL: core throws BoardError(code, message); the host maps each closed code to
 // an HTTP status + the uniform `{ code, message }` body (the same closed contract the
@@ -49,14 +62,17 @@
 
 import {
   BoardError,
+  addParticipant,
   boardDirectory,
   findRoom,
+  joinBoard,
   listAnnouncements,
   listProjects,
   listRooms,
   needsYouRooms,
   react,
   readContract,
+  reply,
   roomMessages,
   roomParticipants,
   unreact,
@@ -113,7 +129,21 @@ export interface ApiContext {
   dataAccess: DataAccess;
   /** The resolved operator handle, or `null` (watching-only). */
   operatorHandle: string | null;
+  /**
+   * The parsed JSON request body for a body-carrying WRITE (Story 9.7 reply/add_participant),
+   * or `undefined` (a body-less GET or a PATH-only write). Read via {@link requireBodyString}.
+   */
+  body: RequestBody;
 }
+
+/**
+ * The parsed JSON request body for a body-carrying WRITE (Story 9.7 reply/add_participant).
+ * `server.ts` parses + size-bounds the raw request stream and passes the resulting object
+ * (or `undefined` for a body-less request) into {@link handleApiRequest}. An unparseable
+ * body surfaces as a 400 BEFORE reaching here (server-side); a missing-but-required field
+ * is the handler's own 400 (`requireBodyString`).
+ */
+export type RequestBody = Record<string, unknown> | undefined;
 
 /** A matched route handler: receives the captured path params + the request context. */
 type RouteHandler = (
@@ -196,10 +226,31 @@ function requireOperator(operatorHandle: string | null): string {
     throw new HostApiError(
       403,
       'NO_OPERATOR',
-      'No operator handle is configured (the UI is watching-only); start `agentbbs ui --as <handle>` to react.',
+      'No operator handle is configured (the UI is watching-only); start `agentbbs ui --as <handle>` to act.',
     );
   }
   return operatorHandle;
+}
+
+/**
+ * Read a required string field from the parsed JSON request body of a body-carrying WRITE
+ * (Story 9.7 reply `body` / add_participant `handle`). A missing body, a non-object body,
+ * or a non-string / empty field is a host-surface 400 (`BAD_REQUEST`) — the handler never
+ * reaches core with a malformed payload. The VALUE itself is NOT further validated here
+ * (core enforces its own invariants: `reply` applies the `BODY_TOO_LARGE` cap;
+ * `addParticipant` resolves the handle → `HANDLE_NOT_FOUND`). Distinct from the operator
+ * gate (`requireOperator`) — this is about the payload shape, not the actor.
+ */
+function requireBodyString(body: RequestBody, field: string): string {
+  const value = body === undefined ? undefined : body[field];
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new HostApiError(
+      400,
+      'BAD_REQUEST',
+      `Request body must carry a non-empty string "${field}".`,
+    );
+  }
+  return value;
 }
 
 /**
@@ -362,6 +413,61 @@ const ROUTES: Route[] = [
       };
     },
   },
+  {
+    // Story 9.7 — `[ join room to post ]` → join the SUB-BOARD (membership). NOT room
+    // participation (the board has no standalone "join this room" op — see the header's
+    // Design reconciliation); room participation is GRANTED by the SEND (reply) below.
+    // PATH-only (no body): the project id is in the path; the actor is the operator. An
+    // unknown board → BOARD_NOT_FOUND → 404. Idempotent (joinBoard is a no-op re-join).
+    method: 'POST',
+    pattern: '/api/projects/:projectId/join',
+    handler: async (params, { dataAccess, operatorHandle }) => {
+      const projectId = requireSlug(params.projectId, 'project_id');
+      const actor = requireOperator(operatorHandle);
+      const project = await joinBoard(dataAccess, actor, projectId);
+      return { status: 200, body: { project: projectToWire(project) } };
+    },
+  },
+  {
+    // Story 9.7 — SEND a message → core `reply` (the SAME op an agent uses; no operator
+    // backdoor). Grant-on-act: the operator's reply makes them a ROOM PARTICIPANT (and a
+    // sub-board member, idempotently), so after the first send 👍/add_participant light up.
+    // BODY-carrying: `{ body }` (the reply text). The core 256 KB cap applies → BODY_TOO_LARGE
+    // → 413. Unknown room → ROOM_NOT_FOUND → 404. Returns the (now-active) room.
+    method: 'POST',
+    pattern: '/api/rooms/:roomId/reply',
+    handler: async (params, { dataAccess, operatorHandle, body }) => {
+      const roomId = requireSlug(params.roomId, 'room_id');
+      const actor = requireOperator(operatorHandle);
+      const replyBody = requireBodyString(body, 'body');
+      const room = await reply(dataAccess, actor, { roomId, body: replyBody });
+      return { status: 200, body: { room: roomToWire(room) } };
+    },
+  },
+  {
+    // Story 9.7 — pull another peer into the room (`add_participant`). GATES on the operator
+    // already being a ROOM PARTICIPANT (core throws NOT_A_MEMBER → 403 otherwise) — so this
+    // lights up only AFTER the operator's first reply (or if they were add_participant'd).
+    // BODY-carrying: `{ handle }` (the target). Unknown target → HANDLE_NOT_FOUND → 404.
+    method: 'POST',
+    pattern: '/api/rooms/:roomId/participants',
+    handler: async (params, { dataAccess, operatorHandle, body }) => {
+      const roomId = requireSlug(params.roomId, 'room_id');
+      const actor = requireOperator(operatorHandle);
+      const handle = requireBodyString(body, 'handle');
+      const result = await addParticipant(dataAccess, actor, {
+        roomId,
+        handle,
+      });
+      return {
+        status: 200,
+        body: {
+          room: roomToWire(result.room),
+          participants: result.participants,
+        },
+      };
+    },
+  },
 ];
 
 /** Map a closed BoardError code to its HTTP status. */
@@ -419,6 +525,11 @@ function matchPattern(
  * @param dataAccess The persistence port handlers delegate to.
  * @param operatorHandle The resolved operator handle, or `null` (watching-only — the
  *   default). Personalizes `/api/me` + `/api/needs-you`; global read is unaffected.
+ * @param body The parsed JSON request body for a body-carrying WRITE (Story 9.7 reply/
+ *   add_participant), or `undefined` (a GET or a PATH-only write). `server.ts` parses +
+ *   size-bounds the raw request stream and passes the result here; an unparseable body is a
+ *   400 raised in `server.ts` BEFORE this is called. A required-but-missing field is the
+ *   handler's own 400 (`requireBodyString`).
  * @returns A {@link JsonResponse}, or `null` when `path` is not an API route.
  */
 export async function handleApiRequest(
@@ -426,12 +537,13 @@ export async function handleApiRequest(
   path: string,
   dataAccess: DataAccess,
   operatorHandle: string | null = null,
+  body: RequestBody = undefined,
 ): Promise<JsonResponse | null> {
   if (!path.startsWith('/api/') && path !== '/api') {
     return null;
   }
 
-  const ctx: ApiContext = { dataAccess, operatorHandle };
+  const ctx: ApiContext = { dataAccess, operatorHandle, body };
 
   for (const route of ROUTES) {
     if (route.method !== method) continue;

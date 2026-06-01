@@ -15,18 +15,23 @@
 // (in main.tsx). It NEVER imports @agentbbs/core / @agentbbs/data-access and never speaks
 // MCP or SQL (NFR2) — only the JSON API + SSE.
 //
-// NOTE: the `＋ join a project…` row exists + is clickable; the JOIN FLOW itself is Story
-// 9.7 — for 9.4 the click handler is a documented no-op stub (logs intent).
+// Story 9.7 adds the join-gate Composer (the room main-column composer seam): the operator
+// joins + posts as a peer over the SAME core ops agents use (joinBoard → reply), flipping the
+// posture `you: watching` → `you: @operator (peer)` on real participation. The sidebar
+// `＋ join a project…` row stays a documented hand-off (a board-picker affordance, distinct
+// from the in-room composer — see handleJoinProject).
 
 import { useEffect, useState } from 'react';
-import { NavTree, RoomView } from '@agentbbs/ui-shared';
+import { Composer, NavTree, RoomView } from '@agentbbs/ui-shared';
 
 import {
   foldTreeDelta,
   loadRoomViewModel,
   loadTreeModel,
   openEventStream,
+  postJoin,
   postReact,
+  postReply,
   postUnreact,
   selectRoom,
 } from './api-client.js';
@@ -58,6 +63,17 @@ export function App() {
   // or null when no room is selected. Loaded on selection from the host JSON API.
   const [room, setRoom] = useState<RoomViewModel | null>(null);
   const [roomError, setRoomError] = useState<string | null>(null);
+  // Whether a composer write (join or send) is in flight — disables the composer controls so
+  // the operator does not double-submit (a basic disabled state; the rich optimistic echo +
+  // failure-retry is Story 9.9).
+  const [composerPending, setComposerPending] = useState(false);
+  // Whether the operator has clicked `[ join room to post ]` for the open room (local intent).
+  // Design reconciliation (Story 9.7): the board has no standalone "join room" op — clicking
+  // join grants SUB-BOARD membership (joinBoard) and REVEALS the composer field; the FIRST send
+  // (reply) is the grant-on-act that makes the operator a true ROOM PARTICIPANT (posture → peer).
+  // So the composer shows its joined (field + send) state when the operator is ALREADY a peer OR
+  // has just clicked join. Reset whenever a different room is opened.
+  const [joinedIntent, setJoinedIntent] = useState(false);
 
   // Build the tree model once on mount (real ledger data over the JSON API).
   useEffect(() => {
@@ -92,6 +108,8 @@ export function App() {
     // (room + messages + participants + the operator posture) from the host JSON API.
     setRoom(null);
     setRoomError(null);
+    // A fresh room starts at its true participation state — clear any prior join intent.
+    setJoinedIntent(false);
     loadRoomViewModel(roomId)
       .then((built) => {
         setRoom(built);
@@ -104,8 +122,15 @@ export function App() {
   }
 
   function handleJoinProject(): void {
-    // Story 9.7 owns the join flow; for 9.4 this is a documented hand-off stub.
-    console.info('join a project… (wiring lands in Story 9.7)');
+    // DISPOSITION (Story 9.7): the room-level join-to-post (the join-gate Composer below) is
+    // this story's focus — the operator joins + posts as a peer from INSIDE an open room. The
+    // sidebar `＋ join a project…` action (a board-wide discovery affordance, distinct from the
+    // room composer) remains a documented hand-off: it would `postJoin(projectId)` for a chosen
+    // board, but that board-picker UX is out of 9.7's scope (the composer's onJoin already wires
+    // joinBoard for the open room's sub-board). Left as a logged stub.
+    console.info(
+      'join a project… (sidebar board-picker is a later affordance)',
+    );
   }
 
   // Story 9.6 — toggle a 👍 on a post. Decide react-vs-unreact from the operator's CURRENT
@@ -143,6 +168,61 @@ export function App() {
       });
   }
 
+  // Story 9.7 — `[ join room to post ]`: join the SUB-BOARD (membership) so the operator can
+  // post. Per the Design reconciliation (the board has no standalone "join room" op), room
+  // PARTICIPATION is established by the first SEND (reply, grant-on-act) — joinBoard here is
+  // the immediate membership + the `✓ you joined` step. After joining, refetch the room so the
+  // composer reveals the field; the posture flips to peer once the operator SENDS.
+  function handleJoinRoom(): void {
+    if (room === null) return;
+    const roomId = room.roomId;
+    const projectId = room.projectId;
+    // Reveal the composer field immediately (the join-then-post flow): the operator can now
+    // type their first post, whose SEND (reply) grants room participation. joinBoard runs in
+    // the background to grant sub-board membership.
+    setJoinedIntent(true);
+    setComposerPending(true);
+    postJoin(projectId)
+      .then(() => loadRoomViewModel(roomId))
+      .then((rebuilt) => {
+        setRoom((prev) =>
+          prev !== null && prev.roomId === roomId ? rebuilt : prev,
+        );
+      })
+      .catch((err: unknown) => {
+        // Join failed — drop back to the gate (no half-joined state, per EXPERIENCE.md).
+        setJoinedIntent(false);
+        setRoomError(
+          err instanceof Error ? err.message : 'Could not join the room.',
+        );
+      })
+      .finally(() => setComposerPending(false));
+  }
+
+  // Story 9.7 — SEND a message as a peer over the SAME core `reply` agents use (no operator
+  // backdoor). Grant-on-act makes the operator a ROOM PARTICIPANT, so after the refetch the
+  // posture flips `you: watching` → `you: @operator (peer)` and the 👍/add_participant
+  // affordances enable. Basic refetch (optimistic echo is Story 9.9).
+  function handleSendMessage(body: string): void {
+    if (room === null) return;
+    const roomId = room.roomId;
+    setComposerPending(true);
+    postReply(roomId, body)
+      .then(() => loadRoomViewModel(roomId))
+      .then((rebuilt) => {
+        setRoom((prev) =>
+          prev !== null && prev.roomId === roomId ? rebuilt : prev,
+        );
+      })
+      .catch((err: unknown) => {
+        // 413 BODY_TOO_LARGE / 403 NO_OPERATOR / transient — surface a calm error (9.10 voice).
+        setRoomError(
+          err instanceof Error ? err.message : 'Could not post the message.',
+        );
+      })
+      .finally(() => setComposerPending(false));
+  }
+
   return (
     <div style={shellStyle} data-testid="web-shell">
       {model !== null && (
@@ -168,7 +248,24 @@ export function App() {
           room === null &&
           roomError === null && <p data-testid="room-loading">Opening room…</p>}
         {room !== null && (
-          <RoomView room={room} onToggleReaction={handleToggleReaction} />
+          <RoomView
+            room={room}
+            onToggleReaction={handleToggleReaction}
+            composerSlot={
+              <Composer
+                // The composer shows its JOINED (field + send) state when the operator is a true
+                // ROOM PARTICIPANT (posture `peer`) OR has just clicked `[ join room to post ]`
+                // (local intent) — the join-then-post flow (Story 9.7 reconciliation: clicking
+                // join reveals the field so the operator can type their first post; that SEND is
+                // the grant-on-act that establishes participation). A watching operator who has
+                // not clicked join sees the `[ join room to post ]` gate.
+                joined={room.operatorPosture.kind === 'peer' || joinedIntent}
+                pending={composerPending}
+                onJoin={handleJoinRoom}
+                onSend={handleSendMessage}
+              />
+            }
+          />
         )}
       </main>
     </div>

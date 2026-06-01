@@ -472,6 +472,28 @@ async function postJson<T>(
 }
 
 /**
+ * POST a typed JSON write CARRYING a body to `path` (Story 9.7 reply/add_participant). Sends
+ * `Content-Type: application/json` + the serialized `body`; throws on a non-2xx (the composer
+ * surfaces a calm error — e.g. 413 BODY_TOO_LARGE, 403 NOT_A_MEMBER/NO_OPERATOR, 404).
+ */
+async function postJsonBody<T>(
+  path: string,
+  body: Record<string, unknown>,
+  baseUrl: string,
+  fetchImpl: typeof fetch,
+): Promise<T> {
+  const response = await fetchImpl(`${baseUrl}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(`POST ${path} failed: HTTP ${response.status}`);
+  }
+  return (await response.json()) as T;
+}
+
+/**
  * Place a 👍 on a message (`POST /api/rooms/:id/messages/:seq/react`, Story 9.6). PATH-ONLY
  * (no body); the host resolves the operator handle as the actor. Returns the message seq + its
  * live reactors after. Throws on a non-2xx (e.g. 403 NOT_A_MEMBER for a non-participant — the
@@ -499,6 +521,82 @@ export async function postUnreact(
 ): Promise<ReactResponse> {
   return postJson<ReactResponse>(
     `/api/rooms/${encodeURIComponent(roomId)}/messages/${seq}/unreact`,
+    baseUrl,
+    fetchImpl,
+  );
+}
+
+/** The `POST /api/projects/:id/join` envelope (Story 9.7) — the joined sub-board. */
+export interface JoinResponse {
+  project: ProjectWire;
+}
+
+/** The `POST /api/rooms/:id/reply` envelope (Story 9.7) — the now-active room after the post. */
+export interface ReplyResponse {
+  room: RoomWire;
+}
+
+/** The `POST /api/rooms/:id/participants` envelope (Story 9.7) — the room + participants after. */
+export interface AddParticipantResponse {
+  room: RoomWire;
+  participants: string[];
+}
+
+/**
+ * Join the operator to a SUB-BOARD (`POST /api/projects/:id/join`, Story 9.7). This is the
+ * `[ join room to post ]` handoff: the board has no standalone "join this room" op (Design
+ * reconciliation) — `joinBoard` grants sub-board membership (the immediate `✓ you joined`);
+ * full ROOM PARTICIPATION (enabling 👍/add_participant) is established by the first SEND
+ * (`postReply` below, grant-on-act). Idempotent. Throws on a non-2xx (403 NO_OPERATOR, 404).
+ */
+export async function postJoin(
+  projectId: string,
+  baseUrl = '',
+  fetchImpl: typeof fetch = fetch,
+): Promise<JoinResponse> {
+  return postJson<JoinResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/join`,
+    baseUrl,
+    fetchImpl,
+  );
+}
+
+/**
+ * Post a message to a room as the operator (`POST /api/rooms/:id/reply`, Story 9.7). The SAME
+ * core `reply` the MCP clients use (no operator backdoor): grant-on-act makes the operator a
+ * ROOM PARTICIPANT (and a sub-board member, idempotently), so after the first send the posture
+ * flips to peer + 👍/add_participant light up. Body-carrying (`{ body }`). Throws on a non-2xx
+ * (413 BODY_TOO_LARGE, 403 NO_OPERATOR, 404 ROOM_NOT_FOUND).
+ */
+export async function postReply(
+  roomId: string,
+  body: string,
+  baseUrl = '',
+  fetchImpl: typeof fetch = fetch,
+): Promise<ReplyResponse> {
+  return postJsonBody<ReplyResponse>(
+    `/api/rooms/${encodeURIComponent(roomId)}/reply`,
+    { body },
+    baseUrl,
+    fetchImpl,
+  );
+}
+
+/**
+ * Pull another peer into the room as the operator (`POST /api/rooms/:id/participants`, Story
+ * 9.7). Gated on the operator already being a room participant (403 NOT_A_MEMBER otherwise —
+ * lights up only after the operator's first reply). Body-carrying (`{ handle }`). Throws on a
+ * non-2xx (403, 404 HANDLE_NOT_FOUND).
+ */
+export async function postAddParticipant(
+  roomId: string,
+  handle: string,
+  baseUrl = '',
+  fetchImpl: typeof fetch = fetch,
+): Promise<AddParticipantResponse> {
+  return postJsonBody<AddParticipantResponse>(
+    `/api/rooms/${encodeURIComponent(roomId)}/participants`,
+    { handle },
     baseUrl,
     fetchImpl,
   );

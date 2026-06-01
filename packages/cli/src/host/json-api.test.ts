@@ -10,6 +10,7 @@ import {
   addParticipant,
   announceProject,
   BOARD_ERROR_CODES,
+  MAX_BODY_BYTES,
   postAnnouncement,
   register,
   reply,
@@ -688,5 +689,355 @@ describe('handleApiRequest — agreed contract MOVES/REVERTS/DISAPPEARS with liv
     await unreact(roomId, m2, 'alice');
     await unreact(roomId, m1, 'alice');
     expect(await agreedSeq(roomId)).toBeNull();
+  });
+});
+
+// --- Story 9.7: the join + reply + add_participant WRITE endpoints — the UI write path
+// (Rule 3, real in-memory ledger). The operator acts over the SAME core ops agents use
+// (joinBoard / reply / addParticipant), with the actor = the operator handle:
+//   POST /api/projects/:id/join        → joinBoard (sub-board membership; the ✓ you joined)
+//   POST /api/rooms/:id/reply { body } → reply (the post AND grant-on-act room participation)
+//   POST /api/rooms/:id/participants { handle } → addParticipant (gated on operator being a
+//                                                  participant)
+// BODY-carrying writes pass the parsed JSON body as handleApiRequest's 5th arg (server.ts
+// parses + size-bounds the real stream — covered in host.integration.test.ts). The Design
+// reconciliation (project-rules Rule 8): the board has NO standalone "join room as
+// participant" op — joinBoard is sub-board membership; the operator becomes a ROOM
+// PARTICIPANT only by ACTING (reply), exactly the agent rule. ---
+describe('handleApiRequest — join/reply/add_participant write endpoints (Story 9.7)', () => {
+  /** The current MAX(seq) in the ledger — to assert nothing was appended on a rejection. */
+  async function maxSeq(): Promise<number> {
+    const events = await dataAccess.eventsSince(0);
+    return events.reduce((max, e) => Math.max(max, e.seq), 0);
+  }
+
+  /** Seed an active room (alice announced + replied) and return its id. */
+  async function seedRoom(): Promise<string> {
+    const room = await postAnnouncement(dataAccess, 'alice', {
+      projectId: 'calling-interface',
+      subject: 'Need a reviewer',
+      body: 'announcement body',
+    });
+    await reply(dataAccess, 'alice', { roomId: room.roomId, body: 'starting' });
+    return room.roomId;
+  }
+
+  it('POST /api/projects/:id/join → 200, the operator becomes a SUB-BOARD member (not yet a room participant)', async () => {
+    await register(dataAccess, { handle: 'ops', currentFocus: 'watching' });
+    const res = await handleApiRequest(
+      'POST',
+      '/api/projects/calling-interface/join',
+      dataAccess,
+      'ops',
+    );
+    expect(res?.status).toBe(200);
+    const body = res?.body as {
+      project: { project_id: string; members: string[] };
+    };
+    expect(body.project.project_id).toBe('calling-interface');
+    expect(body.project.members).toContain('ops');
+
+    // joinBoard is sub-board membership — it is NOT room participation (no room to be in yet).
+    const members = await handleApiRequest(
+      'GET',
+      '/api/projects/calling-interface/members',
+      dataAccess,
+    );
+    expect(
+      (members?.body as { members: { handle: string }[] }).members.map(
+        (m) => m.handle,
+      ),
+    ).toContain('ops');
+  });
+
+  it('POST /api/projects/:id/join is idempotent (re-join a board the operator is already in → 200, no extra event)', async () => {
+    await register(dataAccess, { handle: 'ops', currentFocus: 'watching' });
+    await handleApiRequest(
+      'POST',
+      '/api/projects/calling-interface/join',
+      dataAccess,
+      'ops',
+    );
+    const after = await maxSeq();
+    const res = await handleApiRequest(
+      'POST',
+      '/api/projects/calling-interface/join',
+      dataAccess,
+      'ops',
+    );
+    expect(res?.status).toBe(200);
+    // Idempotent re-join appends nothing (joinBoard's no-op re-join).
+    expect(await maxSeq()).toBe(after);
+  });
+
+  it('POST /api/projects/:id/join an unknown board → 404 BOARD_NOT_FOUND', async () => {
+    await register(dataAccess, { handle: 'ops', currentFocus: 'watching' });
+    const res = await handleApiRequest(
+      'POST',
+      '/api/projects/no-such-board/join',
+      dataAccess,
+      'ops',
+    );
+    expect(res?.status).toBe(404);
+    expect((res?.body as { code: string }).code).toBe('BOARD_NOT_FOUND');
+  });
+
+  it('POST /api/projects/:id/join with NO operator (watching-only) → 403 NO_OPERATOR, nothing appended', async () => {
+    const before = await maxSeq();
+    const res = await handleApiRequest(
+      'POST',
+      '/api/projects/calling-interface/join',
+      dataAccess,
+    );
+    expect(res?.status).toBe(403);
+    expect((res?.body as { code: string }).code).toBe('NO_OPERATOR');
+    expect(await maxSeq()).toBe(before);
+  });
+
+  it('POST /api/rooms/:id/reply { body } → 200 + the operator becomes a ROOM PARTICIPANT (grant-on-act) and a member', async () => {
+    await register(dataAccess, { handle: 'ops', currentFocus: 'watching' });
+    const roomId = await seedRoom();
+    // ops has NOT joined or posted — it is watching. The reply is the act that joins.
+    const res = await handleApiRequest(
+      'POST',
+      `/api/rooms/${roomId}/reply`,
+      dataAccess,
+      'ops',
+      { body: 'I think we should ship.' },
+    );
+    expect(res?.status).toBe(200);
+    const body = res?.body as { room: { room_id: string; active: boolean } };
+    expect(body.room.room_id).toBe(roomId);
+    expect(body.room.active).toBe(true);
+
+    // Grant-on-act: ops is now a ROOM PARTICIPANT (read back via /api/rooms/:id), and a
+    // sub-board member (read back via /members) — exactly the agent "acting = joining" rule.
+    const roomRes = await handleApiRequest(
+      'GET',
+      `/api/rooms/${roomId}`,
+      dataAccess,
+    );
+    const roomBody = roomRes?.body as {
+      participants: string[];
+      messages: { actor: string; body: string }[];
+    };
+    expect(roomBody.participants).toContain('ops');
+    // The operator's posted message appears in the thread authored by the operator handle.
+    expect(
+      roomBody.messages.some(
+        (m) => m.actor === 'ops' && m.body === 'I think we should ship.',
+      ),
+    ).toBe(true);
+
+    const members = await handleApiRequest(
+      'GET',
+      '/api/projects/calling-interface/members',
+      dataAccess,
+    );
+    expect(
+      (members?.body as { members: { handle: string }[] }).members.map(
+        (m) => m.handle,
+      ),
+    ).toContain('ops');
+  });
+
+  it('POST /api/rooms/:id/reply over the body cap → 413 BODY_TOO_LARGE (the core cap, nothing appended)', async () => {
+    await register(dataAccess, { handle: 'ops', currentFocus: 'watching' });
+    const roomId = await seedRoom();
+    const before = await maxSeq();
+    // One byte over the 256 KB core cap.
+    const tooBig = 'x'.repeat(MAX_BODY_BYTES + 1);
+    const res = await handleApiRequest(
+      'POST',
+      `/api/rooms/${roomId}/reply`,
+      dataAccess,
+      'ops',
+      { body: tooBig },
+    );
+    expect(res?.status).toBe(413);
+    expect((res?.body as { code: string }).code).toBe('BODY_TOO_LARGE');
+    expect(await maxSeq()).toBe(before);
+  });
+
+  it('POST /api/rooms/:id/reply to an unknown room → 404 ROOM_NOT_FOUND', async () => {
+    await register(dataAccess, { handle: 'ops', currentFocus: 'watching' });
+    const res = await handleApiRequest(
+      'POST',
+      '/api/rooms/no-such-room/reply',
+      dataAccess,
+      'ops',
+      { body: 'hello' },
+    );
+    expect(res?.status).toBe(404);
+    expect((res?.body as { code: string }).code).toBe('ROOM_NOT_FOUND');
+  });
+
+  it('POST /api/rooms/:id/reply with NO operator (watching-only) → 403 NO_OPERATOR, nothing appended', async () => {
+    const roomId = await seedRoom();
+    const before = await maxSeq();
+    const res = await handleApiRequest(
+      'POST',
+      `/api/rooms/${roomId}/reply`,
+      dataAccess,
+      null,
+      { body: 'hello' },
+    );
+    expect(res?.status).toBe(403);
+    expect((res?.body as { code: string }).code).toBe('NO_OPERATOR');
+    expect(await maxSeq()).toBe(before);
+  });
+
+  it('POST /api/rooms/:id/reply with a missing/empty body field → 400 BAD_REQUEST, nothing appended', async () => {
+    await register(dataAccess, { handle: 'ops', currentFocus: 'watching' });
+    const roomId = await seedRoom();
+    const before = await maxSeq();
+    // Missing field entirely.
+    const missing = await handleApiRequest(
+      'POST',
+      `/api/rooms/${roomId}/reply`,
+      dataAccess,
+      'ops',
+      {},
+    );
+    expect(missing?.status).toBe(400);
+    expect((missing?.body as { code: string }).code).toBe('BAD_REQUEST');
+    // Empty string body.
+    const empty = await handleApiRequest(
+      'POST',
+      `/api/rooms/${roomId}/reply`,
+      dataAccess,
+      'ops',
+      { body: '' },
+    );
+    expect(empty?.status).toBe(400);
+    expect((empty?.body as { code: string }).code).toBe('BAD_REQUEST');
+    expect(await maxSeq()).toBe(before);
+  });
+
+  it('POST /api/rooms/:id/participants { handle } (by a room participant) → 200, target added', async () => {
+    await register(dataAccess, { handle: 'ops', currentFocus: 'watching' });
+    await register(dataAccess, { handle: 'cleo', currentFocus: 'reviewing' });
+    const roomId = await seedRoom();
+    // ops first REPLIES → becomes a room participant (grant-on-act), so it can add_participant.
+    await handleApiRequest(
+      'POST',
+      `/api/rooms/${roomId}/reply`,
+      dataAccess,
+      'ops',
+      { body: 'on it' },
+    );
+    const res = await handleApiRequest(
+      'POST',
+      `/api/rooms/${roomId}/participants`,
+      dataAccess,
+      'ops',
+      { handle: 'cleo' },
+    );
+    expect(res?.status).toBe(200);
+    const body = res?.body as {
+      room: { room_id: string };
+      participants: string[];
+    };
+    expect(body.room.room_id).toBe(roomId);
+    expect(body.participants).toContain('cleo');
+    expect(body.participants).toContain('ops');
+  });
+
+  it('POST /api/rooms/:id/participants by a NON-participant operator → 403 NOT_A_MEMBER, nothing appended', async () => {
+    await register(dataAccess, { handle: 'ops', currentFocus: 'watching' });
+    await register(dataAccess, { handle: 'cleo', currentFocus: 'reviewing' });
+    const roomId = await seedRoom();
+    const before = await maxSeq();
+    // ops has NOT replied/joined the room → it is not a participant → cannot add a peer.
+    const res = await handleApiRequest(
+      'POST',
+      `/api/rooms/${roomId}/participants`,
+      dataAccess,
+      'ops',
+      { handle: 'cleo' },
+    );
+    expect(res?.status).toBe(403);
+    expect((res?.body as { code: string }).code).toBe('NOT_A_MEMBER');
+    expect(await maxSeq()).toBe(before);
+  });
+
+  it('POST /api/rooms/:id/participants with an unknown target handle → 404 HANDLE_NOT_FOUND', async () => {
+    await register(dataAccess, { handle: 'ops', currentFocus: 'watching' });
+    const roomId = await seedRoom();
+    await handleApiRequest(
+      'POST',
+      `/api/rooms/${roomId}/reply`,
+      dataAccess,
+      'ops',
+      { body: 'on it' },
+    );
+    const res = await handleApiRequest(
+      'POST',
+      `/api/rooms/${roomId}/participants`,
+      dataAccess,
+      'ops',
+      { handle: 'ghost' },
+    );
+    expect(res?.status).toBe(404);
+    expect((res?.body as { code: string }).code).toBe('HANDLE_NOT_FOUND');
+  });
+
+  it('POST /api/rooms/:id/participants with a missing handle field → 400 BAD_REQUEST', async () => {
+    await register(dataAccess, { handle: 'ops', currentFocus: 'watching' });
+    const roomId = await seedRoom();
+    await handleApiRequest(
+      'POST',
+      `/api/rooms/${roomId}/reply`,
+      dataAccess,
+      'ops',
+      { body: 'on it' },
+    );
+    const res = await handleApiRequest(
+      'POST',
+      `/api/rooms/${roomId}/participants`,
+      dataAccess,
+      'ops',
+      {},
+    );
+    expect(res?.status).toBe(400);
+    expect((res?.body as { code: string }).code).toBe('BAD_REQUEST');
+  });
+
+  it('SAME-CORE proof: the operator reply is a real room.replied event (the same type an agent produces)', async () => {
+    await register(dataAccess, { handle: 'ops', currentFocus: 'watching' });
+    const roomId = await seedRoom();
+    const before = await dataAccess.eventsSince(0);
+    const beforeReplied = before.filter(
+      (e) => e.type === 'room.replied',
+    ).length;
+    await handleApiRequest(
+      'POST',
+      `/api/rooms/${roomId}/reply`,
+      dataAccess,
+      'ops',
+      { body: 'operator peer post' },
+    );
+    const after = await dataAccess.eventsSince(0);
+    const opsReplied = after.filter(
+      (e) => e.type === 'room.replied' && e.actor === 'ops',
+    );
+    // The operator's post is a NORMAL room.replied (same event type any agent reply produces)
+    // — proving the operator is a peer over the SAME core, not a special operator-only path.
+    expect(opsReplied).toHaveLength(1);
+    expect(after.filter((e) => e.type === 'room.replied').length).toBe(
+      beforeReplied + 1,
+    );
+  });
+
+  it('a wrong method (GET) on a write route → 404 NOT_FOUND (method-scoped routing)', async () => {
+    const roomId = await seedRoom();
+    const res = await handleApiRequest(
+      'GET',
+      `/api/rooms/${roomId}/reply`,
+      dataAccess,
+      'alice',
+    );
+    expect(res?.status).toBe(404);
+    expect((res?.body as { code: string }).code).toBe('NOT_FOUND');
   });
 });
