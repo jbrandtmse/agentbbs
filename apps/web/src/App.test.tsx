@@ -3090,3 +3090,172 @@ describe('App shell — join a project: filter + calm-UX hardening (Story 9.12 Q
     ).not.toBeNull();
   });
 });
+
+// --- Story 9.13: SET MY FOCUS wiring in the apps/web shell (Task 4 — Rule 3 real-runtime DOM
+// evidence). A REGISTERED operator sees the affordance ENABLED on the `@operator (you)` row; setting
+// focus POSTs /api/me/focus (the SAME core update_focus an agent uses) and reflects the new focus LIVE
+// (re-read /api/me). A watching-only host (handle null) OR an UNREGISTERED operator (registered:false)
+// sees the affordance DISABLED inline (no POST, no crash). ---
+describe('App shell — set my focus (Story 9.13)', () => {
+  /** Every board WRITE the shell issues (url + parsed body). */
+  let writes: { url: string; body: unknown }[];
+  /** Test-configurable /api/me: handle (null = watching-only), focus, registered. */
+  let me: { handle: string | null; focus: string | null; registered: boolean };
+  /** The focus the next GET /api/me reflects (the "live re-read" after a successful set). */
+  let nextFocusAfterSet: string | null;
+
+  beforeEach(() => {
+    writes = [];
+    me = { handle: 'ops', focus: 'initiating', registered: true };
+    nextFocusAfterSet = null;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const method = init?.method ?? 'GET';
+        if (method === 'POST') {
+          const parsed =
+            typeof init?.body === 'string' && init.body.length > 0
+              ? (JSON.parse(init.body) as { focus?: string })
+              : undefined;
+          writes.push({ url, body: parsed });
+          if (url === '/api/me/focus') {
+            // Disabled-state guard cases never reach here; an enabled set returns the new focus AND
+            // arranges the next GET /api/me to reflect it (the live re-read the shell performs).
+            const focus = parsed?.focus ?? '';
+            nextFocusAfterSet = focus;
+            return new Response(JSON.stringify({ handle: me.handle, focus }), {
+              status: 200,
+            });
+          }
+          return new Response('nope', { status: 404 });
+        }
+        if (url === '/api/me') {
+          return new Response(
+            JSON.stringify({
+              handle: me.handle,
+              focus: nextFocusAfterSet ?? me.focus,
+              registered: me.registered,
+            }),
+            { status: 200 },
+          );
+        }
+        if (url === '/api/needs-you') {
+          return new Response(JSON.stringify({ rooms: [] }), { status: 200 });
+        }
+        if (url === '/api/directory') {
+          return new Response(JSON.stringify({ projects: [] }), {
+            status: 200,
+          });
+        }
+        if (/^\/api\/projects\/[^/]+\/rooms$/.test(url)) {
+          return new Response(JSON.stringify({ rooms: [] }), { status: 200 });
+        }
+        if (/^\/api\/projects\/[^/]+\/announcements$/.test(url)) {
+          return new Response(JSON.stringify({ announcements: [] }), {
+            status: 200,
+          });
+        }
+        return new Response('nope', { status: 404 });
+      }),
+    );
+    vi.stubGlobal(
+      'EventSource',
+      FakeEventSource as unknown as typeof EventSource,
+    );
+  });
+
+  async function mountBoard(): Promise<void> {
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await flush();
+  }
+
+  it('a REGISTERED operator: the affordance is ENABLED + shows the current focus; setting it POSTs and reflects live', async () => {
+    me = { handle: 'ops', focus: 'initiating', registered: true };
+    await mountBoard();
+
+    // The affordance shows the current focus (resting) and offers [ edit ] (enabled, not disabled).
+    const affordance = container.querySelector(
+      '[data-testid="focus-affordance"]',
+    );
+    expect(affordance).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="focus-current"]')?.textContent,
+    ).toContain('initiating');
+    expect(
+      container.querySelector('[data-testid="focus-disabled-reason"]'),
+    ).toBeNull();
+
+    // Open the editor, type a new focus, submit.
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="focus-edit"]')
+        ?.click();
+    });
+    const field = container.querySelector<HTMLInputElement>(
+      '[data-testid="focus-field"]',
+    )!;
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    )?.set;
+    await act(async () => {
+      setter?.call(field, 'reviewing the retry budget');
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => {
+      container
+        .querySelector<HTMLFormElement>('[data-testid="focus-affordance"]')
+        ?.dispatchEvent(
+          new Event('submit', { bubbles: true, cancelable: true }),
+        );
+    });
+    await flush();
+
+    // It POSTed /api/me/focus with the trimmed focus (the SAME core op — no backdoor).
+    const focusWrite = writes.find((w) => w.url === '/api/me/focus');
+    expect(focusWrite).toBeDefined();
+    expect(focusWrite?.body).toEqual({ focus: 'reviewing the retry budget' });
+
+    // The new focus reflects LIVE on the row (re-read /api/me returned the new value).
+    expect(
+      container.querySelector('[data-testid="focus-current"]')?.textContent,
+    ).toContain('reviewing the retry budget');
+  });
+
+  it('a watching-only host (handle null): the affordance is DISABLED inline — no edit, no POST, no crash', async () => {
+    me = { handle: null, focus: null, registered: false };
+    await mountBoard();
+
+    // The affordance is present but inert: no [ edit ] control, the terse watching-only reason shows.
+    expect(
+      container.querySelector('[data-testid="focus-affordance"]'),
+    ).not.toBeNull();
+    expect(container.querySelector('[data-testid="focus-edit"]')).toBeNull();
+    const reason = container.querySelector(
+      '[data-testid="focus-disabled-reason"]',
+    );
+    expect(reason).not.toBeNull();
+    expect(reason?.textContent).toContain('watching-only');
+    // No focus write was issued (the gate is client-side primary).
+    expect(writes.some((w) => w.url === '/api/me/focus')).toBe(false);
+  });
+
+  it('an UNREGISTERED operator (registered:false): the affordance is DISABLED inline — no edit, no POST, no crash', async () => {
+    me = { handle: 'ghost', focus: null, registered: false };
+    await mountBoard();
+
+    expect(
+      container.querySelector('[data-testid="focus-affordance"]'),
+    ).not.toBeNull();
+    expect(container.querySelector('[data-testid="focus-edit"]')).toBeNull();
+    const reason = container.querySelector(
+      '[data-testid="focus-disabled-reason"]',
+    );
+    expect(reason).not.toBeNull();
+    expect(reason?.textContent).toContain('handle not registered');
+    expect(writes.some((w) => w.url === '/api/me/focus')).toBe(false);
+  });
+});

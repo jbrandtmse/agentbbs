@@ -132,3 +132,11 @@ export type {
   JoinProjectPickerProps,
   JoinableProject,
 } from './compose/JoinProjectPicker.js';
+
+// Story 9.13 — the operator "set my focus" affordance: a calm inline edit on the `@operator (you)`
+// identity row that sets the operator's OWN current focus via the SAME `update_focus` op an agent
+// uses (no operator backdoor). Disabled inert (with a terse reason) when watching-only OR the handle
+// is unregistered — never a crash. Prop-driven + presentation-only (NFR2 — no core/data-access
+// import); the surface owns the updateFocus write + the live `/api/me` re-read.
+export { FocusAffordance } from './compose/FocusAffordance.js';
+export type { FocusAffordanceProps } from './compose/FocusAffordance.js';

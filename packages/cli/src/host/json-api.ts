@@ -27,6 +27,9 @@
 //   POST /api/rooms/:roomId/participants (body { handle }) → { room, participants } (9.7)
 //   POST /api/projects (body { title, description }) → { project } (9.11, BODY-carrying)
 //   POST /api/projects/:projectId/announcements (body { subject, body }) → { room } (9.11)
+//   POST /api/me/focus (body { focus }) → { handle, focus } (9.13, BODY-carrying — the operator
+//     sets their OWN focus over the SAME core updateFocus an agent uses; GET /api/me additionally
+//     reflects the operator's host-layer `focus`/`registered` — like 9.5's `created_at`)
 // The dispatch table is the documented extension seam: a write route slots in as a new
 // `{ method:'POST', pattern, handler }` entry — the SAME route-table shape as a read,
 // distinguished only by `method`. The write handlers are THIN (mirroring the read ones):
@@ -67,6 +70,7 @@ import {
   addParticipant,
   announceProject,
   boardDirectory,
+  findIdentity,
   findRoom,
   joinBoard,
   listAnnouncements,
@@ -80,6 +84,7 @@ import {
   roomMessages,
   roomParticipants,
   unreact,
+  updateFocus,
 } from '@agentbbs/core';
 
 import {
@@ -267,10 +272,34 @@ const ROUTES: Route[] = [
   {
     method: 'GET',
     pattern: '/api/me',
-    handler: async (_params, { operatorHandle }) => {
+    handler: async (_params, { dataAccess, operatorHandle }) => {
       // The operator's "who am I": the resolved handle, or `null` (watching-only). Global
       // read works either way; this only personalizes `(you)` + the NEEDS YOU queue.
-      return { status: 200, body: { handle: operatorHandle } };
+      //
+      // Story 9.13 — HOST-LAYER additive fields `focus` + `registered` (the analogue of
+      // Story 9.5's `created_at`): fold the operator's identity from the ledger so the UI
+      // can surface the operator's OWN current focus on the `@operator (you)` row AND know
+      // whether the affordance should be enabled (a watching-only OR unregistered handle
+      // cannot set focus → disabled inline). The agent-facing MCP wire is UNTOUCHED (Rule 13);
+      // these are display/host-surface fields only. `handle === null` (watching-only) or a
+      // `findIdentity` miss (the configured `--as` handle was never registered) → both
+      // `focus: null, registered: false`.
+      if (operatorHandle === null) {
+        return {
+          status: 200,
+          body: { handle: null, focus: null, registered: false },
+        };
+      }
+      const events = await dataAccess.eventsSince(0);
+      const identity = findIdentity(events, operatorHandle);
+      return {
+        status: 200,
+        body: {
+          handle: operatorHandle,
+          focus: identity === undefined ? null : identity.currentFocus,
+          registered: identity !== undefined,
+        },
+      };
     },
   },
   {
@@ -511,6 +540,43 @@ const ROUTES: Route[] = [
         body: announcementBody,
       });
       return { status: 200, body: { room: roomToWire(room) } };
+    },
+  },
+  {
+    // Story 9.13 — SET MY FOCUS (operator INITIATE-surface parity). The operator sets their
+    // current focus over the SAME core `updateFocus` op an agent uses (no operator backdoor);
+    // a real `identity.focus_updated` lands in the ledger. BODY-carrying: `{ focus }`. A
+    // watching-only host → 403 NO_OPERATOR (requireOperator).
+    //
+    // UNREGISTERED-OPERATOR GUARD (no crash, AC1): `updateFocus` throws a PLAIN `Error` (NOT a
+    // BoardError) for a handle with no prior `identity.registered` (append-identity-event.ts:58),
+    // which would otherwise fall through to 500 INTERNAL_ERROR. So we DETECT the unregistered
+    // operator FIRST (fold via findIdentity over the real stream — the same fold `/api/me` uses)
+    // and return a calm host-surface 403 `OPERATOR_NOT_REGISTERED`, never a 500. This is a
+    // HOST-surface code (deliberately NOT a member of core's closed `BOARD_ERROR_CODES`; distinct
+    // from the core `NO_IDENTITY` BoardError, which is the MCP no-session condition) — it lives in
+    // the host's vocabulary like `NO_OPERATOR`. This is the DEFENSIVE backstop; the PRIMARY guard is
+    // the client proactively disabling the affordance (Task 3/4) when the operator is watching-only
+    // OR unregistered.
+    method: 'POST',
+    pattern: '/api/me/focus',
+    handler: async (_params, { dataAccess, operatorHandle, body }) => {
+      const actor = requireOperator(operatorHandle);
+      const focus = requireBodyString(body, 'focus');
+      // Guard existence BEFORE core so an unregistered handle is a calm 403, not a 500.
+      const events = await dataAccess.eventsSince(0);
+      if (findIdentity(events, actor) === undefined) {
+        throw new HostApiError(
+          403,
+          'OPERATOR_NOT_REGISTERED',
+          `Operator handle "${actor}" is not registered — register it (an agent op) before setting focus.`,
+        );
+      }
+      const identity = await updateFocus(dataAccess, actor, focus);
+      return {
+        status: 200,
+        body: { handle: identity.handle, focus: identity.currentFocus },
+      };
     },
   },
 ];

@@ -245,16 +245,38 @@ describe('handleApiRequest — error + routing model', () => {
 // the rooms the operator was EXPLICITLY add_participant-ed into (deterministic, never
 // time-based). snake_case wire. ---
 describe('handleApiRequest — operator identity + NEEDS YOU (Story 9.4)', () => {
-  it('GET /api/me returns { handle: null } when no operator is configured', async () => {
+  it('GET /api/me returns { handle: null, focus: null, registered: false } when no operator is configured', async () => {
     const res = await handleApiRequest('GET', '/api/me', dataAccess);
     expect(res?.status).toBe(200);
-    expect(res?.body).toEqual({ handle: null });
+    // Story 9.13 — host-layer additive fields: a watching-only host has no focus + is not registered.
+    expect(res?.body).toEqual({
+      handle: null,
+      focus: null,
+      registered: false,
+    });
   });
 
-  it('GET /api/me returns the resolved operator handle when configured', async () => {
+  it('GET /api/me returns the resolved operator handle when configured (Story 9.13: registered:false for an UNregistered handle)', async () => {
+    // 'ops' was never registered in this test's ledger → focus null, registered false (the
+    // affordance disables on this; it is NOT a crash).
     const res = await handleApiRequest('GET', '/api/me', dataAccess, 'ops');
     expect(res?.status).toBe(200);
-    expect(res?.body).toEqual({ handle: 'ops' });
+    expect(res?.body).toEqual({
+      handle: 'ops',
+      focus: null,
+      registered: false,
+    });
+  });
+
+  it('GET /api/me reflects a REGISTERED operator’s current focus + registered:true (Story 9.13, host-layer)', async () => {
+    await register(dataAccess, { handle: 'ops', currentFocus: 'wiring 9.13' });
+    const res = await handleApiRequest('GET', '/api/me', dataAccess, 'ops');
+    expect(res?.status).toBe(200);
+    expect(res?.body).toEqual({
+      handle: 'ops',
+      focus: 'wiring 9.13',
+      registered: true,
+    });
   });
 
   it('GET /api/needs-you returns a room the operator was add_participant-ed into (snake_case)', async () => {
@@ -1373,5 +1395,234 @@ describe('handleApiRequest — Story 9.11 qa: atomicity + gate-order (the load-b
     expect(
       after.some((e) => e.actor === 'ops' && e.type === 'announcement.posted'),
     ).toBe(false);
+  });
+});
+
+// --- Story 9.13: SET MY FOCUS write endpoint (Task 5, Rule 3 real in-memory ledger). POST
+// /api/me/focus → core `updateFocus` (the SAME op an agent uses): a REGISTERED operator's focus
+// update lands a real identity.focus_updated; a watching-only host → 403 NO_OPERATOR (nothing
+// appended); an UNREGISTERED operator handle → 403 OPERATOR_NOT_REGISTERED (the calm host backstop,
+// NEVER a 500 from the plain Error updateFocus throws — nothing appended); a missing `focus` field →
+// 400 BAD_REQUEST. The new error code is a HOST-surface code — NOT in core's closed set (Rule 13). ---
+describe('handleApiRequest — set-my-focus write endpoint (Story 9.13)', () => {
+  /** The current MAX(seq) in the ledger — to assert nothing was appended on a rejection. */
+  async function maxSeq(): Promise<number> {
+    const events = await dataAccess.eventsSince(0);
+    return events.reduce((m, e) => Math.max(m, e.seq), 0);
+  }
+
+  it('a REGISTERED operator POST /api/me/focus → 200 { handle, focus }, identity.focus_updated lands', async () => {
+    await register(dataAccess, { handle: 'ops', currentFocus: 'initiating' });
+    const before = await maxSeq();
+    const res = await handleApiRequest(
+      'POST',
+      '/api/me/focus',
+      dataAccess,
+      'ops',
+      { focus: 'reviewing the retry budget' },
+    );
+    expect(res?.status).toBe(200);
+    expect(res?.body).toEqual({
+      handle: 'ops',
+      focus: 'reviewing the retry budget',
+    });
+    // A real identity.focus_updated landed (the SAME op an agent uses — no operator backdoor).
+    const after = await dataAccess.eventsSince(0);
+    expect(after.reduce((m, e) => Math.max(m, e.seq), 0)).toBeGreaterThan(
+      before,
+    );
+    expect(
+      after.some(
+        (e) => e.actor === 'ops' && e.type === 'identity.focus_updated',
+      ),
+    ).toBe(true);
+  });
+
+  it('a watching-only host (no operator) → 403 NO_OPERATOR, NOTHING appended', async () => {
+    await register(dataAccess, { handle: 'ops', currentFocus: 'initiating' });
+    const before = await maxSeq();
+    const res = await handleApiRequest(
+      'POST',
+      '/api/me/focus',
+      dataAccess,
+      null,
+      { focus: 'cannot set' },
+    );
+    expect(res?.status).toBe(403);
+    expect((res?.body as { code: string }).code).toBe('NO_OPERATOR');
+    expect(await maxSeq()).toBe(before);
+  });
+
+  it('an UNREGISTERED operator handle → 403 OPERATOR_NOT_REGISTERED (calm, NOT 500), NOTHING appended', async () => {
+    // 'ghost' was never registered → updateFocus would throw a PLAIN Error; the host catches it
+    // BEFORE core and returns a calm 403 host-surface code, NEVER a 500 INTERNAL_ERROR.
+    const before = await maxSeq();
+    const res = await handleApiRequest(
+      'POST',
+      '/api/me/focus',
+      dataAccess,
+      'ghost',
+      { focus: 'who am I' },
+    );
+    expect(res?.status).toBe(403);
+    expect((res?.body as { code: string }).code).toBe(
+      'OPERATOR_NOT_REGISTERED',
+    );
+    expect(await maxSeq()).toBe(before);
+  });
+
+  it('a missing `focus` field → 400 BAD_REQUEST (the payload shape gate), NOTHING appended', async () => {
+    await register(dataAccess, { handle: 'ops', currentFocus: 'initiating' });
+    const before = await maxSeq();
+    const res = await handleApiRequest(
+      'POST',
+      '/api/me/focus',
+      dataAccess,
+      'ops',
+      {},
+    );
+    expect(res?.status).toBe(400);
+    expect((res?.body as { code: string }).code).toBe('BAD_REQUEST');
+    expect(await maxSeq()).toBe(before);
+  });
+
+  // Rule 13 drift-guard — the new host error code is a HOST-surface code only, deliberately NOT a
+  // member of core's closed BOARD_ERROR_CODES (the agent-facing contract). A future "tidy" that
+  // moves OPERATOR_NOT_REGISTERED into core (silently widening the agent contract) turns this RED.
+  it('Rule 13 — OPERATOR_NOT_REGISTERED is a HOST-surface code, NOT in core’s closed set', () => {
+    expect(BOARD_ERROR_CODES as readonly string[]).not.toContain(
+      'OPERATOR_NOT_REGISTERED',
+    );
+    // And the closed set is STILL exactly the ratified ten (no new core code in this story).
+    expect([...BOARD_ERROR_CODES].sort()).toEqual(
+      [
+        'BOARD_NOT_FOUND',
+        'BODY_TOO_LARGE',
+        'HANDLE_NOT_FOUND',
+        'HANDLE_TAKEN',
+        'LOGIN_UNKNOWN',
+        'MESSAGE_NOT_FOUND',
+        'NOT_A_MEMBER',
+        'NO_IDENTITY',
+        'PROJECT_EXISTS',
+        'ROOM_NOT_FOUND',
+      ].sort(),
+    );
+  });
+});
+
+// --- QA hardening (Story 9.13 qa stage) — the LOAD-BEARING semantics the dev's happy/gate cases
+// assert COARSELY or do not cover at all. Three things the naive tests miss:
+//   (1) THE THREE OPERATOR STATES ARE DISTINCT. The dev proves each of NO_OPERATOR (watching-only)
+//       and OPERATOR_NOT_REGISTERED (unregistered handle) in isolation; this pins them TOGETHER in
+//       one test so a regression that collapses them to the SAME code (or to a 500, or to the core
+//       NO_IDENTITY 401) fails here — the exact "neither 500s, and they are DIFFERENT codes" the AC1
+//       disabled-state mapping depends on. Three distinct outcomes, asserted side by side.
+//   (2) APPEND-ONLY + OVERWRITE-LATEST. The dev proves ONE focus update lands. The board is an
+//       append-only ledger and `/api/me` derives the CURRENT focus by FOLDING the stream — so setting
+//       focus TWICE must (a) leave BOTH identity.focus_updated events in the ledger (the append
+//       invariant — nothing is mutated/deleted) AND (b) reflect the LATEST value on /api/me (the
+//       projection's overwrite-latest). Asserting "exactly one event" would be WRONG; this asserts the
+//       DERIVED current value + the event COUNT growing.
+// Real in-memory ledger (Rule 3) via handleApiRequest. ---
+describe('handleApiRequest — Story 9.13 qa: distinct states + append-only/latest-wins (the load-bearing semantics)', () => {
+  /** All identity.focus_updated events by `actor`, in seq order (the append-only history). */
+  async function focusEventsBy(actor: string): Promise<number> {
+    const events = await dataAccess.eventsSince(0);
+    return events.filter(
+      (e) => e.type === 'identity.focus_updated' && e.actor === actor,
+    ).length;
+  }
+
+  // (1) THE THREE STATES ARE DISTINCT — registered settable / watching-only NO_OPERATOR /
+  // unregistered OPERATOR_NOT_REGISTERED. Pinned together so a collapse (same code, a 500, or the
+  // core NO_IDENTITY 401) is caught. The unregistered case must be a HOST 403, NOT core's NO_IDENTITY.
+  it('the three operator states map to THREE DISTINCT outcomes (settable 200 / NO_OPERATOR 403 / OPERATOR_NOT_REGISTERED 403) — none 500, none NO_IDENTITY', async () => {
+    await register(dataAccess, { handle: 'ops', currentFocus: 'initiating' });
+
+    // (state 1) REGISTERED operator → 200, focus settable.
+    const registered = await handleApiRequest(
+      'POST',
+      '/api/me/focus',
+      dataAccess,
+      'ops',
+      { focus: 'state one' },
+    );
+    expect(registered?.status).toBe(200);
+
+    // (state 2) WATCHING-ONLY host (no operator) → 403 NO_OPERATOR.
+    const watching = await handleApiRequest(
+      'POST',
+      '/api/me/focus',
+      dataAccess,
+      null,
+      { focus: 'state two' },
+    );
+    expect(watching?.status).toBe(403);
+    const watchingCode = (watching?.body as { code: string }).code;
+    expect(watchingCode).toBe('NO_OPERATOR');
+
+    // (state 3) HANDLE SET but UNREGISTERED → 403 OPERATOR_NOT_REGISTERED.
+    const unregistered = await handleApiRequest(
+      'POST',
+      '/api/me/focus',
+      dataAccess,
+      'ghost',
+      { focus: 'state three' },
+    );
+    expect(unregistered?.status).toBe(403);
+    const unregisteredCode = (unregistered?.body as { code: string }).code;
+    expect(unregisteredCode).toBe('OPERATOR_NOT_REGISTERED');
+
+    // DISTINCTNESS — states 2 and 3 are DIFFERENT codes (not collapsed to one).
+    expect(watchingCode).not.toBe(unregisteredCode);
+    // NEITHER 403 is a 500 (the calm-backstop guarantee — the plain Error never leaks).
+    expect(watching?.status).not.toBe(500);
+    expect(unregistered?.status).not.toBe(500);
+    // NEITHER is the CORE NO_IDENTITY BoardError (which maps to 401, the MCP no-session meaning).
+    expect(watchingCode).not.toBe('NO_IDENTITY');
+    expect(unregisteredCode).not.toBe('NO_IDENTITY');
+    expect(watching?.status).not.toBe(401);
+    expect(unregistered?.status).not.toBe(401);
+  });
+
+  // (2) APPEND-ONLY + OVERWRITE-LATEST — set focus TWICE; BOTH events remain in the append-only
+  // ledger, and /api/me reflects the LATEST. Asserting "one event" would be WRONG (the ledger never
+  // mutates) — the current focus is a FOLD, not a stored cell.
+  it('setting focus TWICE: BOTH identity.focus_updated events remain (append-only), /api/me reflects the LATEST (overwrite-latest fold)', async () => {
+    await register(dataAccess, { handle: 'ops', currentFocus: 'initiating' });
+    // The register itself emits no focus_updated; start the count at zero focus_updated by ops.
+    expect(await focusEventsBy('ops')).toBe(0);
+
+    const first = await handleApiRequest(
+      'POST',
+      '/api/me/focus',
+      dataAccess,
+      'ops',
+      { focus: 'first focus' },
+    );
+    expect(first?.status).toBe(200);
+    expect(await focusEventsBy('ops')).toBe(1);
+
+    const second = await handleApiRequest(
+      'POST',
+      '/api/me/focus',
+      dataAccess,
+      'ops',
+      { focus: 'second focus' },
+    );
+    expect(second?.status).toBe(200);
+    // APPEND-ONLY: the first event is NOT overwritten/deleted — there are now TWO focus events.
+    expect(await focusEventsBy('ops')).toBe(2);
+
+    // OVERWRITE-LATEST: /api/me derives the CURRENT focus by folding → the LATEST value wins.
+    const me = await handleApiRequest('GET', '/api/me', dataAccess, 'ops');
+    expect(me?.body).toEqual({
+      handle: 'ops',
+      focus: 'second focus',
+      registered: true,
+    });
+    // The write response also carries the latest (not the stale first).
+    expect((second?.body as { focus: string }).focus).toBe('second focus');
   });
 });

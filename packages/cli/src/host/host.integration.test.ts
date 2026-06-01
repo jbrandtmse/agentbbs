@@ -775,3 +775,120 @@ describe('Story 9.11 — start-a-negotiation write endpoints over real HTTP (ann
     expect(await maxSeq()).toBe(before);
   });
 });
+
+// --- Story 9.13: SET MY FOCUS — the operator INITIATE-surface parity write over the real stack
+// (createDataAccess SQLite + real fetch, NOTHING mocked). POST /api/me/focus → core `updateFocus`
+// (the SAME op an agent uses, no operator backdoor): a real `identity.focus_updated` lands and
+// GET /api/me then reflects the new focus. A watching-only host (no operator) → 403 NO_OPERATOR,
+// nothing appended, /api/me = { focus:null, registered:false }. An UNREGISTERED operator handle →
+// 403 OPERATOR_NOT_REGISTERED (the calm host backstop, NEVER a 500 from the plain Error
+// updateFocus throws), nothing appended, /api/me registered:false. ---
+describe('Story 9.13 — set-my-focus write endpoint over real HTTP (update_focus)', () => {
+  /** The current MAX(seq) over the real ledger — to assert nothing landed on a rejection. */
+  async function maxSeq(): Promise<number> {
+    const events = await dataAccess!.eventsSince(0);
+    return events.reduce((max, e) => Math.max(max, e.seq), 0);
+  }
+
+  it('(a) a REGISTERED operator POST /api/me/focus → identity.focus_updated lands, /api/me reflects it', async () => {
+    await register(dataAccess!, { handle: 'ops', currentFocus: 'initiating' });
+    host = await startHost({
+      dataAccess: dataAccess!,
+      webDist: dir,
+      operatorHandle: 'ops',
+    });
+
+    const response = await fetch(`${host.url}/api/me/focus`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ focus: 'reviewing the retry budget' }),
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { handle: string; focus: string };
+    expect(body.handle).toBe('ops');
+    expect(body.focus).toBe('reviewing the retry budget');
+
+    // A real identity.focus_updated landed in the ledger (asserted OUT-OF-BAND over the stream).
+    const events = await dataAccess!.eventsSince(0);
+    expect(
+      events.some(
+        (e) => e.type === 'identity.focus_updated' && e.actor === 'ops',
+      ),
+    ).toBe(true);
+
+    // GET /api/me now reflects the new focus + registered:true (the host-layer fields).
+    const meRes = await fetch(`${host.url}/api/me`);
+    const me = (await meRes.json()) as {
+      handle: string | null;
+      focus: string | null;
+      registered: boolean;
+    };
+    expect(me.handle).toBe('ops');
+    expect(me.focus).toBe('reviewing the retry budget');
+    expect(me.registered).toBe(true);
+  });
+
+  it('(b) a watching-only host (no operator) → 403 NO_OPERATOR, nothing appended; /api/me = {focus:null, registered:false}', async () => {
+    // A registered identity exists in the ledger, but the host has NO operator handle (watching-only).
+    await register(dataAccess!, { handle: 'ops', currentFocus: 'initiating' });
+    host = await startHost({ dataAccess: dataAccess!, webDist: dir });
+    const before = await maxSeq();
+
+    const response = await fetch(`${host.url}/api/me/focus`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ focus: 'cannot set' }),
+    });
+    expect(response.status).toBe(403);
+    expect(((await response.json()) as { code: string }).code).toBe(
+      'NO_OPERATOR',
+    );
+    expect(await maxSeq()).toBe(before);
+
+    // /api/me for a watching-only host reflects no operator focus / not registered.
+    const meRes = await fetch(`${host.url}/api/me`);
+    const me = (await meRes.json()) as {
+      handle: string | null;
+      focus: string | null;
+      registered: boolean;
+    };
+    expect(me.handle).toBeNull();
+    expect(me.focus).toBeNull();
+    expect(me.registered).toBe(false);
+  });
+
+  it('(c) an UNREGISTERED operator handle → 403 OPERATOR_NOT_REGISTERED (calm, NOT 500), nothing appended; /api/me registered:false', async () => {
+    // The configured --as handle was NEVER registered (the UI does not register; Story 9.13 scope).
+    host = await startHost({
+      dataAccess: dataAccess!,
+      webDist: dir,
+      operatorHandle: 'ghost',
+    });
+    const before = await maxSeq();
+
+    const response = await fetch(`${host.url}/api/me/focus`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ focus: 'who am I' }),
+    });
+    // The host catches the unregistered handle BEFORE core (updateFocus throws a plain Error) →
+    // a calm 403 host-surface code, NEVER a 500 INTERNAL_ERROR.
+    expect(response.status).toBe(403);
+    expect(((await response.json()) as { code: string }).code).toBe(
+      'OPERATOR_NOT_REGISTERED',
+    );
+    // No orphan identity.focus_updated written (updateFocus guards existence before appending).
+    expect(await maxSeq()).toBe(before);
+
+    // /api/me reflects the configured handle but registered:false (the affordance disables on this).
+    const meRes = await fetch(`${host.url}/api/me`);
+    const me = (await meRes.json()) as {
+      handle: string | null;
+      focus: string | null;
+      registered: boolean;
+    };
+    expect(me.handle).toBe('ghost');
+    expect(me.focus).toBeNull();
+    expect(me.registered).toBe(false);
+  });
+});

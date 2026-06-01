@@ -78,9 +78,19 @@ export interface RoomResponse {
   participants: string[];
 }
 
-/** The `/api/me` envelope — the resolved operator handle, or null (watching-only). */
+/**
+ * The `/api/me` envelope — the resolved operator handle, or null (watching-only), PLUS the
+ * host-layer DISPLAY/host-surface fields `focus` + `registered` (Story 9.13). `focus` is the
+ * operator's OWN current focus (folded from the ledger by the host; `null` when watching-only OR
+ * unregistered) — surfaced on the `@operator (you)` row. `registered` is whether the configured
+ * `--as` handle has a prior `identity.registered` — it (with `handle !== null`) gates the
+ * set-focus affordance (watching-only OR unregistered → disabled inline). These are HOST-LAYER
+ * additive fields (like Story 9.5's `created_at`); the agent-facing MCP wire is untouched (Rule 13).
+ */
 export interface MeResponse {
   handle: string | null;
+  focus: string | null;
+  registered: boolean;
 }
 
 /**
@@ -727,6 +737,33 @@ export async function postAnnouncement(
   return postJsonBody<PostAnnouncementResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/announcements`,
     { subject, body },
+    baseUrl,
+    fetchImpl,
+  );
+}
+
+/** The `POST /api/me/focus` envelope (Story 9.13) — the operator's handle + its new current focus. */
+export interface FocusResponse {
+  handle: string;
+  focus: string;
+}
+
+/**
+ * SET MY FOCUS — set the operator's OWN current focus (`POST /api/me/focus`, Story 9.13). The SAME
+ * core `updateFocus` an agent uses (no operator backdoor): a real `identity.focus_updated` lands in
+ * the ledger. Body-carrying (`{ focus }`). Throws an {@link ApiError} on a non-2xx — the caller
+ * branches on `.code === 'NO_OPERATOR'` (watching-only host → 403) or `OPERATOR_NOT_REGISTERED`
+ * (the configured handle was never registered → 403, the defensive host backstop; the affordance is
+ * also proactively disabled client-side). CLIENT-LAYER ONLY — adds nothing to core's contract.
+ */
+export async function postFocus(
+  focus: string,
+  baseUrl = '',
+  fetchImpl: typeof fetch = fetch,
+): Promise<FocusResponse> {
+  return postJsonBody<FocusResponse>(
+    '/api/me/focus',
+    { focus },
     baseUrl,
     fetchImpl,
   );

@@ -42,6 +42,7 @@ import {
   Composer,
   ConnectionFooter,
   CreateProjectCompose,
+  FocusAffordance,
   JoinProjectPicker,
   NavTree,
   PostAnnouncementCompose,
@@ -55,6 +56,7 @@ import {
   appendPendingPost,
   deriveAgreedSeq,
   fetchDirectory,
+  fetchMe,
   foldRoomDelta,
   foldTreeDelta,
   loadRoomViewModel,
@@ -64,6 +66,7 @@ import {
   newClientToken,
   openEventStream,
   postAnnouncement,
+  postFocus,
   postJoin,
   postReact,
   postReply,
@@ -221,6 +224,17 @@ export function App() {
   const [joinPickerError, setJoinPickerError] = useState<string | null>(null);
   const [joinPending, setJoinPending] = useState(false);
 
+  // Story 9.13 — the operator's OWN current focus + registration status (HOST-layer `/api/me`
+  // fields). `operatorFocus` is shown on the `@operator (you)` row; `operatorRegistered` (with
+  // `model.operatorHandle !== null`) gates the set-focus affordance — a watching-only OR unregistered
+  // operator sees it DISABLED inline (never a crash, AC1). `focusError`/`focusPending` drive the
+  // affordance's calm inline error + disabled-while-writing state. The focus is set over the SAME
+  // core `update_focus` an agent uses (no operator backdoor) and reflected LIVE by re-reading /api/me.
+  const [operatorFocus, setOperatorFocus] = useState<string | null>(null);
+  const [operatorRegistered, setOperatorRegistered] = useState(false);
+  const [focusError, setFocusError] = useState<string | null>(null);
+  const [focusPending, setFocusPending] = useState(false);
+
   // Build the tree model once on mount (real ledger data over the JSON API).
   useEffect(() => {
     let cancelled = false;
@@ -234,6 +248,25 @@ export function App() {
             err instanceof Error ? err.message : 'Failed to load the board.',
           );
         }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Story 9.13 — read the operator's own focus + registration once on mount (the HOST-layer /api/me
+  // fields). A failure is non-fatal (the affordance stays disabled-by-default); the tree load above
+  // owns the board-level error. Re-read after a successful set so the new focus reflects live.
+  useEffect(() => {
+    let cancelled = false;
+    fetchMe()
+      .then((me) => {
+        if (cancelled) return;
+        setOperatorFocus(me.focus ?? null);
+        setOperatorRegistered(me.registered === true);
+      })
+      .catch(() => {
+        // Non-fatal: leave the affordance disabled-by-default; the board error is surfaced elsewhere.
       });
     return () => {
       cancelled = true;
@@ -584,6 +617,36 @@ export function App() {
       .finally(() => setAnnouncePending(false));
   }
 
+  // Story 9.13 — SET MY FOCUS. Set the operator's OWN focus over the SAME core `update_focus` an
+  // agent uses (no operator backdoor); on success a real `identity.focus_updated` lands in the ledger.
+  // Then re-read /api/me so the new focus reflects LIVE on the `@operator (you)` row, and close the
+  // editor. On failure surface the calm inline error (NO_OPERATOR for watching-only / the host's
+  // OPERATOR_NOT_REGISTERED backstop / …) with the draft preserved (the affordance keeps the field).
+  // The PRIMARY guard is the affordance being DISABLED when watching-only OR unregistered (below);
+  // this handler is only reachable when enabled, but the host backstop still catches a race.
+  function handleSetFocus(focus: string): void {
+    setFocusPending(true);
+    setFocusError(null);
+    postFocus(focus)
+      .then((result) => {
+        // Reflect the new focus immediately from the authoritative write response, then re-read
+        // /api/me as the live source of truth (mirrors the announce/join success-refetch discipline).
+        setOperatorFocus(result.focus);
+        return fetchMe();
+      })
+      .then((me) => {
+        setOperatorFocus(me.focus ?? null);
+        setOperatorRegistered(me.registered === true);
+        setFocusError(null);
+      })
+      .catch((err: unknown) => {
+        setFocusError(
+          err instanceof Error ? err.message : 'Could not set your focus.',
+        );
+      })
+      .finally(() => setFocusPending(false));
+  }
+
   // The currently ACTIVE tab (the one whose RoomView renders), or undefined when none is open.
   const activeTab = openTabs.find((tab) => tab.roomId === activeRoomId);
 
@@ -838,12 +901,32 @@ export function App() {
           (model still null) the column is present (no blocking overlay) with a calm skeleton. */}
       <div style={sidebarColumnStyle} data-testid="sidebar-column">
         {model !== null ? (
-          <NavTree
-            model={model}
-            onSelectRoom={handleSelectRoom}
-            onOpenAnnouncements={handleOpenAnnouncements}
-            onJoinProject={handleJoinProject}
-          />
+          <>
+            <NavTree
+              model={model}
+              onSelectRoom={handleSelectRoom}
+              onOpenAnnouncements={handleOpenAnnouncements}
+              onJoinProject={handleJoinProject}
+            />
+            {/* Story 9.13 — the calm "set my focus" affordance on the `@operator (you)` row. The
+                operator sets their OWN focus via the SAME core update_focus an agent uses; it
+                reflects LIVE on success. DISABLED inert (with a terse reason) when watching-only
+                (no operator handle) OR the configured handle is unregistered — never a crash (AC1). */}
+            <FocusAffordance
+              focus={operatorFocus}
+              onSubmit={handleSetFocus}
+              onCancel={() => setFocusError(null)}
+              onEscape={() => setFocusError(null)}
+              error={focusError}
+              pending={focusPending}
+              disabled={model.operatorHandle === null || !operatorRegistered}
+              disabledReason={
+                model.operatorHandle === null
+                  ? 'watching-only — start `agentbbs ui --as <handle>`'
+                  : 'handle not registered'
+              }
+            />
+          </>
         ) : (
           // COLD OPEN: a calm, non-blocking skeleton in place of the tree (no full-app spinner).
           error === null && (
