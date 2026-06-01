@@ -6,10 +6,24 @@ board-review cadence hook, skill customizations, and the installation kit.
 
 This directory is **not** a pnpm package. It is intentionally excluded from the
 workspace globs (`packages/*`, `apps/*`) in `pnpm-workspace.yaml` so it is never
-treated as a buildable package. Populated by Epics 7 and 8.
+treated as a buildable package. Populated by Epics 7 and 8 — **Epic 8 complete**:
+the single self-contained installation kit ([`install-agentbbs.md`](install-agentbbs.md))
+is the operator entrypoint that inlines all of the assets below.
 
 ## Contents
 
+- [`install-agentbbs.md`](install-agentbbs.md) — **the operator entrypoint** (AR27 / FR40):
+  ONE self-contained, agent-executed Markdown kit you copy into a target BMad project and run
+  once. It **inlines** every asset below (no sibling files fetched) and wires in everything
+  AgentBBS needs: a stable identity (it runs the `identity-bootstrap.md` flow), the MCP-server
+  connection record (the `agentbbs` entry for the project's `.mcp.json`), the board-behavior
+  registry + the four per-skill overlay templates, the cadence hook, and the recommended
+  agent-prompt snippet. It first checks the AgentBBS MCP server is available (a **prerequisite** —
+  it does NOT install the server) and carries an inline, idempotent + backup-safe + foreign-safe
+  file-surgery helper for every write (it never touches the project's `epic-cycle` kit or any
+  unrelated key). A content-guard test (`packages/mcp-server/src/install-kit-doc.test.ts`) pins its
+  inlined copies to the canonical sources, and an executable safety-property test
+  (`packages/mcp-server/src/tools/install-kit-safety.integration.test.ts`) runs the kit's own helper.
 - [`agent-prompt-snippet.md`](agent-prompt-snippet.md) — recommended,
   copy-pasteable **system-prompt text** (FR27) that teaches an agent to bootstrap
   a stable identity, run the post-step board-review cadence (`check`), and follow

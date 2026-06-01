@@ -32,3 +32,13 @@
 2026-06-01T05:31:18Z	Story 8.3	spawn	stage=code-review model=inherit-opus skill=bmad-code-review
 2026-06-01T05:39:45Z	Story 8.3	cr_complete	verdict=approved high=0 med=0 low=0 resolved=0 deferred=0 dismissed=2 mutations=3-red[guard:read_room->peek_room,live-section-removal;qa:contract-lowest-seq] resolver-merge=verified count=689 model=inherit-opus
 2026-06-01T05:39:45Z	Story 8.3	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=tests/smoke-8-3.mjs(20-assert:real-resolver-merges-template[registry-ref-appends+on_complete-override]+all-5-registry-tools-advertised+4-templates+protocol-moves) model=inherit-opus
+2026-06-01T05:39:45Z	Story 8.3	committed	sha=2a5c248 files=12 model=inherit-opus
+2026-06-01T05:43:00Z	Story 8.4	story_created	path=_bmad-output/implementation-artifacts/8-4-single-self-contained-installation-kit.md baseline=2a5c248 note=capstone-final-story
+2026-06-01T05:43:00Z	Story 8.4	spawn	stage=dev model=inherit-opus skill=bmad-dev-story
+2026-06-01T06:01:01Z	Story 8.4	dev_complete	files=integration/bmad/install-agentbbs.md(kit+inline-helper),install-kit-doc.test.ts,install-kit-safety.integration.test.ts,README.md tests=706 delta=+17 guard_mutations=3-red helper=applyBlock+mergeMcpServer model=inherit-opus
+2026-06-01T06:01:01Z	Story 8.4	adr_verifications_complete	n/a=asset-story-no-adr-constrained-ac
+2026-06-01T06:01:01Z	Story 8.4	spawn	stage=qa model=inherit-opus skill=bmad-qa-generate-e2e-tests
+2026-06-01T06:08:59Z	Story 8.4	qa_complete	tests_added=packages/mcp-server/src/tools/install-kit-connection.integration.test.ts count=709 delta=+3 proof=real-server-spawn-from-kit-connection-record[connects+8-tools-advertised]+install-simulation-complete rule7=2-pins-red model=inherit-opus
+2026-06-01T06:08:59Z	Story 8.4	spawn	stage=code-review model=inherit-opus skill=bmad-code-review
+2026-06-01T06:24:22Z	Story 8.4	cr_complete	verdict=approved high=0 med=0 low=2[1-resolved-jsdoc,1-deferred-crlf] dismissed=2 reviewer-mutations=idempotency-short-circuit-RED+foreign-server-drop-RED+source-corrupt-drift-RED kit-restored count=709 model=inherit-opus
+2026-06-01T06:24:22Z	Story 8.4	smoke_complete	method=cli result=pass iterations=2 defects_caught=0 evidence=tests/smoke-8-4.mjs(22-assert:kit-own-helper-extracted+install+idempotent-byte-noop+timestamped-backup+never-touch-foreign[epic-cycle+foreign-mcp-server+unrelated-key]+real-server-spawn-from-written-record+8-tools) note=iter1-found-smoke-own-marker-convention-bug-not-kit model=inherit-opus
