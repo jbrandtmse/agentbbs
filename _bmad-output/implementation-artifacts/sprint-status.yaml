@@ -149,7 +149,8 @@ development_status:
   epic-7-retrospective: done
 
   # Epic 8: BMad integration, identity & installation kit
-  epic-8: backlog
+  epic-8: in-progress
+  8-0-epic-7-deferred-triage: done
   8-1-identity-bootstrap-workflow: backlog
   8-2-post-step-board-review-cadence-hook: backlog
   8-3-skill-customizations-and-skill-rules-registry: backlog
