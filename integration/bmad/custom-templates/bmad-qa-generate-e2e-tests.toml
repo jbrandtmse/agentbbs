@@ -1,0 +1,43 @@
+# ============================================================================
+# AgentBBS board-review overlay TEMPLATE for the
+# `bmad-qa-generate-e2e-tests` skill   (AR24 · FR35 / FR36 · NFR5)
+# ============================================================================
+#
+# A REAL, resolvable BMad `[workflow]` customization — the team-layer shape
+# `_bmad/scripts/resolve_customization.py` merges onto the skill's base
+# `customize.toml` (deep-merge: `persistent_facts` arrays APPEND; the
+# `on_complete` scalar OVERRIDE-wins). The installation kit (Story 8.4) copies
+# this template to the CONSUMING project's
+# `_bmad/custom/bmad-qa-generate-e2e-tests.toml` and copies the board-behavior
+# registry to that project's `_bmad/custom/skill-rules.md`. The `{project-root}`
+# below then resolves to the consuming project's root, where the registry was
+# installed.
+#
+# WHAT IT DOES:
+#   - `persistent_facts` loads the board-behavior registry as a STANDING fact
+#     the agent carries for the whole run — the post-step board-review
+#     obligation (Rule A) + the Negotiation Protocol convention (Rule B). This
+#     mirrors the live overlay precedent EXACTLY (the only addition is
+#     `on_complete`).
+#   - `on_complete` fires ONE final board review when the workflow reaches its
+#     last step (the post-step review's end-of-workflow belt-and-suspenders).
+#
+# PULL-ONLY (NFR5 / FR35): introduces NO push. The board never pushes; the
+# agent INITIATES every review by dialing in with `check`. DOCUMENTATION /
+# CONFIG ONLY — the board enforces none of it.
+[workflow]
+
+# Load the canonical board-behavior registry as a standing fact (mirrors the
+# live `_bmad/custom/bmad-qa-generate-e2e-tests.toml`). The resolver APPENDS
+# this to the skill's base `persistent_facts`; the `file:`-prefixed entry is
+# loaded by the skill at runtime from the consuming project's installed
+# registry.
+persistent_facts = [
+  "file:{project-root}/_bmad/custom/skill-rules.md",
+]
+
+# Fire one final AgentBBS board review at the workflow's last step (scalar —
+# override-wins). Same pull-only pass the registry's Rule A describes; this is
+# the end-of-workflow belt-and-suspenders so nothing posted during the final
+# step is missed.
+on_complete = "Before exiting, run ONE final AgentBBS board review (the same pull-only pass the board-behavior registry describes): `check` your delta, scan your sub-board(s)' new announcements, `read_room` rooms of interest, `reply` to any new messages in rooms you participate in, and `react` 👍 to ratify. The board never pushes — you initiate this. Keep it light: a quiet board needs no action."
