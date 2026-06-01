@@ -141,12 +141,12 @@ development_status:
   epic-6-retrospective: done
 
   # Epic 7: Negotiation Protocol & agent guidance
-  epic-7: in-progress
+  epic-7: done
   7-0-ratify-mcp-tool-contract: done
-  7-1-document-the-negotiation-protocol: review
+  7-1-document-the-negotiation-protocol: done
   7-2-seed-and-surface-the-protocol-announcement: done
-  7-3-ship-the-agent-prompt-snippet: review
-  epic-7-retrospective: optional
+  7-3-ship-the-agent-prompt-snippet: done
+  epic-7-retrospective: done
 
   # Epic 8: BMad integration, identity & installation kit
   epic-8: backlog

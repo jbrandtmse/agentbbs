@@ -29,3 +29,5 @@
 2026-06-01T03:42:02Z	Story 7.3	qa_complete	spawn_at=2026-06-01T04:25:00Z model=claude-opus-4-8 tests_added=1 first_run_failures=0 clarifications=0 closing_sections_present=true
 2026-06-01T03:51:36Z	Story 7.3	cr_complete	spawn_at=2026-06-01T04:25:40Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=1 high=0 med=0 low=1 clarifications=0 closing_sections_present=true
 2026-06-01T03:52:10Z	Story 7.3	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=_bmad-output/implementation-artifacts/tests/smoke-7-3.mjs model=claude-opus-4-8
+2026-06-01T03:52:14Z	Story 7.3	committed	sha=6016ffc submodules=
+2026-06-01T03:54:54Z	Epic 7	epic_summary	stories=4 total_high=0 total_med=0 total_low=2 total_smoke_defects=0 rework_events=0 opus_stage_count=12 sonnet_stage_count=0 haiku_stage_count=0 tests_final=645 new_tools=0 resolved=E3-tool-names,4.5-tool-label
