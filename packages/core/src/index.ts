@@ -125,6 +125,15 @@ export type { RoomHistory } from './rooms/read-room.js';
 // transaction; idempotent if the target already participates. ROOM_NOT_FOUND for an unknown
 // room. This projection is also Story 4.6's join-cursor input. ---
 export { roomParticipants, isParticipant } from './rooms/participants.js';
+
+// --- NEEDS YOU derivation (Story 9.4) — the operator's escalation queue: rooms the operator
+// was EXPLICITLY pulled into via `add_participant(@operator)` (a `room.participant_added`
+// naming the operator handle). DETERMINISTIC, append-derived, NEVER time-based (the load-
+// bearing AC3 semantic — the inverse of the old inactivity-based FR30; quiet = healthy). A
+// null/empty operator (watching-only posture) yields `[]`. The first consumer is the
+// on-demand web host's `/api/needs-you` (Story 9.4); core stays session-agnostic — the host
+// resolves which handle is the operator. ---
+export { needsYouRooms } from './rooms/needs-you.js';
 export { addParticipant } from './rooms/add-participant.js';
 export type {
   AddParticipantInput,

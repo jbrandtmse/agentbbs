@@ -8,8 +8,11 @@
 // testable without a real server (the AC3 integration test proves the real wiring).
 //
 // The wire shapes mirror the host's JSON API (snake_case), which mirrors the MCP tool
-// contract envelopes. Kept minimal for 9.3 — the rich tree/thread types ride on this in
-// Stories 9.4/9.5.
+// contract envelopes. Story 9.4 adds the per-project room/announcement fetches, /api/me +
+// /api/needs-you, and the NavTreeModel builder + the IMMUTABLE SSE tree fold (the live
+// unread/activity decorations) — extending the 9.3 immutability discipline to the tree.
+
+import type { NavTreeModel, NavTreeProject } from '@agentbbs/ui-shared';
 
 /** A project (sub-board) as the JSON API returns it (snake_case). */
 export interface ProjectWire {
@@ -23,6 +26,39 @@ export interface ProjectWire {
 /** The `/api/directory` (and `/api/projects`) envelope. */
 export interface DirectoryResponse {
   projects: ProjectWire[];
+}
+
+/** A room (or proto-room/announcement) as the JSON API returns it (snake_case). */
+export interface RoomWire {
+  room_id: string;
+  project_id: string;
+  subject: string;
+  body: string;
+  posted_by: string;
+  seq: number;
+  active: boolean;
+  activated_by?: string;
+  activated_at_seq?: number;
+}
+
+/** The `/api/projects/:id/rooms` envelope. */
+export interface RoomsResponse {
+  rooms: RoomWire[];
+}
+
+/** The `/api/projects/:id/announcements` envelope. */
+export interface AnnouncementsResponse {
+  announcements: RoomWire[];
+}
+
+/** The `/api/me` envelope — the resolved operator handle, or null (watching-only). */
+export interface MeResponse {
+  handle: string | null;
+}
+
+/** The `/api/needs-you` envelope — the deterministic escalation set. */
+export interface NeedsYouResponse {
+  rooms: RoomWire[];
 }
 
 /** One SSE delta frame's event payload (snake_case), as the host pushes it. */
@@ -51,6 +87,61 @@ export async function fetchDirectory(
     throw new Error(`Directory fetch failed: HTTP ${response.status}`);
   }
   return (await response.json()) as DirectoryResponse;
+}
+
+/** GET a typed JSON envelope from `path`; throws on a non-2xx (calm error state upstream). */
+async function getJson<T>(
+  path: string,
+  baseUrl: string,
+  fetchImpl: typeof fetch,
+): Promise<T> {
+  const response = await fetchImpl(`${baseUrl}${path}`);
+  if (!response.ok) {
+    throw new Error(`Fetch ${path} failed: HTTP ${response.status}`);
+  }
+  return (await response.json()) as T;
+}
+
+/** Fetch the resolved operator handle (`/api/me`) — `{ handle: null }` when watching-only. */
+export async function fetchMe(
+  baseUrl = '',
+  fetchImpl: typeof fetch = fetch,
+): Promise<MeResponse> {
+  return getJson<MeResponse>('/api/me', baseUrl, fetchImpl);
+}
+
+/** Fetch the NEEDS YOU escalation set (`/api/needs-you`) — deterministic, host-derived. */
+export async function fetchNeedsYou(
+  baseUrl = '',
+  fetchImpl: typeof fetch = fetch,
+): Promise<NeedsYouResponse> {
+  return getJson<NeedsYouResponse>('/api/needs-you', baseUrl, fetchImpl);
+}
+
+/** Fetch a project's activated rooms (`/api/projects/:id/rooms`). */
+export async function fetchProjectRooms(
+  projectId: string,
+  baseUrl = '',
+  fetchImpl: typeof fetch = fetch,
+): Promise<RoomsResponse> {
+  return getJson<RoomsResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/rooms`,
+    baseUrl,
+    fetchImpl,
+  );
+}
+
+/** Fetch a project's announcements/proto-rooms (`/api/projects/:id/announcements`). */
+export async function fetchProjectAnnouncements(
+  projectId: string,
+  baseUrl = '',
+  fetchImpl: typeof fetch = fetch,
+): Promise<AnnouncementsResponse> {
+  return getJson<AnnouncementsResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/announcements`,
+    baseUrl,
+    fetchImpl,
+  );
 }
 
 /** The accumulated live state the SSE deltas fold into (minimal for 9.3). */
@@ -108,4 +199,180 @@ export function openEventStream(
     }
   });
   return () => source.close();
+}
+
+// =============================================================================
+// Tree model (Story 9.4) — building the NavTreeModel from the JSON API + folding
+// SSE deltas into it IMMUTABLY (the live unread/activity decorations).
+// =============================================================================
+
+/**
+ * Load the full {@link NavTreeModel} from the host JSON API: the operator handle
+ * (`/api/me`), the NEEDS YOU set (`/api/needs-you`), the directory (`/api/directory` —
+ * EVERY project, global read FR28), and each project's rooms. Decorations start clean
+ * (unread=false, count=0); SSE deltas bump them live via {@link foldTreeDelta}. The
+ * `needsYou` flag on a room row is set iff that room is in the escalation set.
+ *
+ * @param baseUrl The host origin (defaults to current origin). Injectable for tests.
+ * @param fetchImpl The fetch implementation (defaults to global `fetch`). Injectable.
+ */
+export async function loadTreeModel(
+  baseUrl = '',
+  fetchImpl: typeof fetch = fetch,
+): Promise<NavTreeModel> {
+  const [me, needsYou, directory] = await Promise.all([
+    fetchMe(baseUrl, fetchImpl),
+    fetchNeedsYou(baseUrl, fetchImpl),
+    fetchDirectory(baseUrl, fetchImpl),
+  ]);
+
+  const needsYouRoomIds = new Set(needsYou.rooms.map((r) => r.room_id));
+
+  const projects: NavTreeProject[] = await Promise.all(
+    directory.projects.map(async (project) => {
+      const [rooms, announcements] = await Promise.all([
+        fetchProjectRooms(project.project_id, baseUrl, fetchImpl),
+        fetchProjectAnnouncements(project.project_id, baseUrl, fetchImpl),
+      ]);
+      return {
+        projectId: project.project_id,
+        title: project.title,
+        announcementCount: announcements.announcements.length,
+        rooms: rooms.rooms.map((room) => ({
+          roomId: room.room_id,
+          subject: room.subject,
+          unread: false,
+          activityCount: 0,
+          needsYou: needsYouRoomIds.has(room.room_id),
+        })),
+      };
+    }),
+  );
+
+  return {
+    operatorHandle: me.handle,
+    activeRoomId: null,
+    needsYou: needsYou.rooms.map((r) => ({
+      roomId: r.room_id,
+      projectId: r.project_id,
+      subject: r.subject,
+    })),
+    projects,
+  };
+}
+
+/** Which room id (if any) an SSE event affects — its decoration target. */
+function eventRoomId(event: EventWire): string | undefined {
+  const roomId = event.payload['room_id'];
+  return typeof roomId === 'string' ? roomId : undefined;
+}
+
+/**
+ * Fold one SSE delta event into the {@link NavTreeModel} IMMUTABLY (a NEW model object —
+ * the 9.3 `foldDelta` immutability discipline, extended to the tree). AC2 live decorations:
+ *   - a `room.replied` / `announcement.posted` in a room bumps that room row's unread `•`
+ *     and increments its activity count (UNLESS the room is the active selection — the
+ *     operator is looking at it, so it stays read; basic clear-on-select for 9.4, the rich
+ *     tab-focus clear is 9.8/9.9).
+ *   - a `room.participant_added` naming the operator adds the room to NEEDS YOU + flags its
+ *     row (the live escalation; deterministic, never time-based — the host derivation, here
+ *     mirrored for the live case so the operator sees an escalation arrive without a reload).
+ * An event for a room not in the model (e.g. a brand-new room) is ignored for 9.4 (a full
+ * re-fetch on new-room is 9.9's concern); the fold never throws.
+ *
+ * @param model The current tree model.
+ * @param event The decoded SSE delta.
+ * @returns A NEW tree model with the decoration applied (or the same shape if no-op).
+ */
+export function foldTreeDelta(
+  model: NavTreeModel,
+  event: EventWire,
+): NavTreeModel {
+  const roomId = eventRoomId(event);
+  if (roomId === undefined) return model;
+
+  // A live escalation naming the operator: add it to NEEDS YOU + flag the room row.
+  if (
+    event.type === 'room.participant_added' &&
+    model.operatorHandle !== null &&
+    event.payload['handle'] === model.operatorHandle
+  ) {
+    return applyEscalation(model, roomId);
+  }
+
+  // New room activity (a reply or a fresh announcement): bump unread + count, unless the
+  // room is the active selection (the operator is reading it → it stays read).
+  if (event.type === 'room.replied' || event.type === 'announcement.posted') {
+    if (roomId === model.activeRoomId) return model;
+    return bumpRoomActivity(model, roomId);
+  }
+
+  return model;
+}
+
+/** Immutably bump a room row's unread flag + activity count by one. */
+function bumpRoomActivity(model: NavTreeModel, roomId: string): NavTreeModel {
+  let changed = false;
+  const projects = model.projects.map((project) => {
+    if (!project.rooms.some((r) => r.roomId === roomId)) return project;
+    return {
+      ...project,
+      rooms: project.rooms.map((room) => {
+        if (room.roomId !== roomId) return room;
+        changed = true;
+        return {
+          ...room,
+          unread: true,
+          activityCount: room.activityCount + 1,
+        };
+      }),
+    };
+  });
+  return changed ? { ...model, projects } : model;
+}
+
+/** Immutably add a room to NEEDS YOU (if absent) + set its row's needs-you flag. */
+function applyEscalation(model: NavTreeModel, roomId: string): NavTreeModel {
+  const already = model.needsYou.some((r) => r.roomId === roomId);
+  // Find the room's subject/project from the existing tree (best-effort for the label).
+  let subject = roomId;
+  let projectId = '';
+  for (const project of model.projects) {
+    const room = project.rooms.find((r) => r.roomId === roomId);
+    if (room) {
+      subject = room.subject;
+      projectId = project.projectId;
+      break;
+    }
+  }
+  const needsYou = already
+    ? model.needsYou
+    : [...model.needsYou, { roomId, projectId, subject }];
+  const projects = model.projects.map((project) => ({
+    ...project,
+    rooms: project.rooms.map((room) =>
+      room.roomId === roomId ? { ...room, needsYou: true } : room,
+    ),
+  }));
+  return { ...model, needsYou, projects };
+}
+
+/**
+ * Mark `roomId` as the active selection and CLEAR its unread decoration (basic for 9.4 —
+ * selecting a room clears its `•`/count; the rich tab-focus clear is 9.8/9.9). Immutable.
+ *
+ * @param model The current tree model.
+ * @param roomId The room to select (its unread is cleared).
+ * @returns A NEW tree model with the selection set and that room read.
+ */
+export function selectRoom(model: NavTreeModel, roomId: string): NavTreeModel {
+  const projects = model.projects.map((project) => ({
+    ...project,
+    rooms: project.rooms.map((room) =>
+      room.roomId === roomId
+        ? { ...room, unread: false, activityCount: 0 }
+        : room,
+    ),
+  }));
+  return { ...model, activeRoomId: roomId, projects };
 }

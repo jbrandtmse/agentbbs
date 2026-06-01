@@ -35,6 +35,7 @@ import {
   listAnnouncements,
   listProjects,
   listRooms,
+  needsYouRooms,
   readContract,
   readRoom,
 } from '@agentbbs/core';
@@ -58,10 +59,24 @@ export interface JsonResponse {
   body: unknown;
 }
 
-/** A matched route handler: receives the captured path params + the data-access port. */
+/**
+ * The per-request context a route handler reads beyond the captured path params: the
+ * persistence port plus the resolved operator handle (`null` for the watching-only
+ * posture — no operator handle was configured). The operator handle is the host's
+ * read-only answer to "who am I" — it personalizes `/api/me` + the NEEDS YOU queue;
+ * global read works regardless (FR28).
+ */
+export interface ApiContext {
+  /** The persistence port handlers delegate every read to. */
+  dataAccess: DataAccess;
+  /** The resolved operator handle, or `null` (watching-only). */
+  operatorHandle: string | null;
+}
+
+/** A matched route handler: receives the captured path params + the request context. */
 type RouteHandler = (
   params: Record<string, string>,
-  dataAccess: DataAccess,
+  ctx: ApiContext,
 ) => Promise<JsonResponse>;
 
 /** One route in the dispatch table. `pattern` segments may be `:name` captures. */
@@ -102,8 +117,28 @@ function requireSlug(value: string, name: string): string {
 const ROUTES: Route[] = [
   {
     method: 'GET',
+    pattern: '/api/me',
+    handler: async (_params, { operatorHandle }) => {
+      // The operator's "who am I": the resolved handle, or `null` (watching-only). Global
+      // read works either way; this only personalizes `(you)` + the NEEDS YOU queue.
+      return { status: 200, body: { handle: operatorHandle } };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: '/api/needs-you',
+    handler: async (_params, { dataAccess, operatorHandle }) => {
+      // DETERMINISTIC, explicit-escalation-only (AC3): the rooms the operator was pulled
+      // into via add_participant(@operator). NEVER time-based. A null operator → []
+      // (nothing can be escalated to "nobody") — handled inside needsYouRooms.
+      const rooms = await needsYouRooms(dataAccess, operatorHandle);
+      return { status: 200, body: { rooms: rooms.map(roomToWire) } };
+    },
+  },
+  {
+    method: 'GET',
     pattern: '/api/directory',
-    handler: async (_params, dataAccess) => {
+    handler: async (_params, { dataAccess }) => {
       const projects = await listProjects(dataAccess);
       return { status: 200, body: { projects: projects.map(projectToWire) } };
     },
@@ -111,7 +146,7 @@ const ROUTES: Route[] = [
   {
     method: 'GET',
     pattern: '/api/projects',
-    handler: async (_params, dataAccess) => {
+    handler: async (_params, { dataAccess }) => {
       const projects = await listProjects(dataAccess);
       return { status: 200, body: { projects: projects.map(projectToWire) } };
     },
@@ -119,7 +154,7 @@ const ROUTES: Route[] = [
   {
     method: 'GET',
     pattern: '/api/projects/:projectId/members',
-    handler: async (params, dataAccess) => {
+    handler: async (params, { dataAccess }) => {
       const projectId = requireSlug(params.projectId, 'project_id');
       const members = await boardDirectory(dataAccess, projectId);
       return { status: 200, body: { members: members.map(memberToWire) } };
@@ -128,7 +163,7 @@ const ROUTES: Route[] = [
   {
     method: 'GET',
     pattern: '/api/projects/:projectId/announcements',
-    handler: async (params, dataAccess) => {
+    handler: async (params, { dataAccess }) => {
       const projectId = requireSlug(params.projectId, 'project_id');
       const rooms = await listAnnouncements(dataAccess, projectId);
       return { status: 200, body: { announcements: rooms.map(roomToWire) } };
@@ -137,7 +172,7 @@ const ROUTES: Route[] = [
   {
     method: 'GET',
     pattern: '/api/projects/:projectId/rooms',
-    handler: async (params, dataAccess) => {
+    handler: async (params, { dataAccess }) => {
       const projectId = requireSlug(params.projectId, 'project_id');
       const rooms = await listRooms(dataAccess, projectId);
       return { status: 200, body: { rooms: rooms.map(roomToWire) } };
@@ -146,7 +181,7 @@ const ROUTES: Route[] = [
   {
     method: 'GET',
     pattern: '/api/rooms/:roomId',
-    handler: async (params, dataAccess) => {
+    handler: async (params, { dataAccess }) => {
       const roomId = requireSlug(params.roomId, 'room_id');
       const { room, messages } = await readRoom(dataAccess, roomId);
       return {
@@ -158,7 +193,7 @@ const ROUTES: Route[] = [
   {
     method: 'GET',
     pattern: '/api/rooms/:roomId/contract',
-    handler: async (params, dataAccess) => {
+    handler: async (params, { dataAccess }) => {
       const roomId = requireSlug(params.roomId, 'room_id');
       const contract = await readContract(dataAccess, roomId);
       // Absence is JSON `null` (the wire contract), not an omitted key.
@@ -222,26 +257,31 @@ function matchPattern(
  * `{ code, message }` body at the right HTTP status. Returns `null` if the path is not
  * an `/api/` route (the caller falls through to static serving / SPA fallback).
  *
- * @param method The request method (only GET is served in 9.3).
+ * @param method The request method (only GET is served).
  * @param path The request URL pathname (query stripped by the caller).
  * @param dataAccess The persistence port handlers delegate to.
+ * @param operatorHandle The resolved operator handle, or `null` (watching-only — the
+ *   default). Personalizes `/api/me` + `/api/needs-you`; global read is unaffected.
  * @returns A {@link JsonResponse}, or `null` when `path` is not an API route.
  */
 export async function handleApiRequest(
   method: string,
   path: string,
   dataAccess: DataAccess,
+  operatorHandle: string | null = null,
 ): Promise<JsonResponse | null> {
   if (!path.startsWith('/api/') && path !== '/api') {
     return null;
   }
+
+  const ctx: ApiContext = { dataAccess, operatorHandle };
 
   for (const route of ROUTES) {
     if (route.method !== method) continue;
     const params = matchPattern(route.pattern, path);
     if (params === null) continue;
     try {
-      return await route.handler(params, dataAccess);
+      return await route.handler(params, ctx);
     } catch (error: unknown) {
       if (error instanceof BoardError) {
         // A malformed-slug guard reuses BOARD_NOT_FOUND but is a client 400; a real

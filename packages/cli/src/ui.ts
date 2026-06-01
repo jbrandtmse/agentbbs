@@ -22,6 +22,30 @@ export interface UiOptions {
   port?: number;
   /** Explicit DB path (else AGENTBBS_DB / project-root discovery). */
   dbPath?: string;
+  /**
+   * The operator handle to view the board AS (Story 9.4) — `--as <handle>`. Personalizes
+   * the `(you)` marker + the NEEDS YOU escalation queue. Omitted → falls back to the
+   * `AGENTBBS_OPERATOR` env, else `null` (watching-only; global read still works). The
+   * board has no special "operator" type — this is just a claimed handle (the operator
+   * reuses an existing one; the UI does NOT register it).
+   */
+  operatorHandle?: string;
+}
+
+/**
+ * Canonicalize an operator handle to the form stored in the ledger: lowercased + trimmed
+ * (the same case-folding core applies on registration — `register.ts#canonicalize`). The
+ * `room.participant_added` payload `handle` is stored canonical, so the operator handle
+ * must be canonical for the NEEDS YOU match to land. An empty/whitespace-only value yields
+ * `null` (watching-only). This is thin-client normalization, NOT board logic.
+ *
+ * @param raw The raw handle from `--as` / `AGENTBBS_OPERATOR`, or `undefined`.
+ * @returns The canonical handle, or `null` if none/blank.
+ */
+export function resolveOperatorHandle(raw: string | undefined): string | null {
+  if (raw === undefined) return null;
+  const canonical = raw.trim().toLowerCase();
+  return canonical === '' ? null : canonical;
 }
 
 /**
@@ -61,6 +85,9 @@ export function parseUiArgs(argv: readonly string[]): UiOptions {
     } else if (arg === '--db' || arg.startsWith('--db=')) {
       const raw = takeValue(arg.startsWith('--db=') ? arg.slice(5) : undefined);
       if (raw !== undefined) options.dbPath = raw;
+    } else if (arg === '--as' || arg.startsWith('--as=')) {
+      const raw = takeValue(arg.startsWith('--as=') ? arg.slice(5) : undefined);
+      if (raw !== undefined) options.operatorHandle = raw;
     }
   }
   return options;
@@ -95,8 +122,23 @@ export async function runUi(
   const dbPath = options.dbPath ?? resolveDbPath();
   const dataAccess: DataAccessHandle = createDataAccess({ dbPath });
 
-  const host = await startHost({ dataAccess, port: options.port });
+  // Resolve the operator handle: an explicit `--as` wins, else AGENTBBS_OPERATOR, else
+  // null (watching-only — global read still works, NEEDS YOU is empty). Story 9.4.
+  const operatorHandle = resolveOperatorHandle(
+    options.operatorHandle ?? process.env.AGENTBBS_OPERATOR,
+  );
+
+  const host = await startHost({
+    dataAccess,
+    port: options.port,
+    operatorHandle,
+  });
   log(`AgentBBS web control room: ${host.url}`);
+  log(
+    operatorHandle === null
+      ? 'Operator: (none) — watching-only; pass --as <handle> or set AGENTBBS_OPERATOR to personalize NEEDS YOU.'
+      : `Operator: @${operatorHandle}`,
+  );
   log('On-demand host (NFR4) — not a daemon. Press Ctrl-C to stop.');
 
   let stopped = false;

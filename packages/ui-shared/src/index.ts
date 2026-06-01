@@ -31,3 +31,26 @@ export { MarkdownView } from './markdown/MarkdownView.js';
 export type { MarkdownViewProps } from './markdown/MarkdownView.js';
 export { CodeBlock, CODE_BLOCK_LINE_CAP } from './markdown/CodeBlock.js';
 export type { CodeBlockProps } from './markdown/CodeBlock.js';
+
+// Story 9.4 — the board navigation tree (sidebar): global-read project/room tree, live
+// unread/activity decorations, and the explicit-escalation-only NEEDS YOU queue. Prop-driven
+// + presentation-only (NFR2 — no core/data-access import); the surface builds the model.
+export { NavTree } from './tree/NavTree.js';
+export type {
+  NavTreeModel,
+  NavTreeProps,
+  NavTreeProject,
+  NavTreeRoom,
+  NavTreeNeedsYou,
+} from './tree/NavTree.js';
+export { SidebarTreeItem } from './tree/SidebarTreeItem.js';
+export type {
+  SidebarTreeItemProps,
+  ReadState,
+} from './tree/SidebarTreeItem.js';
+export { SectionLabel } from './tree/SectionLabel.js';
+export type { SectionLabelProps } from './tree/SectionLabel.js';
+export { UnreadBadge } from './tree/UnreadBadge.js';
+export type { UnreadBadgeProps } from './tree/UnreadBadge.js';
+export { NeedsYouItem } from './tree/NeedsYouItem.js';
+export type { NeedsYouItemProps } from './tree/NeedsYouItem.js';

@@ -36,6 +36,15 @@ export interface CreateHostOptions {
   webDist?: string;
   /** Override the SSE poll interval (ms). */
   ssePollIntervalMs?: number;
+  /**
+   * The resolved operator handle (Story 9.4) — the host's read-only answer to "who am I"
+   * for `/api/me` + the NEEDS YOU queue. `null`/`undefined` → watching-only posture (no
+   * personalization; global read still works). Resolved by the CLI from `ui --as <handle>`
+   * / the `AGENTBBS_OPERATOR` env (see `../ui.ts`). The host treats it as opaque — it does
+   * NOT register or validate it (identity bootstrap is the BMad kit's job; the operator
+   * reuses an existing claimed handle).
+   */
+  operatorHandle?: string | null;
 }
 
 /** A built (not-yet-listening) host. {@link startHost} binds it to a port. */
@@ -75,6 +84,7 @@ function writeJson(res: ServerResponse, status: number, body: unknown): void {
  */
 export function createHost(options: CreateHostOptions): Host {
   const { dataAccess } = options;
+  const operatorHandle = options.operatorHandle ?? null;
   const distRoot = options.webDist ?? resolveWebDist();
   const sse = createSseChannel({
     dataAccess,
@@ -111,7 +121,12 @@ export function createHost(options: CreateHostOptions): Host {
     }
 
     // 2. The JSON API (read-first; mirrors core read ops). Returns null if not /api/.
-    const apiResponse = await handleApiRequest(method, path, dataAccess);
+    const apiResponse = await handleApiRequest(
+      method,
+      path,
+      dataAccess,
+      operatorHandle,
+    );
     if (apiResponse !== null) {
       writeJson(res, apiResponse.status, apiResponse.body);
       return;

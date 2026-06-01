@@ -9,9 +9,17 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import {
+  addParticipant,
+  announceProject,
+  postAnnouncement,
+  register,
+  reply,
+} from '@agentbbs/core';
+import { createDataAccess } from '@agentbbs/data-access';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { parseUiArgs, runUi } from './ui.js';
+import { parseUiArgs, resolveOperatorHandle, runUi } from './ui.js';
 
 describe('parseUiArgs', () => {
   it('parses --port and --db in spaced + inline forms', () => {
@@ -24,6 +32,15 @@ describe('parseUiArgs', () => {
     });
   });
 
+  it('parses --as (operator handle) in spaced + inline forms', () => {
+    expect(parseUiArgs(['--as', 'ops'])).toEqual({ operatorHandle: 'ops' });
+    expect(parseUiArgs(['--as=ops'])).toEqual({ operatorHandle: 'ops' });
+    expect(parseUiArgs(['--port=0', '--as', 'jordan'])).toEqual({
+      port: 0,
+      operatorHandle: 'jordan',
+    });
+  });
+
   it('throws on an invalid --port', () => {
     expect(() => parseUiArgs(['--port', 'abc'])).toThrow(/Invalid --port/);
     expect(() => parseUiArgs(['--port=99999'])).toThrow(/Invalid --port/);
@@ -31,6 +48,19 @@ describe('parseUiArgs', () => {
 
   it('ignores unknown flags (forward-compatible)', () => {
     expect(parseUiArgs(['--future', 'x'])).toEqual({});
+  });
+});
+
+describe('resolveOperatorHandle', () => {
+  it('canonicalizes to lowercase + trims', () => {
+    expect(resolveOperatorHandle('Ops')).toBe('ops');
+    expect(resolveOperatorHandle('  Jordan  ')).toBe('jordan');
+  });
+
+  it('returns null for undefined / blank (watching-only)', () => {
+    expect(resolveOperatorHandle(undefined)).toBeNull();
+    expect(resolveOperatorHandle('')).toBeNull();
+    expect(resolveOperatorHandle('   ')).toBeNull();
   });
 });
 
@@ -69,5 +99,56 @@ describe('runUi — lifecycle against a real ledger', () => {
 
     // After stop, the port is released — a follow-up fetch fails to connect.
     await expect(fetch(`${url}/api/directory`)).rejects.toBeDefined();
+  });
+
+  it('serves /api/me + NEEDS YOU for the configured operator over real HTTP (Story 9.4)', async () => {
+    const dbPath = join(dir, 'agentbbs.db');
+    // Seed a real ledger: ops is pulled into one room; another room stays quiet.
+    const seed = createDataAccess({ dbPath });
+    try {
+      await register(seed, { handle: 'alice', currentFocus: 'init' });
+      await register(seed, { handle: 'ops', currentFocus: 'watching' });
+      await announceProject(seed, 'alice', {
+        title: 'Calling Interface',
+        description: 'How agents dial in.',
+      });
+      const room = await postAnnouncement(seed, 'alice', {
+        projectId: 'calling-interface',
+        subject: 'Need ops',
+        body: 'pulling ops in',
+      });
+      await reply(seed, 'alice', { roomId: room.roomId, body: 'starting' });
+      await addParticipant(seed, 'alice', {
+        roomId: room.roomId,
+        handle: 'ops',
+      });
+      // A quiet room ops was never added to.
+      await postAnnouncement(seed, 'alice', {
+        projectId: 'calling-interface',
+        subject: 'Quiet',
+        body: 'nobody pulls ops in',
+      });
+    } finally {
+      seed.close();
+    }
+
+    const { url, stop } = await runUi(
+      { port: 0, dbPath, operatorHandle: 'OPS' },
+      { log: () => {} },
+    );
+    try {
+      const me = (await (await fetch(`${url}/api/me`)).json()) as {
+        handle: string | null;
+      };
+      expect(me.handle).toBe('ops'); // canonicalized from "OPS"
+
+      const needsYou = (await (await fetch(`${url}/api/needs-you`)).json()) as {
+        rooms: { subject: string }[];
+      };
+      expect(needsYou.rooms).toHaveLength(1);
+      expect(needsYou.rooms[0].subject).toBe('Need ops');
+    } finally {
+      await stop();
+    }
   });
 });
