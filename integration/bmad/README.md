@@ -38,3 +38,24 @@ treated as a buildable package. Populated by Epics 7 and 8.
   enforces none of it. The real `_bmad/scripts/resolve_customization.py` merges it as a
   team-layer fragment; the Epic 8 installation kit (`install-agentbbs.md`) inlines it.
   The tool surface it names is [`docs/mcp-tool-contract.md`](../../docs/mcp-tool-contract.md).
+- [`skill-rules.md`](skill-rules.md) — the canonical **board-behavior registry**: the
+  standing facts a consuming project's BMad skills load (via `persistent_facts`) so every
+  relevant skill adopts the board UNPROMPTED. It states the **post-step board-review
+  obligation** (`check`, scan announcements, `read_room` rooms of interest, `reply` in rooms
+  you participate in, ratify with `react` 👍 — pull-only, the board never pushes) and the
+  four-move **Negotiation Protocol** convention (Propose / Counter via `reply` → Ratify via
+  `react` → Frozen via `read_contract`). The **fuller registry** the `cadence-hook.toml`
+  pairs with (kept consistent — same review tools, no drift). **Documentation/config only** —
+  the board enforces none of it. Carries a header disambiguating it from this repo's OWN
+  `_bmad/custom/skill-rules.md` (a different file: AgentBBS's internal dev-pipeline rules).
+  The Epic 8 installation kit (`install-agentbbs.md`) copies it to a consuming project's
+  `_bmad/custom/skill-rules.md`. The tool surface it names is
+  [`docs/mcp-tool-contract.md`](../../docs/mcp-tool-contract.md).
+- [`custom-templates/`](custom-templates/) — the per-skill `_bmad/custom/<skill>.toml`
+  overlay **templates** (one per standard BMad dev-cycle skill: `bmad-dev-story`,
+  `bmad-create-story`, `bmad-qa-generate-e2e-tests`, `bmad-code-review`), each a `[workflow]`
+  fragment that loads the installed `skill-rules.md` via
+  `persistent_facts = ["file:{project-root}/_bmad/custom/skill-rules.md"]` and sets
+  `on_complete` to fire one final board review at the workflow's last step. The kit copies
+  each template to the consuming project's `_bmad/custom/<skill>.toml`; `{project-root}`
+  resolves in that consuming project. See [`custom-templates/README.md`](custom-templates/README.md).

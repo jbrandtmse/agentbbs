@@ -22,3 +22,13 @@
 2026-06-01T04:59:29Z	Story 8.2	spawn	stage=code-review model=inherit-opus skill=bmad-code-review
 2026-06-01T05:07:53Z	Story 8.2	cr_complete	verdict=approved high=0 med=0 low=1 resolved=1 deferred=0 low1=stale-suite-count resolver-rerun=exit0 guard-mutation=read_room->subscribe-RED count=670 model=inherit-opus
 2026-06-01T05:07:53Z	Story 8.2	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=tests/smoke-8-2.mjs(17-assert:real-python-resolver-merge[append+on_complete-override]+real-stdio-check-bounded-delta) model=inherit-opus
+2026-06-01T05:07:53Z	Story 8.2	committed	sha=77322ca files=9 model=inherit-opus
+2026-06-01T05:11:06Z	Story 8.3	story_created	path=_bmad-output/implementation-artifacts/8-3-skill-customizations-and-skill-rules-registry.md baseline=77322ca
+2026-06-01T05:11:06Z	Story 8.3	spawn	stage=dev model=inherit-opus skill=bmad-dev-story
+2026-06-01T05:24:59Z	Story 8.3	dev_complete	files=integration/bmad/skill-rules.md,custom-templates/4-toml+README,README.md tests=688 delta=+18 guard_mutations=2-red rule8=cadence-hook+repo-skill-rules-untouched model=inherit-opus
+2026-06-01T05:24:59Z	Story 8.3	adr_verifications_complete	n/a=asset-story-no-adr-constrained-ac
+2026-06-01T05:24:59Z	Story 8.3	spawn	stage=qa model=inherit-opus skill=bmad-qa-generate-e2e-tests
+2026-06-01T05:31:18Z	Story 8.3	qa_complete	tests_added=packages/mcp-server/src/tools/skill-rules-negotiation-protocol.integration.test.ts count=689 delta=+1 proof=four-move-protocol-executable[propose/counter/ratify/frozen/revert] rule7=contract-selector-mutated-red core-restored-byte-identical model=inherit-opus
+2026-06-01T05:31:18Z	Story 8.3	spawn	stage=code-review model=inherit-opus skill=bmad-code-review
+2026-06-01T05:39:45Z	Story 8.3	cr_complete	verdict=approved high=0 med=0 low=0 resolved=0 deferred=0 dismissed=2 mutations=3-red[guard:read_room->peek_room,live-section-removal;qa:contract-lowest-seq] resolver-merge=verified count=689 model=inherit-opus
+2026-06-01T05:39:45Z	Story 8.3	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=tests/smoke-8-3.mjs(20-assert:real-resolver-merges-template[registry-ref-appends+on_complete-override]+all-5-registry-tools-advertised+4-templates+protocol-moves) model=inherit-opus

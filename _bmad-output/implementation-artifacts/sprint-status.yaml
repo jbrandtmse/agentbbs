@@ -153,7 +153,7 @@ development_status:
   8-0-epic-7-deferred-triage: done
   8-1-identity-bootstrap-workflow: done
   8-2-post-step-board-review-cadence-hook: done
-  8-3-skill-customizations-and-skill-rules-registry: backlog
+  8-3-skill-customizations-and-skill-rules-registry: done
   8-4-single-self-contained-installation-kit: backlog
   epic-8-retrospective: optional
 
