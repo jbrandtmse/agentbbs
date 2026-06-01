@@ -31,3 +31,4 @@
 2026-06-01T03:52:10Z	Story 7.3	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=_bmad-output/implementation-artifacts/tests/smoke-7-3.mjs model=claude-opus-4-8
 2026-06-01T03:52:14Z	Story 7.3	committed	sha=6016ffc submodules=
 2026-06-01T03:54:54Z	Epic 7	epic_summary	stories=4 total_high=0 total_med=0 total_low=2 total_smoke_defects=0 rework_events=0 opus_stage_count=12 sonnet_stage_count=0 haiku_stage_count=0 tests_final=645 new_tools=0 resolved=E3-tool-names,4.5-tool-label
+2026-06-01T03:55:14Z	Epic 7	epic_merged_to_feature	repos=. feature_sha=37c41ae merge_sha=37c41ae submodules=
