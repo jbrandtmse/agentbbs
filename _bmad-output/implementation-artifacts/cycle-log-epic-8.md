@@ -45,3 +45,4 @@
 2026-06-01T06:24:22Z	Story 8.4	committed	sha=a101f5d files=8 note=capstone model=inherit-opus
 2026-06-01T06:28:10Z	Epic 8	retrospective_complete	mode=silent-lead-judged doc=epic-8-retro-2026-05-31.md rules_codified=Rule-11+Rule-10-epic8-reinforcement high=0 med=0 across-epic
 2026-06-01T06:28:10Z	Epic 8	epic_summary	stories=5(8.0-8.4) tests=645->709(+64) commits=6536d58,6cfad76,77322ca,2a5c248,a101f5d high=0 med=0 rework=0 smokes=4/4-pass nfr_tripwires=0 status=MVP-COMPLETE(epics-1-8)
+2026-06-01T06:28:10Z	Epic 8	retro_committed	sha=d05dc11
