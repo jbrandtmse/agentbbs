@@ -84,6 +84,32 @@ export default defineConfig({
             'packages/*/src/**/*.test.{ts,tsx}',
             'apps/*/src/**/*.test.{ts,tsx}',
           ],
+          // The UI test tier (Story 9.1) runs React/getComputedStyle tests under a
+          // DOM env in the separate 'ui-shared-dom' project below. Exclude those
+          // .test.tsx from this node project so each UI test runs in exactly one
+          // env (never twice). Pure-node ui-shared tests (e.g. contrast.test.ts)
+          // stay here. .test.tsx in OTHER packages still run node here.
+          exclude: ['packages/ui-shared/src/**/*.test.tsx'],
+          passWithNoTests: true,
+        },
+      },
+      {
+        // UI test tier (Story 9.1, Epic 8 retro Action B). React component /
+        // CSS-custom-property tests need a browser-like DOM. happy-dom is the
+        // lighter Vitest builtin env (verified a supported BuiltinEnvironment in
+        // the installed vitest 4.1.7 types: "node"|"jsdom"|"happy-dom"|"edge-runtime";
+        // `environmentMatchGlobs` was REMOVED in v4, so a second project entry is
+        // the supported multi-env mechanism). Single-root-config invariant
+        // (Story 1.2) preserved: this lives in the ONE root config, not a
+        // per-package config.
+        resolve: {
+          alias: workspaceSrcAlias,
+        },
+        extends: true,
+        test: {
+          name: 'ui-shared-dom',
+          environment: 'happy-dom',
+          include: ['packages/ui-shared/src/**/*.test.tsx'],
           passWithNoTests: true,
         },
       },

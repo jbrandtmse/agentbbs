@@ -68,6 +68,26 @@
     // expectTypeOf/assertType helpers resolve from the explicit `vitest` import,
     // so they need no ambient types entry here.
     "types": ["node"],
+    // --- UI test tier (Story 9.1) ---
+    // This single flat pass type-checks ALL workspace source+tests, INCLUDING the
+    // ui-shared React/.tsx files (which the per-package tsconfig.json compiles with
+    // its own `jsx`/`lib`, but this standalone config does NOT inherit). Without
+    // these two options the .tsx here fail TS17004 (no --jsx) and TS2584 (no DOM
+    // globals: document/getComputedStyle).
+    //   - `jsx: react-jsx`: the React 19.2 automatic runtime; emits nothing under
+    //     noEmit and is inert for the node packages (they contain no JSX).
+    //   - DOM lib: needed for document/getComputedStyle/HTML*Element in the
+    //     ui-shared DOM test. NOTE: this does NOT weaken the node packages'
+    //     no-browser-globals guarantee — each node package's PRODUCTION build
+    //     (`tsc -b` with the base lib ["ES2023"], no DOM) is the per-package guard
+    //     that still fails if a node package touches `document`. `pnpm run build`
+    //     stays in the gate, so accidental DOM use in a node package is caught
+    //     there; only this aggregate typecheck pass sees DOM (deliberately, for the
+    //     one presentation package). Widening `lib` (a global ambient) is preferred
+    //     over widening `types` (which the story Task 5 cautioned against, as a
+    //     `@types/*` entry would pull whole ambient package surfaces in).
+    "jsx": "react-jsx",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
     // Resolve cross-package `@agentbbs/*` specifiers to each package's `src` barrel
     // (see header). No `baseUrl` (deprecated in TS 6.0); targets are RELATIVE to this
     // config's directory (repo root) and so must carry a leading `./`.
