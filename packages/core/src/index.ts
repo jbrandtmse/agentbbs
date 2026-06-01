@@ -190,3 +190,25 @@ export { readContract } from './rooms/read-contract.js';
 // nothing (pull-only); NO new event type / error code (the cursor is a table, not an event). ---
 export { check } from './discovery/check.js';
 export type { CheckMessage, CheckResult } from './discovery/check.js';
+
+// --- The protocol-announcement SEED (Story 7.2) — seeds the PERMANENT main-board "How This
+// Board Works" announcement (the Negotiation Protocol's four moves + etiquette + a pointer to
+// docs/negotiation-protocol.md) so an agent new to the board MEETS the protocol without being
+// told out-of-band (FR26). `seedProtocolAnnouncement(dataAccess)` is a one-time BOOTSTRAP append
+// (run from main.ts, NOT createBoardServer), IDEMPOTENT by existence-check (mirrors joinBoard —
+// AR16): if the `how-this-board-works` announcement exists it appends NOTHING; else it appends
+// identity.registered(agentbbs) + project.announced(main) + board.joined(agentbbs→main) +
+// announcement.posted(protocol) in ONE guarded atomic call (each preceding sub-fact guarded;
+// the room_id uniqueness guard makes a concurrent bootstrap race safe). A SYSTEM op — appends
+// DIRECTLY via the port. NO new event type / error code; THE APPEND INVARIANT holds (append-only).
+// The protocol lives on a RESERVED `main` project (the data model scopes announcements to a
+// projectId) and is OPEN-readable (FR9). Surfaced on first `check` + `join_board` (additive). ---
+export {
+  MAIN_BOARD_PROJECT_ID,
+  PROTOCOL_BODY,
+  PROTOCOL_ROOM_ID,
+  PROTOCOL_SUBJECT,
+  readProtocolAnnouncement,
+  seedProtocolAnnouncement,
+  SYSTEM_HANDLE,
+} from './seed/protocol-announcement.js';

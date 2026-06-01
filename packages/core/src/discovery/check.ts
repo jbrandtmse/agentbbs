@@ -45,8 +45,9 @@
 
 import { recordSeen } from '../identity/record-seen.js';
 import { foldProjects } from '../projects/projection.js';
-import { foldRooms } from '../rooms/projection.js';
+import { findRoom, foldRooms } from '../rooms/projection.js';
 import { roomMessages } from '../rooms/room-history.js';
+import { PROTOCOL_ROOM_ID } from '../seed/protocol-announcement.js';
 
 import type { DataAccess } from '../ports.js';
 import type { Room } from '../rooms/projection.js';
@@ -80,6 +81,19 @@ export interface CheckResult {
   messages: CheckMessage[];
   /** The advanced per-identity cursor — `maxReturned` (NOT `maxSeq()`), or unchanged if empty. */
   cursor: number;
+  /**
+   * The seeded main-board protocol announcement (Story 7.2), surfaced ONLY on the actor's
+   * FIRST-EVER check (when they have no prior `identity.seen`) so a new agent MEETS the protocol
+   * without being told out-of-band (FR26). It is surfaced REGARDLESS of the per-scope floors/
+   * cursor — it is main-board-global and predates a late identity's join floor, so it would never
+   * surface via the normal scoped delta. Present ONLY on a first-check surface:
+   *   - `Room` — the protocol proto-room, on the actor's first check, when the board is seeded;
+   *   - `undefined` (the field is OMITTED) — on every SUBSEQUENT check (the actor's `identity.seen`
+   *     now exists), or on a first check of an UNSEEDED board (no protocol announcement to surface).
+   * Additive: it does not change `announcements`/`messages`/`cursor` (the protocol is NOT injected
+   * into the scoped delta and does NOT advance the cursor).
+   */
+  protocol?: Room;
 }
 
 /**
@@ -99,8 +113,13 @@ export interface CheckResult {
  *   5. `maxReturned` = the highest `seq` across `announcements ∪ messages` (or `cursor` if both
  *      empty) — NOT `maxSeq()` (AC #3);
  *   6. `setCursor(actor, maxReturned)`;
- *   7. `recordSeen(actor)` (presence — its first consumer);
- *   8. return `{ announcements, messages, cursor: maxReturned }`.
+ *   7. FIRST-CHECK protocol surface (Story 7.2): if the actor has NO prior `identity.seen` (their
+ *      first-ever check, detected at step 2's pre-recordSeen stream), surface the seeded protocol
+ *      announcement (`findRoom(PROTOCOL_ROOM_ID)`) regardless of floors — additive, robust to an
+ *      unseeded board (surfaces nothing);
+ *   8. `recordSeen(actor)` (presence — its first consumer; this is what makes the NEXT check no
+ *      longer a first-check);
+ *   9. return `{ announcements, messages, cursor: maxReturned, protocol? }`.
  *
  * @param dataAccess The persistence port (the only dependency): the cursor methods +
  *   `eventsSince(0)` (ALL events `seq`-ordered) + the `recordSeen` append.
@@ -146,6 +165,11 @@ export async function check(
   //                  gate from the Story 4.6 forward-note, as Map membership).
   const boardFloors = new Map<string, number>();
   const roomFloors = new Map<string, number>();
+  // FIRST-CHECK detection (Story 7.2): the actor's FIRST-EVER check is the one where they have NO
+  // prior `identity.seen` — `recordSeen` is `check`'s first consumer (step 7 below), so an
+  // `identity.seen` by the actor exists iff they have checked before. We detect it from THIS
+  // (pre-recordSeen) stream read, folded inline in the same pass as the floors so no extra scan.
+  let hasPriorSeen = false;
   const considerMin = (
     map: Map<string, number>,
     key: string,
@@ -169,6 +193,12 @@ export async function check(
       case 'room.participant_added':
         if (event.payload.handle === actor) {
           considerMin(roomFloors, event.payload.roomId, event.seq);
+        }
+        break;
+      case 'identity.seen':
+        // The actor's own presence ping from a PRIOR check ⇒ this is NOT their first check.
+        if (event.actor === actor) {
+          hasPriorSeen = true;
         }
         break;
       default:
@@ -227,11 +257,29 @@ export async function check(
   // re-writes the same value (cursor unchanged — AC #2).
   await dataAccess.setCursor(actor, maxReturned);
 
-  // (7) Mark presence — `check` is `recordSeen`'s FIRST consumer (Story 2.5): every dial-in
+  // (7) FIRST-CHECK protocol surface (Story 7.2 / AC #3): on the actor's FIRST-EVER check
+  // (no prior `identity.seen`, detected above BEFORE recordSeen appends one), surface the seeded
+  // main-board protocol announcement REGARDLESS of the floors/cursor — it is main-board-global and
+  // predates a late identity's join floor, so it would never surface via the scoped delta. Robust
+  // to an UNSEEDED board: `findRoom` returns undefined → surface nothing. ADDITIVE — it is NOT
+  // injected into `announcements` and does NOT advance the cursor. On a subsequent check
+  // (`hasPriorSeen`) it is not re-surfaced.
+  const protocol = hasPriorSeen
+    ? undefined
+    : findRoom(events, PROTOCOL_ROOM_ID);
+
+  // (8) Mark presence — `check` is `recordSeen`'s FIRST consumer (Story 2.5): every dial-in
   // advances `last_seen`. The actor is an established identity (the MCP tool gated the session),
-  // so the guard-before-append finds the registration and appends one `identity.seen`.
+  // so the guard-before-append finds the registration and appends one `identity.seen`. (This is
+  // what makes a LATER check no longer a first-check — its `identity.seen` is now in the stream.)
   await recordSeen(dataAccess, actor);
 
-  // (8) The scoped, `seq`-ordered delta + the advanced cursor.
-  return { announcements, messages, cursor: maxReturned };
+  // (9) The scoped, `seq`-ordered delta + the advanced cursor + (first-check only) the protocol.
+  // Build the result WITHOUT a `protocol` key when there is nothing to surface (subsequent check
+  // or unseeded board), so the field is OMITTED rather than carried as `undefined`.
+  const result: CheckResult = { announcements, messages, cursor: maxReturned };
+  if (protocol !== undefined) {
+    result.protocol = protocol;
+  }
+  return result;
 }
