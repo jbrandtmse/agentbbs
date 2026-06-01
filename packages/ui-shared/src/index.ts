@@ -121,3 +121,14 @@ export { CreateProjectCompose } from './compose/CreateProjectCompose.js';
 export type { CreateProjectComposeProps } from './compose/CreateProjectCompose.js';
 export { PostAnnouncementCompose } from './compose/PostAnnouncementCompose.js';
 export type { PostAnnouncementComposeProps } from './compose/PostAnnouncementCompose.js';
+
+// Story 9.12 — the operator "join a project" discovery picker: a calm inline panel (NOT a modal)
+// listing the joinable projects (the global-read directory MINUS the ones the operator already
+// belongs to); choosing one runs the SAME `join_board` op an agent uses. Prop-driven +
+// presentation-only (NFR2 — no core/data-access import); the surface owns the directory filter,
+// the join write, and the live tree refresh. Wires the previously-inert `＋ join a project…` row.
+export { JoinProjectPicker } from './compose/JoinProjectPicker.js';
+export type {
+  JoinProjectPickerProps,
+  JoinableProject,
+} from './compose/JoinProjectPicker.js';

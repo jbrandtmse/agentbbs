@@ -2633,3 +2633,460 @@ describe('App shell — open the FIRST room in a room-less project (Story 9.11, 
     ).toBeNull();
   });
 });
+
+// --- Story 9.12 — JOIN A PROJECT FROM THE TREE. The previously-inert `＋ join a project…` row is
+// now wired to the calm JoinProjectPicker → the EXISTING `POST /api/projects/:id/join`
+// (`join_board`) + the EXISTING `fetchDirectory` read. These tests pin: clicking the row opens the
+// picker listing the global-read directory MINUS the projects the operator ALREADY belongs to;
+// choosing one POSTs join_board with the right id then refreshes the tree so membership shows live;
+// closing without choosing writes nothing. The "minus already-member" filter is mutation-tested
+// (Rule 7) — a member project must NOT appear in the picker. ---
+describe('App shell — join a project from the tree (Story 9.12)', () => {
+  /** Every board WRITE the shell issues (method + url + parsed JSON body). */
+  let writes: { url: string; body: unknown }[];
+  /** Whether `ops` is a member of `payments` (false initially → it's joinable; join flips it true). */
+  let opsInPayments: boolean;
+
+  function directory() {
+    return {
+      projects: [
+        {
+          project_id: 'calling-interface',
+          title: 'Calling Interface',
+          description: 'How agents dial in.',
+          announcer: 'alice',
+          // ops ALREADY belongs here → must NOT appear in the picker (the filter target).
+          members: ['alice', 'ops'],
+        },
+        {
+          project_id: 'payments',
+          title: 'Payments',
+          description: 'Money.',
+          announcer: 'bob',
+          // ops is NOT a member → it IS joinable, until the join flips it.
+          members: opsInPayments ? ['bob', 'ops'] : ['bob'],
+        },
+      ],
+    };
+  }
+
+  beforeEach(() => {
+    writes = [];
+    opsInPayments = false;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const method = init?.method ?? 'GET';
+        if (method === 'POST') {
+          const parsed =
+            typeof init?.body === 'string' && init.body.length > 0
+              ? (JSON.parse(init.body) as unknown)
+              : undefined;
+          writes.push({ url, body: parsed });
+          if (url === '/api/projects/payments/join') {
+            opsInPayments = true; // the join lands → the tree refresh shows the membership.
+            return new Response(
+              JSON.stringify({
+                project: {
+                  project_id: 'payments',
+                  title: 'Payments',
+                  description: 'Money.',
+                  announcer: 'bob',
+                  members: ['bob', 'ops'],
+                },
+              }),
+              { status: 200 },
+            );
+          }
+          return new Response('nope', { status: 404 });
+        }
+        // GETs — dynamic so the post-join tree refresh + a re-open of the picker see the new state.
+        if (url === '/api/me') {
+          return new Response(JSON.stringify({ handle: 'ops' }), {
+            status: 200,
+          });
+        }
+        if (url === '/api/needs-you') {
+          return new Response(JSON.stringify({ rooms: [] }), { status: 200 });
+        }
+        if (url === '/api/directory') {
+          return new Response(JSON.stringify(directory()), { status: 200 });
+        }
+        if (
+          url === '/api/projects/calling-interface/rooms' ||
+          url === '/api/projects/payments/rooms'
+        ) {
+          return new Response(JSON.stringify({ rooms: [] }), { status: 200 });
+        }
+        if (
+          url === '/api/projects/calling-interface/announcements' ||
+          url === '/api/projects/payments/announcements'
+        ) {
+          return new Response(JSON.stringify({ announcements: [] }), {
+            status: 200,
+          });
+        }
+        return new Response('nope', { status: 404 });
+      }),
+    );
+    vi.stubGlobal(
+      'EventSource',
+      FakeEventSource as unknown as typeof EventSource,
+    );
+  });
+
+  async function mountBoard(): Promise<void> {
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await flush();
+  }
+
+  /** Click the sidebar `＋ join a project…` row (opens the picker). */
+  async function clickJoinRow(): Promise<void> {
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="nav-join-project"]')
+        ?.click();
+    });
+    await flush();
+  }
+
+  it('clicking `＋ join a project…` opens the picker listing the directory MINUS already-member projects', async () => {
+    await mountBoard();
+    // The picker is not shown until the row is clicked.
+    expect(
+      container.querySelector('[data-testid="join-project-picker"]'),
+    ).toBeNull();
+
+    await clickJoinRow();
+
+    const picker = container.querySelector(
+      '[data-testid="join-project-picker"]',
+    );
+    expect(picker).not.toBeNull();
+    const choices = container.querySelectorAll(
+      '[data-testid="join-project-choice"]',
+    );
+    // ONLY payments is joinable — calling-interface (ops already a member) is filtered OUT.
+    // This is the Rule-7 mutation target: dropping the `!members.includes(operator)` filter makes
+    // calling-interface appear here, turning this assertion RED.
+    expect(choices.length).toBe(1);
+    expect(choices[0]?.getAttribute('data-project-id')).toBe('payments');
+    expect(
+      container.querySelector(
+        '[data-testid="join-project-choice"][data-project-id="calling-interface"]',
+      ),
+    ).toBeNull();
+  });
+
+  it('choosing a project POSTs join_board with the right id then refreshes the tree (membership live)', async () => {
+    await mountBoard();
+    await clickJoinRow();
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>(
+          '[data-testid="join-project-choice"][data-project-id="payments"]',
+        )
+        ?.click();
+    });
+    await flush();
+
+    // The shell POSTed join_board to the chosen project's endpoint (path-only; no body).
+    const joinWrite = writes.find((w) =>
+      w.url.endsWith('/api/projects/payments/join'),
+    );
+    expect(joinWrite).not.toBeUndefined();
+
+    // The picker closed on success.
+    expect(
+      container.querySelector('[data-testid="join-project-picker"]'),
+    ).toBeNull();
+
+    // The tree refreshed AND the membership is live: re-opening the picker no longer offers
+    // payments (ops now belongs to BOTH projects → the joinable set is empty → calm empty state).
+    await clickJoinRow();
+    expect(
+      container.querySelectorAll('[data-testid="join-project-choice"]').length,
+    ).toBe(0);
+    expect(
+      container.querySelector('[data-testid="join-project-empty"]'),
+    ).not.toBeNull();
+  });
+
+  it('closing the picker without choosing writes NOTHING (clean no-op)', async () => {
+    await mountBoard();
+    await clickJoinRow();
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="join-project-cancel"]')
+        ?.click();
+    });
+    await flush();
+
+    // No board write was issued, and the picker is dismissed.
+    expect(writes.length).toBe(0);
+    expect(
+      container.querySelector('[data-testid="join-project-picker"]'),
+    ).toBeNull();
+  });
+});
+
+// --- Story 9.12 QA value-add — the LOAD-BEARING joinable-filter + calm-UX semantics a naive test
+// misses. The marquee semantic is the joinable filter: the global-read directory MINUS the projects
+// the operator ALREADY belongs to, compared CANONICALLY (lowercased) — NOT a raw exact-match. We
+// harden: (a) a project where the operator is a member under a DIFFERENT CASE of the handle is STILL
+// excluded; (b) the null/watching-only operator path lists ALL projects (the host enforces the gate
+// at choose-time); (c) the empty-joinable calm state (operator already in everything); (d) a
+// choose→postJoin failure (NO_OPERATOR 403) surfaces the calm INLINE error with the picker STILL
+// open — never a silent swallow, never a crash. The filter is mutation-tested in the dev block; this
+// block sharpens the canonical compare + the failure path. ---
+describe('App shell — join a project: filter + calm-UX hardening (Story 9.12 QA)', () => {
+  /** Every board WRITE the shell issues (url + parsed body). */
+  let writes: { url: string; body: unknown }[];
+  /** Test-configurable `/api/me` handle (mixed-case allowed to prove canonical compare). */
+  let meHandle: string | null;
+  /** Test-configurable directory projects (members as the wire delivers them). */
+  let dirProjects: {
+    project_id: string;
+    title: string;
+    description: string;
+    announcer: string;
+    members: string[];
+  }[];
+  /** When set, a POST .../join returns this {status, body} instead of 200 success. */
+  let joinFailure: { status: number; body: unknown } | null;
+
+  beforeEach(() => {
+    writes = [];
+    meHandle = 'ops';
+    joinFailure = null;
+    dirProjects = [
+      {
+        project_id: 'calling-interface',
+        title: 'Calling Interface',
+        description: 'How agents dial in.',
+        announcer: 'alice',
+        members: ['alice', 'ops'],
+      },
+      {
+        project_id: 'payments',
+        title: 'Payments',
+        description: 'Money.',
+        announcer: 'bob',
+        members: ['bob'],
+      },
+    ];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const method = init?.method ?? 'GET';
+        if (method === 'POST') {
+          const parsed =
+            typeof init?.body === 'string' && init.body.length > 0
+              ? (JSON.parse(init.body) as unknown)
+              : undefined;
+          writes.push({ url, body: parsed });
+          if (/^\/api\/projects\/[^/]+\/join$/.test(url)) {
+            if (joinFailure !== null) {
+              return new Response(JSON.stringify(joinFailure.body), {
+                status: joinFailure.status,
+              });
+            }
+            return new Response(JSON.stringify({ project: dirProjects[0] }), {
+              status: 200,
+            });
+          }
+          return new Response('nope', { status: 404 });
+        }
+        if (url === '/api/me') {
+          return new Response(JSON.stringify({ handle: meHandle }), {
+            status: 200,
+          });
+        }
+        if (url === '/api/needs-you') {
+          return new Response(JSON.stringify({ rooms: [] }), { status: 200 });
+        }
+        if (url === '/api/directory') {
+          return new Response(JSON.stringify({ projects: dirProjects }), {
+            status: 200,
+          });
+        }
+        if (/^\/api\/projects\/[^/]+\/rooms$/.test(url)) {
+          return new Response(JSON.stringify({ rooms: [] }), { status: 200 });
+        }
+        if (/^\/api\/projects\/[^/]+\/announcements$/.test(url)) {
+          return new Response(JSON.stringify({ announcements: [] }), {
+            status: 200,
+          });
+        }
+        return new Response('nope', { status: 404 });
+      }),
+    );
+    vi.stubGlobal(
+      'EventSource',
+      FakeEventSource as unknown as typeof EventSource,
+    );
+  });
+
+  async function mountBoard(): Promise<void> {
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await flush();
+  }
+
+  async function clickJoinRow(): Promise<void> {
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="nav-join-project"]')
+        ?.click();
+    });
+    await flush();
+  }
+
+  it('canonical compare — a project where the operator is a member under a DIFFERENT CASE is STILL excluded (not a raw match)', async () => {
+    // The marquee semantic: the joinable filter compares the operator handle to members
+    // CANONICALLY (lowercased on both sides), not by raw exact-match. Here the operator is `ops`
+    // (canonical) but calling-interface lists the member as `Ops` (mixed case). A raw
+    // `.includes('ops')` would FAIL to exclude it → calling-interface would wrongly appear as
+    // joinable. The canonical compare excludes it. This is the regression this story's
+    // "canonical-handle compare" claim must hold.
+    meHandle = 'ops';
+    dirProjects[0].members = ['alice', 'Ops']; // operator present under a DIFFERENT case.
+    await mountBoard();
+    await clickJoinRow();
+
+    // calling-interface (operator is a member, mixed case) is NOT offered; only payments is.
+    expect(
+      container.querySelector(
+        '[data-testid="join-project-choice"][data-project-id="calling-interface"]',
+      ),
+    ).toBeNull();
+    const choices = container.querySelectorAll(
+      '[data-testid="join-project-choice"]',
+    );
+    expect(choices.length).toBe(1);
+    expect(choices[0]?.getAttribute('data-project-id')).toBe('payments');
+  });
+
+  it('watching-only host (operatorHandle === null) lists ALL projects — the host enforces the real gate at choose-time', async () => {
+    // When there is no operator handle, the surface cannot compute a membership filter, so it
+    // shows the WHOLE directory (Task 2 decision). The host returns NO_OPERATOR at choose-time;
+    // the picker stays calm. Pin that BOTH projects are offered when watching-only.
+    meHandle = null;
+    await mountBoard();
+    await clickJoinRow();
+
+    const ids = Array.from(
+      container.querySelectorAll('[data-testid="join-project-choice"]'),
+    )
+      .map((el) => el.getAttribute('data-project-id'))
+      .sort();
+    expect(ids).toEqual(['calling-interface', 'payments']);
+  });
+
+  it('empty-joinable calm state — operator already in EVERY project → the calm "no projects to join" line (not an error)', async () => {
+    // The operator belongs to every directory project → the joinable set is empty → the picker
+    // shows the CALM empty line, NOT the error slot and NOT a crash.
+    meHandle = 'ops';
+    dirProjects = dirProjects.map((p) => ({
+      ...p,
+      members: [...new Set([...p.members, 'ops'])],
+    }));
+    await mountBoard();
+    await clickJoinRow();
+
+    expect(
+      container.querySelector('[data-testid="join-project-picker"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelectorAll('[data-testid="join-project-choice"]').length,
+    ).toBe(0);
+    expect(
+      container.querySelector('[data-testid="join-project-empty"]'),
+    ).not.toBeNull();
+    // The calm empty state is NOT the error slot.
+    expect(
+      container.querySelector('[data-testid="join-project-error"]'),
+    ).toBeNull();
+  });
+
+  it('choose → postJoin NO_OPERATOR (403) surfaces the calm INLINE error with the picker STILL open (no silent swallow, no crash)', async () => {
+    // The watching-only / no-operator failure path: the operator opens the picker (watching-only
+    // → all projects shown) and chooses one; the host returns 403 NO_OPERATOR. The shell must
+    // surface that calmly in the inline error slot, keep the picker OPEN (never swap to a modal,
+    // never silently swallow), and not crash. This is the calm-error invariant from AC #2.
+    meHandle = null;
+    joinFailure = {
+      status: 403,
+      body: {
+        code: 'NO_OPERATOR',
+        message: 'watching-only; pass --as <handle> to join.',
+      },
+    };
+    await mountBoard();
+    await clickJoinRow();
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>(
+          '[data-testid="join-project-choice"][data-project-id="payments"]',
+        )
+        ?.click();
+    });
+    await flush();
+
+    // The join was attempted (no silent swallow at the call site)...
+    expect(
+      writes.some((w) => w.url.endsWith('/api/projects/payments/join')),
+    ).toBe(true);
+    // ...the picker is STILL open (not dismissed, not a modal)...
+    expect(
+      container.querySelector('[data-testid="join-project-picker"]'),
+    ).not.toBeNull();
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    // ...and the calm inline error is shown to the operator.
+    const errorEl = container.querySelector(
+      '[data-testid="join-project-error"]',
+    );
+    expect(errorEl).not.toBeNull();
+    expect(errorEl?.textContent?.length ?? 0).toBeGreaterThan(0);
+  });
+
+  it('re-opening the picker after a failed join still offers the project (the failure left the tree unchanged — no false membership)', async () => {
+    // Idempotency/consistency corollary: a FAILED join must not optimistically flip membership.
+    // After a NO_OPERATOR failure, re-opening the picker must STILL offer the project (the tree
+    // was never refreshed to a joined state). Guards against a client-only optimistic membership
+    // that would hide the project despite the join never landing.
+    meHandle = null;
+    joinFailure = {
+      status: 403,
+      body: {
+        code: 'NO_OPERATOR',
+        message: 'watching-only; pass --as <handle> to join.',
+      },
+    };
+    await mountBoard();
+    await clickJoinRow();
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>(
+          '[data-testid="join-project-choice"][data-project-id="payments"]',
+        )
+        ?.click();
+    });
+    await flush();
+
+    // The picker stayed open; payments is still listed (the failed join did not flip membership).
+    expect(
+      container.querySelector(
+        '[data-testid="join-project-choice"][data-project-id="payments"]',
+      ),
+    ).not.toBeNull();
+  });
+});

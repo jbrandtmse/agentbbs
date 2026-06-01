@@ -1,48 +1,40 @@
-# Test Automation Summary — Story 9.11 (QA generate-e2e-tests stage)
+# Test Automation Summary — Story 9.12 (join a project from the tree)
 
-Story: 9.11 — Start a negotiation (announce a project & open a room).
 Stage: qa-generate-e2e-tests. Generated against the dev's uncommitted changeset.
+Focus: the load-bearing joinable-filter semantics + calm-UX invariants a naive test misses.
+All run under the `ui-shared-dom` (happy-dom) Vitest project; canonical gate is ROOT `pnpm test`
+(Rule 12 corollary).
 
-## Generated Tests (QA hardening — gaps beyond the dev's coverage)
+## Generated Tests
 
-Added one describe block to `packages/cli/src/host/json-api.test.ts` (real in-memory
-`createDataAccess` ledger, Rule 3 — nothing mocked):
+### ui-shared picker DOM (`packages/ui-shared/src/compose/JoinProjectPicker.test.tsx`, +3)
+- [x] NOT a modal — role-based assertion (`role="group"`; no `role="dialog"`/`alertdialog`/`aria-modal`)
+- [x] inline error slot renders WITH the list intact AND fires no `onChoose`/`onCancel` (no silent side effect)
+- [x] a disabled (pending) choose row does NOT fire `onChoose` on click (behavioral no-double-submit)
 
-`handleApiRequest — Story 9.11 qa: atomicity + gate-order (the load-bearing semantics)`
-- [x] **announce_project atomicity by SPECIFIC event** — a duplicate-title announce appends
-  NEITHER `project.announced` NOR `board.joined` from the re-announcing operator (sharpens the
-  dev's maxSeq-only "nothing appended" to the faithful atomic-rollback property the AC promises);
-  also asserts the original project is intact (still alice's, exactly one project).
-- [x] **post_announcement NOT_A_MEMBER atomicity by SPECIFIC event** — a non-member post appends
-  no `announcement.posted` by that actor (sharpens maxSeq to the specific missing event).
-- [x] **post_announcement GATE ORDER** — a NON-member with an OVER-CAP body gets `NOT_A_MEMBER`
-  (403, the join-first handoff), NOT `BODY_TOO_LARGE` (413). Pins that core runs the membership
-  gate BEFORE the body cap (post-announcement.ts:123 before :129). PREVIOUSLY UNTESTED through
-  the host — the dev's separate NOT_A_MEMBER / BODY_TOO_LARGE cases cannot catch an order flip.
+### apps/web integration DOM (`apps/web/src/App.test.tsx`, +5)
+- [x] canonical compare — operator a member under a DIFFERENT CASE is STILL excluded (mutation-tested RED vs raw `.includes`)
+- [x] watching-only host (`operatorHandle === null`) lists ALL projects (host enforces the gate at choose-time)
+- [x] empty-joinable calm state — operator already in EVERY project → calm "no projects to join" line (not an error)
+- [x] choose → `postJoin` NO_OPERATOR (403) surfaces calm INLINE error, picker STILL open, no silent swallow / no crash
+- [x] re-opening after a FAILED join still offers the project (no false optimistic membership)
 
-## Mutation-tests (Rule 7 — non-vacuous proof, both reverted byte-identically)
-- **Gate-order**: temporarily flipped `post-announcement.ts` (cap before membership) → the
-  gate-order test went RED (403→413). Reverted via `git checkout`; `git diff HEAD` empty.
-- **Rule 13 drift-guard**: temporarily appended a phantom code to `BOARD_ERROR_CODES` → the
-  existing closed-set pin went RED. Reverted; core + mcp-server `git diff HEAD` empty.
+## Production hardening (QA — Rule 8 reconcile, Rule 7 proven)
+- `apps/web/src/App.tsx` joinable filter: raw `members.includes(operator)` → canonical
+  `members.some(m => m.toLowerCase() === operator)`, so the filter does not silently depend on the
+  distant board-canonicalization invariant. Matches the story's stated "canonical-handle compare".
+  Mutation-tested non-vacuous (Rule 7): reverting to raw `.includes` turns the canonical-compare
+  test RED (mixed-case `Ops` member leaks into the picker); restored byte-identically; suite green.
 
 ## Coverage
-- announce_project endpoint: happy + PROJECT_EXISTS(409) + NO_OPERATOR(403) + BAD_REQUEST(400)
-  + atomicity-by-event — covered.
-- post_announcement endpoint: happy + NOT_A_MEMBER(403) + BOARD_NOT_FOUND(404) +
-  BODY_TOO_LARGE(413) + NO_OPERATOR(403) + BAD_REQUEST(400) + gate-order + atomicity-by-event
-  — covered (unit + real-HTTP integration).
-- ui-shared compose components + ApiError client surfacing: dev coverage adequate; not duplicated.
+- Joinable filter: canonical compare + null-operator + empty-set + idempotent-no-re-offer (dev) covered.
+- Calm UX: no-modal (role), inline error + picker-stays-open, disabled-behavioral, failed-join no false membership.
+- Rule 13 drift-guard: `git diff HEAD -- packages/core packages/mcp-server packages/cli/src/host`
+  EMPTY (byte-identical agent contract; picker reuses the existing `join_board` endpoint, no new op).
 
 ## Gate (canonical root `pnpm test`, Rule 12)
-- `vitest run`: 137 files, 1136 passed, 0 failed, 0 skipped (was 1133; +3 new).
-- eslint clean; `tsc --noEmit` clean (whole project); prettier clean. No `.only`/`.skip`/`.todo`.
-- Rule 13: `git diff HEAD -- packages/core packages/mcp-server` EMPTY (contract byte-identical).
+- `vitest run`: 138 files, 1157 passed, 0 failed, 0 skipped (baseline 1149 → +8).
+- eslint 0; `tsc --noEmit` clean (whole project); prettier --check clean. No `.only`/`.skip`/`.todo` (Rule 8).
 
-## Decision on concurrency (Rule 5 judgment)
-No forked cross-process race added. `announceProject` title-uniqueness rides the `appendGuarded`
-primitive already cross-process-proven by `data-access/register-race.test.ts` +
-`concurrency.test.ts`; `postAnnouncement` room-id disambiguation by `post-announcement-race.test.ts`.
-The 9.11 host endpoints are thin HTTP wrappers over those proven ops — a new fork here would
-re-prove the data-access primitive, not the host. Atomicity (the host-level property) is pinned
-in-process by the event-presence assertions above.
+## Next Steps
+- Lead per-story real-Chrome smoke (informational gate) — see story §Smoke.

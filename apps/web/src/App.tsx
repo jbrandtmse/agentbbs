@@ -42,6 +42,7 @@ import {
   Composer,
   ConnectionFooter,
   CreateProjectCompose,
+  JoinProjectPicker,
   NavTree,
   PostAnnouncementCompose,
   RoomView,
@@ -53,6 +54,7 @@ import {
   announceProject,
   appendPendingPost,
   deriveAgreedSeq,
+  fetchDirectory,
   foldRoomDelta,
   foldTreeDelta,
   loadRoomViewModel,
@@ -71,6 +73,7 @@ import {
 
 import type {
   ConnectionStatus,
+  JoinableProject,
   MessagePostModel,
   NavTreeModel,
   RoomTabModel,
@@ -207,6 +210,16 @@ export function App() {
   const [announceError, setAnnounceError] = useState<string | null>(null);
   const [announcePending, setAnnouncePending] = useState(false);
   const [announceJoinFirst, setAnnounceJoinFirst] = useState(false);
+
+  // Story 9.12 — the calm "join a project" discovery picker (wires the previously-inert
+  // `＋ join a project…` row). `joinPickerOpen` toggles the inline panel; `joinable` is the
+  // global-read directory MINUS the projects the operator already belongs to (computed when the
+  // picker opens, canonical-handle compare); `joinPickerError`/`joinPending` drive its calm inline
+  // error (`NO_OPERATOR` for a watching-only host) + disabled state. NOT a modal (Story 9.10).
+  const [joinPickerOpen, setJoinPickerOpen] = useState(false);
+  const [joinable, setJoinable] = useState<JoinableProject[]>([]);
+  const [joinPickerError, setJoinPickerError] = useState<string | null>(null);
+  const [joinPending, setJoinPending] = useState(false);
 
   // Build the tree model once on mount (real ledger data over the JSON API).
   useEffect(() => {
@@ -404,14 +417,69 @@ export function App() {
     });
   }
 
+  // Story 9.12 — OPEN THE JOIN-A-PROJECT PICKER (wires the previously-inert `＋ join a project…`
+  // row). Fetch the global-read directory (`fetchDirectory`, the same read the tree builds from)
+  // and compute the JOINABLE set = every project MINUS the ones the operator already belongs to
+  // (filter `members` against the CANONICAL operator handle — `model.operatorHandle`, lowercased
+  // by resolveOperatorHandle, matching how memberships are stored). Then open the calm inline
+  // picker. A watching-only host (no operator handle) cannot resolve an actor → keep the JOIN a
+  // no-op at choose-time (the picker surfaces the host's NO_OPERATOR calmly); we still open the
+  // picker so the affordance does not crash. On a directory-read failure, surface the calm error.
   function handleJoinProject(): void {
-    // DISPOSITION (Story 9.7): the room-level join-to-post (the join-gate Composer below) is
-    // the participate seam — the operator joins + posts as a peer from INSIDE an open room. The
-    // sidebar `＋ join a project…` action (a board-wide discovery affordance, distinct from the
-    // room composer) remains a documented hand-off. Left as a logged stub.
-    console.info(
-      'join a project… (sidebar board-picker is a later affordance)',
-    );
+    setJoinPickerError(null);
+    // `model.operatorHandle` is already canonical (lowercased by `resolveOperatorHandle`), and
+    // `members` are stored canonical by the board. We still compare CANONICALLY on both sides
+    // (lowercase the member entry too) so the joinable filter does not silently depend on a
+    // distant upstream invariant — a project the operator already belongs to is excluded even if
+    // a member entry were to arrive in a different case (Story 9.12 "canonical-handle compare").
+    const operator = model?.operatorHandle ?? null;
+    fetchDirectory()
+      .then((directory) => {
+        const next: JoinableProject[] = directory.projects
+          .filter(
+            (p) =>
+              operator === null ||
+              !p.members.some((m) => m.toLowerCase() === operator),
+          )
+          .map((p) => ({ projectId: p.project_id, title: p.title }));
+        setJoinable(next);
+        setJoinPickerOpen(true);
+      })
+      .catch((err: unknown) => {
+        // Even on a read failure, open the picker so the affordance is not a silent no-op; the
+        // calm inline error explains why the list is empty (never a modal, never a crash).
+        setJoinable([]);
+        setJoinPickerError(
+          err instanceof Error ? err.message : 'Could not load projects.',
+        );
+        setJoinPickerOpen(true);
+      });
+  }
+
+  // Story 9.12 — CHOOSE a project to join from the picker. Call `postJoin(projectId)` (the SAME
+  // `join_board` op an agent uses — no operator backdoor; idempotent, a re-join is a host no-op),
+  // then `loadTreeModel()` to refresh so the new membership shows LIVE, and close the picker. On
+  // failure surface the calm inline error (NO_OPERATOR for a watching-only host / BOARD_NOT_FOUND
+  // / …) with the picker still open (never a silent swallow). Closing the picker without choosing
+  // is a clean no-op (no board write) — handled by the cancel/Esc handlers on the panel.
+  function handleChooseJoin(projectId: string): void {
+    setJoinPending(true);
+    setJoinPickerError(null);
+    postJoin(projectId)
+      .then(() => loadTreeModel())
+      .then((built) => {
+        // The new membership appears live (a full re-derive of the global-read model — the same
+        // success-refetch discipline as the announce/reply paths in 9.9/9.11).
+        setModel(built);
+        setJoinPickerOpen(false);
+        setJoinPickerError(null);
+      })
+      .catch((err: unknown) => {
+        setJoinPickerError(
+          err instanceof Error ? err.message : 'Could not join the project.',
+        );
+      })
+      .finally(() => setJoinPending(false));
   }
 
   // Story 9.11 — START A NEGOTIATION (announce a project). Open the calm compose panel; on submit
@@ -792,6 +860,26 @@ export function App() {
               loading…
             </div>
           )
+        )}
+        {/* Story 9.12 — the calm "join a project" discovery picker, opened by the NavTree
+            `＋ join a project…` row. Inline at the bottom of the sidebar (NOT a modal); lists the
+            global-read directory MINUS the operator's current memberships. Choosing runs the SAME
+            `join_board` an agent uses + refreshes the tree LIVE; cancel/Esc is a clean no-op. */}
+        {joinPickerOpen && (
+          <JoinProjectPicker
+            joinable={joinable}
+            onChoose={handleChooseJoin}
+            onCancel={() => {
+              setJoinPickerOpen(false);
+              setJoinPickerError(null);
+            }}
+            onEscape={() => {
+              setJoinPickerOpen(false);
+              setJoinPickerError(null);
+            }}
+            error={joinPickerError}
+            pending={joinPending}
+          />
         )}
         {/* The calm connection footer — `● connected` / `○ reconnecting…`, never a modal. */}
         <ConnectionFooter status={connectionStatus} />
