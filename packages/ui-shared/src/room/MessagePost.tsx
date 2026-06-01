@@ -12,9 +12,13 @@
 // collapse distinct from the Story 9.2 per-code-block line cap (that caps an individual
 // fenced block; this caps the entire post's height). "show more" expands it in place.
 //
-// Story 9.6 owns the 👍 reaction chip + the ✓ agreed mark + the agreed rail/wash — this
-// component leaves room for them (a footer/rail seam) but does NOT build them. The
-// `reactions` handle array is carried in the model but not rendered here.
+// Story 9.6 wires in the 👍 reaction chip + the computed ✓ agreed mark + the agreed
+// rail/wash. The FOOTER carries the `ReactionChip` (the per-message 👍, live count + toggle);
+// the converged post (the room's CURRENT CONTRACT, computed by the surface and passed in as
+// `agreed` — NEVER a stored flag) additionally gets the `✓ agreed` mark in the head + footer,
+// a `2px --agreed-green` left RAIL, and a faint green WASH (gated behind a non-HC check). The
+// `reactions` handle array drives the chip count; the surface passes the operator's own
+// 👍 state + the participant gate.
 //
 // PRESENTATION-ONLY (NFR2): no @agentbbs/core / @agentbbs/data-access import; prop-driven.
 // React 19 automatic JSX runtime. The display timestamp is FORMATTED from the provided
@@ -24,9 +28,14 @@
 import { useState } from 'react';
 
 import { MarkdownView } from '../markdown/MarkdownView.js';
+import { AgreedMark } from './AgreedMark.js';
+import { ReactionChip } from './ReactionChip.js';
 import { formatTimestamp } from './format-timestamp.js';
 
 import type { CSSProperties } from 'react';
+
+/** The faint green wash behind the agreed post (DESIGN.md message-post.agreed-wash). */
+export const AGREED_POST_WASH = 'rgba(78,192,122,0.07)';
 
 /** The kind discriminator of a post — the seeding announcement (#1) vs a reply. */
 export type MessagePostKind = 'announcement' | 'reply';
@@ -62,6 +71,35 @@ export interface MessagePostProps {
    * (DESIGN.md "> ~30 lines"). Defaults to {@link POST_COLLAPSE_LINE_THRESHOLD}.
    */
   collapseLineThreshold?: number;
+  /**
+   * Whether THIS post is the room's CURRENT CONTRACT — the converged message (computed by
+   * the surface from `/api/rooms/:id/contract`: the highest-`seq` live-👍'd message). When
+   * `true`, the post shows the `✓ agreed` mark (head + footer) + the agreed rail + wash.
+   * NEVER a stored flag (FR21) — the surface re-derives it on every 👍 change, so it MOVES
+   * and DISAPPEARS as the contract changes. Defaults to `false`.
+   */
+  agreed?: boolean;
+  /**
+   * Whether the OPERATOR currently holds a live 👍 on this post (the FR21 currently-👍'd
+   * state for the chip). The surface computes it as `operator ∈ post.reactions`. Default `false`.
+   */
+  operatorReacted?: boolean;
+  /**
+   * Whether the operator MAY toggle a 👍 (a room participant). `false` → the chip renders
+   * the disabled "join to react" hand-off (Story 9.7). Defaults to `false`.
+   */
+  canReact?: boolean;
+  /**
+   * Fired when the operator toggles the 👍 on THIS post (carries the post `seq`). The surface
+   * fires the react/unreact write then refetches (Story 9.9 adds optimism). Not fired when
+   * `!canReact`.
+   */
+  onToggleReaction?: (seq: number) => void;
+  /**
+   * High-contrast mode — drops the green wash + chip tint for solid borders (DESIGN.md).
+   * Defaults to `false` (web V1 is non-HC). Story 9.10 owns the real a11y/HC floor.
+   */
+  highContrast?: boolean;
 }
 
 /** The default whole-post collapse threshold (DESIGN.md "> ~30 lines"). */
@@ -82,15 +120,31 @@ function sourceLineCount(body: string): number {
 export function MessagePost({
   post,
   collapseLineThreshold = POST_COLLAPSE_LINE_THRESHOLD,
+  agreed = false,
+  operatorReacted = false,
+  canReact = false,
+  onToggleReaction,
+  highContrast = false,
 }: MessagePostProps) {
   const isLong = sourceLineCount(post.body) > collapseLineThreshold;
   // Long posts start COLLAPSED (a calm preview); the operator opts in to the full body.
   const [expanded, setExpanded] = useState(false);
   const collapsed = isLong && !expanded;
 
+  // The agreed (converged-contract) post carries a 2px agreed-green LEFT RAIL + a faint
+  // green WASH (the wash gated behind non-HC per DESIGN.md — HC keeps the rail only). The
+  // left padding makes room for the rail so the body does not shift between states.
   const articleStyle: CSSProperties = {
-    padding: 'var(--space-5) 0',
+    padding: agreed
+      ? 'var(--space-5) 0 var(--space-5) var(--space-4)'
+      : 'var(--space-5) 0',
     borderBottom: '1px solid var(--border-soft)',
+    ...(agreed
+      ? {
+          borderLeft: '2px solid var(--agreed-green)',
+          background: highContrast ? 'transparent' : AGREED_POST_WASH,
+        }
+      : {}),
   };
 
   const headerStyle: CSSProperties = {
@@ -139,14 +193,22 @@ export function MessagePost({
     cursor: 'pointer',
   };
 
+  const footerStyle: CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-3)',
+    marginTop: 'var(--space-3)',
+  };
+
   const timestamp = post.createdAt ? formatTimestamp(post.createdAt) : '';
 
   return (
     <article
-      className="message-post"
+      className={agreed ? 'message-post message-post--agreed' : 'message-post'}
       data-testid="message-post"
       data-message-seq={post.seq}
       data-kind={post.kind}
+      data-agreed={agreed ? 'true' : 'false'}
       style={articleStyle}
     >
       <header className="message-post-head" style={headerStyle}>
@@ -157,6 +219,8 @@ export function MessagePost({
         >
           @{post.actor}
         </span>
+        {/* The agreed-mark HEAD mirror (DESIGN.md) — only on the converged post. */}
+        {agreed && <AgreedMark placement="head" />}
         {timestamp.length > 0 && (
           <time
             className="message-post-timestamp"
@@ -193,6 +257,26 @@ export function MessagePost({
           {collapsed ? 'show more' : 'show less'}
         </button>
       )}
+
+      {/* FOOTER: the per-message 👍 reaction chip, plus the agreed-mark on the converged
+          post (beside the 👍). The chip RENDERS for any operator (open read); it toggles
+          only for a participant (canReact) — else the disabled "join to react" hand-off. */}
+      <footer
+        className="message-post-footer"
+        data-testid="message-post-footer"
+        style={footerStyle}
+      >
+        <ReactionChip
+          count={post.reactions.length}
+          reacted={operatorReacted}
+          canReact={canReact}
+          onToggle={
+            onToggleReaction ? () => onToggleReaction(post.seq) : undefined
+          }
+          highContrast={highContrast}
+        />
+        {agreed && <AgreedMark placement="footer" />}
+      </footer>
     </article>
   );
 }

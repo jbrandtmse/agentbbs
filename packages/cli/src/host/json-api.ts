@@ -18,11 +18,27 @@
 //     (each message additionally carries a DISPLAY-ONLY `created_at`; the host has the
 //      events, core's RoomMessage + the ratified MCP message wire stay seq-only — Story 9.5)
 //   GET /api/rooms/:roomId/contract     → { room_id, contract }
-// The route table maps cleanly to the remaining read ops (read-room / read-contract /
-// list-* already wired); WRITE endpoints (reply / react / add_participant / join) are
-// NOT built here — they land with Stories 9.6/9.7. The dispatch table is the documented
-// extension seam: a write route slots in as a new `{ method:'POST', pattern, handler }`
-// entry. Do NOT add writes now.
+//
+// WRITE endpoints (Story 9.6 — the write seam's FIRST use):
+//   POST /api/rooms/:roomId/messages/:seq/react   → { message_seq, reactions }
+//   POST /api/rooms/:roomId/messages/:seq/unreact → { message_seq, reactions }
+// The dispatch table is the documented extension seam: a write route slots in as a new
+// `{ method:'POST', pattern, handler }` entry — the SAME route-table shape as a read,
+// distinguished only by `method`. The write handlers are THIN (mirroring the read ones):
+// they resolve the operator handle the host already holds (Story 9.4 `--as`/
+// AGENTBBS_OPERATOR) as the `actor`, call the core op, and map the `ReactResult` to the
+// snake_case wire. They are PATH-ONLY (the message `seq` is in the path) — no request
+// body is parsed, keeping the first write minimal (the reply/join writes that DO carry a
+// body land with Story 9.7, slotting in the same way + adding body parsing then).
+//
+// WRITE error model: a write with NO operator handle (watching-only) cannot act → 403
+// NO_OPERATOR (a host-surface code; core is never reached because there is no actor). A
+// non-participant operator → core throws NOT_A_MEMBER → 403 (the chip surfaces the
+// "join to react" handoff, Story 9.7 — the host does NOT silently swallow it). An unknown
+// message `seq` → MESSAGE_NOT_FOUND → 404.
+//
+// The remaining writes (reply / add_participant / join) land with Story 9.7, slotting in
+// the same way.
 //
 // ERROR MODEL: core throws BoardError(code, message); the host maps each closed code to
 // an HTTP status + the uniform `{ code, message }` body (the same closed contract the
@@ -39,9 +55,11 @@ import {
   listProjects,
   listRooms,
   needsYouRooms,
+  react,
   readContract,
   roomMessages,
   roomParticipants,
+  unreact,
 } from '@agentbbs/core';
 
 import {
@@ -55,6 +73,26 @@ import type { DataAccess, Event } from '@agentbbs/core';
 
 /** A slug param (project_id / room_id) — the shape core read ops expect. */
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/**
+ * A HOST-surface error — a condition the host detects BEFORE (or instead of) reaching
+ * core, so it has no place in core's closed `BoardError` set. It carries its own HTTP
+ * status + a SCREAMING_SNAKE code that lives in the HOST's vocabulary (e.g. `NO_OPERATOR`
+ * for a write attempted by a watching-only host). `handleApiRequest` maps it straight to
+ * the uniform `{ code, message }` body, exactly like a `BoardError` — the wire shape is
+ * identical, only the origin differs. Keeping it OUT of `BoardError` preserves core's
+ * closed error contract (the agent-facing surface) unchanged.
+ */
+class HostApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'HostApiError';
+  }
+}
 
 /** The JSON body + HTTP status a route handler resolves to. */
 export interface JsonResponse {
@@ -85,7 +123,7 @@ type RouteHandler = (
 
 /** One route in the dispatch table. `pattern` segments may be `:name` captures. */
 interface Route {
-  method: 'GET';
+  method: 'GET' | 'POST';
   /** Path template, e.g. `/api/rooms/:roomId/contract`. */
   pattern: string;
   handler: RouteHandler;
@@ -129,8 +167,46 @@ function requireSlug(value: string, name: string): string {
 }
 
 /**
- * The read-only route table. Each handler is THIN — it validates its params, calls a
- * core read op, and maps to the snake_case wire envelope mirroring the MCP contract.
+ * Parse a captured `:seq` path param to a positive integer (a message `seq`). A
+ * non-integer / non-positive value cannot identify any message → a malformed-shaped
+ * client 400 (reuses MESSAGE_NOT_FOUND, surfaced as 400 via the `Malformed ` prefix the
+ * wire map keys on, like {@link requireSlug}). The closed code set is unchanged.
+ */
+function requireSeq(value: string): number {
+  const seq = Number(value);
+  if (!Number.isInteger(seq) || seq <= 0) {
+    throw new BoardError(
+      'MESSAGE_NOT_FOUND',
+      `Malformed seq: "${value}" is not a positive integer.`,
+    );
+  }
+  return seq;
+}
+
+/**
+ * Resolve the acting operator handle for a WRITE, or throw. A watching-only host (no
+ * `--as`/AGENTBBS_OPERATOR) has no actor — it can READ everything but cannot WRITE; the
+ * react/unreact toggle is a participation action that needs an identity. The host stops
+ * here BEFORE core (there is no actor to pass), with a host-surface `NO_OPERATOR` code →
+ * 403. (Distinct from core's `NOT_A_MEMBER`, which a KNOWN operator who is not a room
+ * participant gets — that one IS surfaced by core.)
+ */
+function requireOperator(operatorHandle: string | null): string {
+  if (operatorHandle === null) {
+    throw new HostApiError(
+      403,
+      'NO_OPERATOR',
+      'No operator handle is configured (the UI is watching-only); start `agentbbs ui --as <handle>` to react.',
+    );
+  }
+  return operatorHandle;
+}
+
+/**
+ * The route table — read routes (mirroring the core read ops) plus the Story 9.6 write
+ * routes (react/unreact). Each handler is THIN: it validates its params, resolves the
+ * operator (writes), calls a core op, and maps to the snake_case wire envelope mirroring
+ * the MCP contract. A write is distinguished only by `method: 'POST'`.
  */
 const ROUTES: Route[] = [
   {
@@ -253,6 +329,39 @@ const ROUTES: Route[] = [
       };
     },
   },
+  {
+    // Story 9.6 — the write seam's FIRST use. PATH-ONLY (the message `seq` is in the
+    // path); no body is parsed. The acting `actor` is the operator handle the host holds.
+    method: 'POST',
+    pattern: '/api/rooms/:roomId/messages/:seq/react',
+    handler: async (params, { dataAccess, operatorHandle }) => {
+      // The `roomId` is validated for shape (consistency with the read routes) but core
+      // resolves the message from its `seq` alone; the room in the path is the addressing
+      // context the UI used. A malformed slug/seq is a 400 (the `Malformed ` guard).
+      requireSlug(params.roomId, 'room_id');
+      const seq = requireSeq(params.seq);
+      const actor = requireOperator(operatorHandle);
+      const result = await react(dataAccess, actor, seq);
+      return {
+        status: 200,
+        body: { message_seq: result.messageSeq, reactions: result.reactions },
+      };
+    },
+  },
+  {
+    method: 'POST',
+    pattern: '/api/rooms/:roomId/messages/:seq/unreact',
+    handler: async (params, { dataAccess, operatorHandle }) => {
+      requireSlug(params.roomId, 'room_id');
+      const seq = requireSeq(params.seq);
+      const actor = requireOperator(operatorHandle);
+      const result = await unreact(dataAccess, actor, seq);
+      return {
+        status: 200,
+        body: { message_seq: result.messageSeq, reactions: result.reactions },
+      };
+    },
+  },
 ];
 
 /** Map a closed BoardError code to its HTTP status. */
@@ -304,7 +413,8 @@ function matchPattern(
  * `{ code, message }` body at the right HTTP status. Returns `null` if the path is not
  * an `/api/` route (the caller falls through to static serving / SPA fallback).
  *
- * @param method The request method (only GET is served).
+ * @param method The request method (GET for reads; POST for the Story 9.6 react/unreact
+ *   writes). A method that matches no route's `(method, pattern)` pair → 404 NOT_FOUND.
  * @param path The request URL pathname (query stripped by the caller).
  * @param dataAccess The persistence port handlers delegate to.
  * @param operatorHandle The resolved operator handle, or `null` (watching-only — the
@@ -330,9 +440,13 @@ export async function handleApiRequest(
     try {
       return await route.handler(params, ctx);
     } catch (error: unknown) {
+      // A host-surface error (e.g. NO_OPERATOR on a write) carries its own status + code.
+      if (error instanceof HostApiError) {
+        return errorResponse(error.status, error.code, error.message);
+      }
       if (error instanceof BoardError) {
-        // A malformed-slug guard reuses BOARD_NOT_FOUND but is a client 400; a real
-        // not-found is 404. Distinguish by the message prefix the guard sets.
+        // A malformed-slug / malformed-seq guard reuses a closed code but is a client
+        // 400; a real not-found is 404. Distinguish by the message prefix the guard sets.
         const isMalformed = error.message.startsWith('Malformed ');
         const status = isMalformed ? 400 : statusForCode(error.code);
         return errorResponse(status, error.code, error.message);

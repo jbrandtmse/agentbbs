@@ -26,6 +26,8 @@ import {
   loadRoomViewModel,
   loadTreeModel,
   openEventStream,
+  postReact,
+  postUnreact,
   selectRoom,
 } from './api-client.js';
 
@@ -106,6 +108,41 @@ export function App() {
     console.info('join a project… (wiring lands in Story 9.7)');
   }
 
+  // Story 9.6 — toggle a 👍 on a post. Decide react-vs-unreact from the operator's CURRENT
+  // live state on that post (operator ∈ reactions, computed from /api/me), fire the write,
+  // then RE-LOAD the room view model so the live count, the operator's chip state, AND the
+  // agreed-mark POSITION re-derive (a basic refetch/fold — the rich optimistic echo +
+  // reconciliation is Story 9.9). The agreed mark is COMPUTED from the re-fetched contract,
+  // never stored (FR21): it MOVES when a higher-seq message gains the contract and
+  // DISAPPEARS when all live 👍s retract.
+  function handleToggleReaction(seq: number): void {
+    if (room === null) return;
+    const roomId = room.roomId;
+    const operator = room.operatorHandle ?? null;
+    const post = room.messages.find((m) => m.seq === seq);
+    const alreadyReacted =
+      operator !== null && post !== undefined
+        ? post.reactions.includes(operator)
+        : false;
+    const write = alreadyReacted ? postUnreact : postReact;
+    write(roomId, seq)
+      .then(() => loadRoomViewModel(roomId))
+      .then((rebuilt) => {
+        // Only apply if the operator is still on the same room (guards a fast room switch).
+        setRoom((prev) =>
+          prev !== null && prev.roomId === roomId ? rebuilt : prev,
+        );
+      })
+      .catch((err: unknown) => {
+        // A 403 (NOT_A_MEMBER / NO_OPERATOR) or transient failure — surface a calm error.
+        // The chip's canReact gate prevents the common non-participant doomed write; this
+        // catches the race/edge. Story 9.10 enriches the error voice.
+        setRoomError(
+          err instanceof Error ? err.message : 'Could not update the reaction.',
+        );
+      });
+  }
+
   return (
     <div style={shellStyle} data-testid="web-shell">
       {model !== null && (
@@ -130,7 +167,9 @@ export function App() {
           model.activeRoomId !== null &&
           room === null &&
           roomError === null && <p data-testid="room-loading">Opening room…</p>}
-        {room !== null && <RoomView room={room} />}
+        {room !== null && (
+          <RoomView room={room} onToggleReaction={handleToggleReaction} />
+        )}
       </main>
     </div>
   );

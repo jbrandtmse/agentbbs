@@ -322,6 +322,171 @@ describe('RoomView operator posture (AC #2 — Mode A→B signal)', () => {
   });
 });
 
+describe('MessagePost agreed-mark + reaction chip wiring (Story 9.6 AC #1, #2)', () => {
+  it('the converged (agreed) post shows ✓ agreed in HEAD and FOOTER + the agreed rail', async () => {
+    const el = await render(
+      <MessagePost post={post({ seq: 2 })} agreed={true} canReact={true} />,
+    );
+    // The mark appears in BOTH the head mirror and the footer (beside the 👍).
+    expect(el.querySelector('[data-testid="agreed-mark-head"]')).not.toBeNull();
+    expect(
+      el.querySelector('[data-testid="agreed-mark-footer"]'),
+    ).not.toBeNull();
+    // The agreed post carries the 2px agreed-green LEFT RAIL.
+    const article = el.querySelector<HTMLElement>(
+      '[data-testid="message-post"]',
+    );
+    expect(article?.getAttribute('data-agreed')).toBe('true');
+    expect(article?.style.borderLeft).toContain('var(--agreed-green)');
+  });
+
+  it('a NON-agreed post shows neither the head nor footer agreed mark + no rail', async () => {
+    const el = await render(
+      <MessagePost post={post({ seq: 1 })} agreed={false} canReact={true} />,
+    );
+    expect(el.querySelector('[data-testid="agreed-mark-head"]')).toBeNull();
+    expect(el.querySelector('[data-testid="agreed-mark-footer"]')).toBeNull();
+    const article = el.querySelector<HTMLElement>(
+      '[data-testid="message-post"]',
+    );
+    expect(article?.getAttribute('data-agreed')).toBe('false');
+    expect(article?.style.borderLeft).toBe('');
+  });
+
+  it('the footer always carries the reaction chip with the live count (count = reactions.length)', async () => {
+    const el = await render(
+      <MessagePost
+        post={post({ seq: 2, reactions: ['ada', 'bob'] })}
+        canReact={true}
+      />,
+    );
+    const footer = el.querySelector('[data-testid="message-post-footer"]');
+    expect(
+      footer?.querySelector('[data-testid="reaction-chip"]'),
+    ).not.toBeNull();
+    expect(
+      footer?.querySelector('[data-testid="reaction-chip-count"]')?.textContent,
+    ).toBe('2');
+  });
+
+  it('clicking the chip fires onToggleReaction with the post seq (participant operator)', async () => {
+    let toggledSeq: number | undefined;
+    const el = await render(
+      <MessagePost
+        post={post({ seq: 7 })}
+        canReact={true}
+        onToggleReaction={(s) => {
+          toggledSeq = s;
+        }}
+      />,
+    );
+    const chip = el.querySelector<HTMLButtonElement>(
+      '[data-testid="reaction-chip"]',
+    );
+    await act(async () => {
+      chip?.click();
+    });
+    expect(toggledSeq).toBe(7);
+  });
+
+  it('a non-participant post chip is the disabled "join to react" hand-off (no toggle)', async () => {
+    let fired = false;
+    const el = await render(
+      <MessagePost
+        post={post({ seq: 1 })}
+        canReact={false}
+        onToggleReaction={() => {
+          fired = true;
+        }}
+      />,
+    );
+    const chip = el.querySelector<HTMLButtonElement>(
+      '[data-testid="reaction-chip"]',
+    );
+    expect(chip?.getAttribute('data-state')).toBe('cannot-react');
+    expect(chip?.disabled).toBe(true);
+    await act(async () => {
+      chip?.click();
+    });
+    expect(fired).toBe(false);
+  });
+});
+
+describe('RoomView agreed-mark + chip wiring through the thread (Story 9.6 AC #1, #2)', () => {
+  it('marks ONLY the agreedSeq post with ✓ agreed and gates the chip toggle to a peer operator', async () => {
+    const el = await render(
+      <RoomView
+        room={roomModel({
+          messages: [
+            post({ seq: 1, kind: 'announcement', reactions: [] }),
+            post({ seq: 2, reactions: ['ops'] }),
+          ],
+          operatorPosture: { kind: 'peer', handle: 'ops' },
+          operatorHandle: 'ops',
+          agreedSeq: 2,
+        })}
+      />,
+    );
+    // Exactly ONE post carries the agreed mark (the agreedSeq=2 one), in head + footer.
+    expect(
+      el.querySelectorAll('[data-testid="agreed-mark-footer"]'),
+    ).toHaveLength(1);
+    const agreedPost = el.querySelector(
+      '[data-message-seq="2"]',
+    ) as HTMLElement;
+    expect(agreedPost.getAttribute('data-agreed')).toBe('true');
+    const nonAgreed = el.querySelector('[data-message-seq="1"]') as HTMLElement;
+    expect(nonAgreed.getAttribute('data-agreed')).toBe('false');
+    // A peer operator's chips are toggleable (not the disabled hand-off).
+    const chips = el.querySelectorAll<HTMLButtonElement>(
+      '[data-testid="reaction-chip"]',
+    );
+    for (const chip of chips) {
+      expect(chip.disabled).toBe(false);
+    }
+    // The operator's own 👍 on post 2 (ops ∈ reactions) renders the currently-reacted state.
+    const post2Chip = agreedPost.querySelector<HTMLElement>(
+      '[data-testid="reaction-chip"]',
+    );
+    expect(post2Chip?.getAttribute('data-state')).toBe('reacted');
+  });
+
+  it('a WATCHING operator sees disabled "join to react" chips (no doomed write)', async () => {
+    const el = await render(
+      <RoomView
+        room={roomModel({
+          messages: [post({ seq: 1, kind: 'announcement' })],
+          operatorPosture: { kind: 'watching' },
+          operatorHandle: 'ops',
+          agreedSeq: null,
+        })}
+      />,
+    );
+    const chip = el.querySelector<HTMLButtonElement>(
+      '[data-testid="reaction-chip"]',
+    );
+    expect(chip?.getAttribute('data-state')).toBe('cannot-react');
+    expect(chip?.disabled).toBe(true);
+  });
+
+  it('with agreedSeq null, NO post carries the agreed mark (mark gone — all 👍s retracted)', async () => {
+    const el = await render(
+      <RoomView
+        room={roomModel({
+          messages: [post({ seq: 1, kind: 'announcement' }), post({ seq: 2 })],
+          agreedSeq: null,
+        })}
+      />,
+    );
+    expect(
+      el.querySelectorAll('[data-testid="agreed-mark-footer"]'),
+    ).toHaveLength(0);
+    expect(
+      el.querySelectorAll('[data-testid="agreed-mark-head"]'),
+    ).toHaveLength(0);
+  });
+});
+
 describe('inert-in-thread proof (AC #1 — bodies render through MarkdownView, never interpolated)', () => {
   it('a code block / link body renders as the 9.2 INERT output (real elements), not raw text', async () => {
     const el = await render(

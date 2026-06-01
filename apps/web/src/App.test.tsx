@@ -143,6 +143,12 @@ const RESPONSES: Record<string, unknown> = {
     ],
     participants: ['ops'],
   },
+  // Story 9.6 — opening a room also fetches its CONTRACT (the ✓ agreed-mark seq). Start with
+  // NO contract (no live 👍 yet); the toggle test drives a react then asserts the mark appears.
+  '/api/rooms/ledger-rollover/contract': {
+    room_id: 'ledger-rollover',
+    contract: null,
+  },
 };
 
 let container: HTMLDivElement;
@@ -331,5 +337,177 @@ describe('App shell — opening a room renders the thread (Story 9.5)', () => {
     const posture = container.querySelector('[data-testid="operator-posture"]');
     expect(posture?.textContent).toBe('you: @ops (peer)');
     expect(posture?.getAttribute('data-posture')).toBe('peer');
+  });
+});
+
+// --- Story 9.6 — the FULL toggle round-trip through the real App shell (Rule 3 real-runtime
+// DOM evidence): open the room, click the 👍 chip on post #10, the shell POSTs react then
+// REFETCHES the room + contract, and the chip flips to currently-👍'd + the ✓ agreed mark
+// appears on post #10 (head + footer). A STATEFUL fetch stub models the host: the react POST
+// flips post #10's reactions to ['ops'] and the contract to seq 10 (the agreed mark is
+// COMPUTED from the re-fetched contract, never stored). ---
+describe('App shell — 👍 toggle wires the write + recomputes the agreed mark (Story 9.6)', () => {
+  let reactPosted: string | null;
+
+  beforeEach(() => {
+    reactPosted = null;
+    // A stateful host model: before the react, post #10 has no 👍 and there is no contract;
+    // after a POST .../messages/10/react, post #10 holds ops's 👍 and the contract is seq 10.
+    const roomState = {
+      reacted: false,
+    };
+    const roomEnvelope = () => ({
+      room: {
+        room_id: 'ledger-rollover',
+        project_id: 'payments',
+        subject: 'Ledger rollover',
+        body: 'How do we roll the ledger?',
+        posted_by: 'bob',
+        seq: 9,
+        active: true,
+        activated_by: 'ops',
+        activated_at_seq: 10,
+      },
+      messages: [
+        {
+          seq: 9,
+          actor: 'bob',
+          body: 'How do we roll the ledger?',
+          kind: 'announcement',
+          reactions: [],
+          created_at: '2026-06-01T08:00:00.000Z',
+        },
+        {
+          seq: 10,
+          actor: 'ops',
+          body: 'Let us **discuss**.',
+          kind: 'reply',
+          reactions: roomState.reacted ? ['ops'] : [],
+          created_at: '2026-06-01T08:05:00.000Z',
+        },
+      ],
+      participants: ['ops'],
+    });
+    const contractEnvelope = () => ({
+      room_id: 'ledger-rollover',
+      contract: roomState.reacted
+        ? {
+            seq: 10,
+            actor: 'ops',
+            body: 'Let us **discuss**.',
+            kind: 'reply',
+            reactions: ['ops'],
+            created_at: '2026-06-01T08:05:00.000Z',
+          }
+        : null,
+    });
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const method = init?.method ?? 'GET';
+        if (method === 'POST') {
+          if (url.endsWith('/messages/10/react')) {
+            reactPosted = url;
+            roomState.reacted = true;
+            return new Response(
+              JSON.stringify({ message_seq: 10, reactions: ['ops'] }),
+              { status: 200 },
+            );
+          }
+          return new Response('nope', { status: 404 });
+        }
+        if (url === '/api/rooms/ledger-rollover') {
+          return new Response(JSON.stringify(roomEnvelope()), { status: 200 });
+        }
+        if (url === '/api/rooms/ledger-rollover/contract') {
+          return new Response(JSON.stringify(contractEnvelope()), {
+            status: 200,
+          });
+        }
+        const body = RESPONSES[url];
+        if (body === undefined) return new Response('nope', { status: 404 });
+        return new Response(JSON.stringify(body), { status: 200 });
+      }),
+    );
+    vi.stubGlobal(
+      'EventSource',
+      FakeEventSource as unknown as typeof EventSource,
+    );
+  });
+
+  async function openRoom(): Promise<void> {
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await act(async () => {
+      for (let i = 0; i < 6; i++) await Promise.resolve();
+    });
+    const row = container.querySelector<HTMLElement>(
+      '[data-project-id="payments"] [data-room-id="ledger-rollover"]',
+    );
+    await act(async () => {
+      row?.click();
+    });
+    await act(async () => {
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+    });
+  }
+
+  it('clicking the 👍 chip POSTs react, refetches, and flips the chip + shows ✓ agreed on the contract post', async () => {
+    await openRoom();
+    const roomView = container.querySelector('[data-testid="room-view"]');
+    expect(roomView).not.toBeNull();
+
+    // Before the toggle: no agreed mark anywhere, post #10's chip resting.
+    expect(
+      container.querySelectorAll('[data-testid="agreed-mark-footer"]'),
+    ).toHaveLength(0);
+    const post10 = container.querySelector(
+      '[data-message-seq="10"]',
+    ) as HTMLElement;
+    const chip10Before = post10.querySelector<HTMLButtonElement>(
+      '[data-testid="reaction-chip"]',
+    );
+    expect(chip10Before?.getAttribute('data-state')).toBe('resting');
+    expect(chip10Before?.disabled).toBe(false); // ops is a peer → can react
+
+    // Click the 👍 on post #10.
+    await act(async () => {
+      chip10Before?.click();
+    });
+    await act(async () => {
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+    });
+
+    // The shell POSTed the react write to the right endpoint.
+    expect(reactPosted).toBe('/api/rooms/ledger-rollover/messages/10/react');
+
+    // After the refetch: post #10 now currently-👍'd (count 1) + carries the ✓ agreed mark.
+    const post10After = container.querySelector(
+      '[data-message-seq="10"]',
+    ) as HTMLElement;
+    expect(
+      post10After
+        .querySelector('[data-testid="reaction-chip"]')
+        ?.getAttribute('data-state'),
+    ).toBe('reacted');
+    expect(
+      post10After.querySelector('[data-testid="reaction-chip-count"]')
+        ?.textContent,
+    ).toBe('1');
+    expect(post10After.getAttribute('data-agreed')).toBe('true');
+    expect(
+      post10After.querySelector('[data-testid="agreed-mark-footer"]'),
+    ).not.toBeNull();
+    expect(
+      post10After.querySelector('[data-testid="agreed-mark-head"]'),
+    ).not.toBeNull();
+    // The non-contract announcement #9 does NOT carry the mark.
+    const post9 = container.querySelector(
+      '[data-message-seq="9"]',
+    ) as HTMLElement;
+    expect(post9.getAttribute('data-agreed')).toBe('false');
   });
 });

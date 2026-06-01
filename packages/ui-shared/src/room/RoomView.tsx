@@ -43,6 +43,18 @@ export interface RoomViewModel {
   messages: MessagePostModel[];
   /** The operator's posture toward this room (watching vs peer) — the AC2 signal. */
   operatorPosture: OperatorPosture;
+  /**
+   * The `seq` of the room's CURRENT CONTRACT — the converged message carrying the
+   * `✓ agreed` mark (the highest-`seq` live-👍'd message, from `/api/rooms/:id/contract`).
+   * `null` → no converged message. COMPUTED, never stored (FR21) — the surface re-derives
+   * + re-passes it on every 👍 change so the mark MOVES/DISAPPEARS. Defaults to `null`.
+   */
+  agreedSeq?: number | null;
+  /**
+   * The resolved operator handle (`/api/me`), or `null` — used to compute each post's
+   * operator-👍'd chip state (operator ∈ post.reactions). Defaults to `null`.
+   */
+  operatorHandle?: string | null;
 }
 
 export interface RoomViewProps {
@@ -53,10 +65,22 @@ export interface RoomViewProps {
    * omitted, RoomView renders a neutral placeholder so the layout's bottom row exists.
    */
   composerSlot?: ReactNode;
+  /**
+   * Fired when the operator toggles a post's 👍 (carries the post `seq`). The surface fires
+   * the react/unreact write then refetches the room + contract (Story 9.9 adds optimism).
+   */
+  onToggleReaction?: (seq: number) => void;
+  /** High-contrast mode (passes through to the thread/posts). Default `false` (web V1). */
+  highContrast?: boolean;
 }
 
 /** Render the room main-column layout. */
-export function RoomView({ room, composerSlot }: RoomViewProps) {
+export function RoomView({
+  room,
+  composerSlot,
+  onToggleReaction,
+  highContrast = false,
+}: RoomViewProps) {
   const columnStyle: CSSProperties = {
     display: 'flex',
     flexDirection: 'column',
@@ -172,9 +196,19 @@ export function RoomView({ room, composerSlot }: RoomViewProps) {
         </span>
       </div>
 
-      {/* 3. The scrolling, seq-ordered message thread (the document body). */}
+      {/* 3. The scrolling, seq-ordered message thread (the document body). The converged
+          message gets the ✓ agreed mark (room.agreedSeq); each post's 👍 chip reflects the
+          live count + the operator's own state. The TOGGLE works only for a peer operator
+          (canReact); a watching operator sees the disabled "join to react" hand-off (9.7). */}
       <div style={threadWrapStyle}>
-        <MessageThread messages={room.messages} />
+        <MessageThread
+          messages={room.messages}
+          agreedSeq={room.agreedSeq ?? null}
+          operatorHandle={room.operatorHandle ?? null}
+          canReact={posture.kind === 'peer'}
+          onToggleReaction={onToggleReaction}
+          highContrast={highContrast}
+        />
       </div>
 
       {/* 4. Composer seam — Story 9.7 fills this; 9.5 renders the placeholder/hand-off. */}

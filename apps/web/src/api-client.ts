@@ -83,6 +83,23 @@ export interface MeResponse {
   handle: string | null;
 }
 
+/**
+ * The `/api/rooms/:id/contract` envelope (Story 9.6). The CURRENT CONTRACT — the
+ * highest-`seq` message currently holding a live 👍 (FR21) — or `null` ("no contract yet").
+ * COMPUTED, never stored: the host re-derives it every call. The `seq` is what the UI marks
+ * with `✓ agreed`.
+ */
+export interface ContractResponse {
+  room_id: string;
+  contract: MessageWire | null;
+}
+
+/** The react/unreact write envelope (Story 9.6) — the message seq + its live reactors after. */
+export interface ReactResponse {
+  message_seq: number;
+  reactions: string[];
+}
+
 /** The `/api/needs-you` envelope — the deterministic escalation set. */
 export interface NeedsYouResponse {
   rooms: RoomWire[];
@@ -424,6 +441,70 @@ export async function fetchRoom(
 }
 
 /**
+ * Fetch a room's CURRENT CONTRACT (`/api/rooms/:id/contract`) — the converged message (the
+ * highest-`seq` live-👍'd one, FR21) or `{ contract: null }`. The UI marks the `contract.seq`
+ * with `✓ agreed`. COMPUTED, never stored: re-fetch it after every 👍 toggle so the mark
+ * MOVES/DISAPPEARS as the live-👍 state changes (Story 9.6).
+ */
+export async function fetchContract(
+  roomId: string,
+  baseUrl = '',
+  fetchImpl: typeof fetch = fetch,
+): Promise<ContractResponse> {
+  return getJson<ContractResponse>(
+    `/api/rooms/${encodeURIComponent(roomId)}/contract`,
+    baseUrl,
+    fetchImpl,
+  );
+}
+
+/** POST a typed JSON body-less write to `path`; throws on a non-2xx (the toggle surfaces it). */
+async function postJson<T>(
+  path: string,
+  baseUrl: string,
+  fetchImpl: typeof fetch,
+): Promise<T> {
+  const response = await fetchImpl(`${baseUrl}${path}`, { method: 'POST' });
+  if (!response.ok) {
+    throw new Error(`POST ${path} failed: HTTP ${response.status}`);
+  }
+  return (await response.json()) as T;
+}
+
+/**
+ * Place a 👍 on a message (`POST /api/rooms/:id/messages/:seq/react`, Story 9.6). PATH-ONLY
+ * (no body); the host resolves the operator handle as the actor. Returns the message seq + its
+ * live reactors after. Throws on a non-2xx (e.g. 403 NOT_A_MEMBER for a non-participant — the
+ * caller surfaces the "join to react" hand-off, Story 9.7).
+ */
+export async function postReact(
+  roomId: string,
+  seq: number,
+  baseUrl = '',
+  fetchImpl: typeof fetch = fetch,
+): Promise<ReactResponse> {
+  return postJson<ReactResponse>(
+    `/api/rooms/${encodeURIComponent(roomId)}/messages/${seq}/react`,
+    baseUrl,
+    fetchImpl,
+  );
+}
+
+/** Retract a 👍 from a message (`POST /api/rooms/:id/messages/:seq/unreact`, Story 9.6). */
+export async function postUnreact(
+  roomId: string,
+  seq: number,
+  baseUrl = '',
+  fetchImpl: typeof fetch = fetch,
+): Promise<ReactResponse> {
+  return postJson<ReactResponse>(
+    `/api/rooms/${encodeURIComponent(roomId)}/messages/${seq}/unreact`,
+    baseUrl,
+    fetchImpl,
+  );
+}
+
+/**
  * Build the prop-driven {@link RoomViewModel} from the `/api/rooms/:id` envelope + the
  * resolved operator handle. The operator POSTURE (AC2, the Mode A→B signal): `peer` when
  * the operator handle is in the room's participant list, else `watching`. The message
@@ -436,6 +517,7 @@ export async function fetchRoom(
 export function buildRoomViewModel(
   room: RoomResponse,
   operatorHandle: string | null,
+  contract: ContractResponse | null = null,
 ): RoomViewModel {
   const isPeer =
     operatorHandle !== null && room.participants.includes(operatorHandle);
@@ -457,22 +539,31 @@ export function buildRoomViewModel(
       isPeer && operatorHandle !== null
         ? { kind: 'peer', handle: operatorHandle }
         : { kind: 'watching' },
+    // The CONVERGED message seq (the ✓ agreed mark target) — the contract's seq, or null
+    // ("no contract yet"). COMPUTED from /api/rooms/:id/contract, never stored (FR21); the
+    // shell re-fetches the contract after every 👍 toggle so the mark MOVES/DISAPPEARS.
+    agreedSeq: contract?.contract != null ? contract.contract.seq : null,
+    // The operator handle drives each post's operator-👍'd chip state (operator ∈ reactions).
+    operatorHandle,
   };
 }
 
 /**
- * Load + build a room's {@link RoomViewModel} in one call: fetch the room and `/api/me`,
- * then compute the model (incl. the operator posture). The single seam apps/web's shell
- * calls when a tree room is selected.
+ * Load + build a room's {@link RoomViewModel} in one call: fetch the room, `/api/me`, and the
+ * room CONTRACT (the converged-message seq for the ✓ agreed mark), then compute the model
+ * (incl. the operator posture + the agreed seq). The single seam apps/web's shell calls when
+ * a tree room is selected — and re-calls after a 👍 toggle to re-derive the live count + the
+ * agreed-mark position (Story 9.6; the rich optimistic echo is Story 9.9).
  */
 export async function loadRoomViewModel(
   roomId: string,
   baseUrl = '',
   fetchImpl: typeof fetch = fetch,
 ): Promise<RoomViewModel> {
-  const [room, me] = await Promise.all([
+  const [room, me, contract] = await Promise.all([
     fetchRoom(roomId, baseUrl, fetchImpl),
     fetchMe(baseUrl, fetchImpl),
+    fetchContract(roomId, baseUrl, fetchImpl),
   ]);
-  return buildRoomViewModel(room, me.handle);
+  return buildRoomViewModel(room, me.handle, contract);
 }

@@ -77,3 +77,13 @@ export type {
   OperatorPosture,
 } from './room/RoomView.js';
 export { formatTimestamp } from './room/format-timestamp.js';
+
+// Story 9.6 — the per-message 👍 reaction chip (live count + resting/👍'd + one-click
+// toggle, FR21) + the computed ✓ agreed mark (head + footer, live from the room contract,
+// never stored). Prop-driven + presentation-only (NFR2). MessagePost wires both into the
+// post footer/head; the surface computes the converged-message seq + the operator's 👍 state.
+export { ReactionChip, REACTION_CHIP_HAS_BG } from './room/ReactionChip.js';
+export type { ReactionChipProps } from './room/ReactionChip.js';
+export { AgreedMark } from './room/AgreedMark.js';
+export type { AgreedMarkProps } from './room/AgreedMark.js';
+export { AGREED_POST_WASH } from './room/MessagePost.js';

@@ -18,7 +18,11 @@ import {
   selectRoom,
 } from './api-client.js';
 
-import type { EventWire, RoomResponse } from './api-client.js';
+import type {
+  ContractResponse,
+  EventWire,
+  RoomResponse,
+} from './api-client.js';
 import type { NavTreeModel } from '@agentbbs/ui-shared';
 
 describe('fetchDirectory', () => {
@@ -391,5 +395,71 @@ describe('buildRoomViewModel — maps the envelope + computes the operator postu
     expect(model.operatorPosture).toEqual({ kind: 'peer', handle: 'ops' });
     // And `ops` authored none of the rendered posts.
     expect(model.messages.some((m) => m.actor === 'ops')).toBe(false);
+  });
+});
+
+// --- Story 9.6 AC2 — the UI HONORS the FR21 computed-agreed semantic. buildRoomViewModel sets
+// `agreedSeq` to the room CONTRACT's seq (the highest-`seq` live-👍'd message, supplied by
+// /api/rooms/:id/contract), NEVER a stored flag. The mark MOVES when the contract moves and
+// DISAPPEARS (agreedSeq=null) when the contract is null. operatorHandle flows through so each
+// post can compute its operator-👍'd state. (The core selection itself is mutation-tested in
+// Story 5.3; the host MOVES/REVERTS/DISAPPEARS in json-api.test.ts; here we pin the UI mapping.)
+//
+// MUTATION-TEST TARGET (Rule 7): the `agreedSeq` derivation in buildRoomViewModel
+// (`contract.contract.seq`). Pinning it to a WRONG rule — e.g. the LOWEST-seq message, or the
+// MOST-reactors message, or a hard `null` — turns the "honors the contract seq" assertions RED.
+// (Verified manually during dev: see the story Dev Agent Record.) ---
+describe('buildRoomViewModel — computed agreed-mark seq (Story 9.6 AC2, FR21)', () => {
+  /** A contract envelope naming `seq` as the converged message (the rest of the wire is filler). */
+  function contractAt(seq: number | null): ContractResponse {
+    return {
+      room_id: 'need-a-reviewer',
+      contract:
+        seq === null
+          ? null
+          : {
+              seq,
+              actor: 'bob',
+              body: 'agreed text',
+              kind: 'reply',
+              reactions: ['bob'],
+              created_at: '2026-06-01T09:01:00.000Z',
+            },
+    };
+  }
+
+  it('agreedSeq = the contract message seq (the highest-seq live-👍d one), NOT a stored flag', () => {
+    // The room has messages 5 (announcement) and 6 (reply). The CONTRACT names seq 6.
+    const model = buildRoomViewModel(roomResponse(), 'bob', contractAt(6));
+    expect(model.agreedSeq).toBe(6);
+  });
+
+  it('honors a contract that names a HIGHER-seq message — NOT the lowest, NOT "most reactors"', () => {
+    // Build a room whose LOWER-seq message (5) has MORE reactors than the contract message (6).
+    // The UI must mark seq 6 (the contract = highest-seq live-👍d) — a "most reactors" or
+    // "lowest seq" rule would mark 5 and this assertion would go RED.
+    const env = roomResponse();
+    env.messages[0].reactions = ['alice', 'bob', 'cleo']; // seq 5, three reactors
+    env.messages[1].reactions = ['bob']; // seq 6, one reactor (the contract)
+    const model = buildRoomViewModel(env, 'bob', contractAt(6));
+    expect(model.agreedSeq).toBe(6);
+    expect(model.agreedSeq).not.toBe(5);
+  });
+
+  it('agreedSeq is null when the contract is null (mark GONE — all live 👍s retracted)', () => {
+    const model = buildRoomViewModel(roomResponse(), 'bob', contractAt(null));
+    expect(model.agreedSeq).toBeNull();
+  });
+
+  it('agreedSeq defaults to null when no contract is supplied (no contract fetched yet)', () => {
+    const model = buildRoomViewModel(roomResponse(), 'bob');
+    expect(model.agreedSeq).toBeNull();
+  });
+
+  it('threads operatorHandle so each post can compute its own 👍 state', () => {
+    const model = buildRoomViewModel(roomResponse(), 'bob', contractAt(6));
+    expect(model.operatorHandle).toBe('bob');
+    const nullOp = buildRoomViewModel(roomResponse(), null, contractAt(6));
+    expect(nullOp.operatorHandle).toBeNull();
   });
 });
