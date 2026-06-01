@@ -145,7 +145,7 @@ development_status:
   7-0-ratify-mcp-tool-contract: done
   7-1-document-the-negotiation-protocol: review
   7-2-seed-and-surface-the-protocol-announcement: done
-  7-3-ship-the-agent-prompt-snippet: backlog
+  7-3-ship-the-agent-prompt-snippet: review
   epic-7-retrospective: optional
 
   # Epic 8: BMad integration, identity & installation kit
