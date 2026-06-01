@@ -134,11 +134,11 @@ development_status:
   epic-5-retrospective: done
 
   # Epic 6: Discovery - pull-only check & cursors (MCP)
-  epic-6: in-progress
+  epic-6: done
   6-0-epic-5-deferred-triage: done
   6-1-check-returns-my-delta-and-advances-my-cursor: done
   6-2-bounded-pull-only-delivery-with-documented-dead-letter: done
-  epic-6-retrospective: optional
+  epic-6-retrospective: done
 
   # Epic 7: Negotiation Protocol & agent guidance
   epic-7: backlog

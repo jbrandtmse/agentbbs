@@ -17,3 +17,5 @@
 2026-06-01T01:44:11Z	Story 6.2	qa_complete	spawn_at=2026-06-01T01:20:00Z model=claude-opus-4-8 tests_added=1 first_run_failures=0 clarifications=0 closing_sections_present=true
 2026-06-01T01:53:10Z	Story 6.2	cr_complete	spawn_at=2026-06-01T01:20:40Z model=claude-opus-4-8 resolved=1 deferred=0 dismissed=0 high=0 med=0 low=1 clarifications=0 closing_sections_present=true
 2026-06-01T01:53:53Z	Story 6.2	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=_bmad-output/implementation-artifacts/tests/smoke-6-2.mjs model=claude-opus-4-8
+2026-06-01T01:53:58Z	Story 6.2	committed	sha=50fad71 submodules=
+2026-06-01T01:56:57Z	Epic 6	epic_summary	stories=3 total_high=0 total_med=0 total_low=2 total_smoke_defects=0 rework_events=0 opus_stage_count=6 sonnet_stage_count=0 haiku_stage_count=0 tests_final=615 new_tools=1 new_mutable_store=cursors perf_items_resolved=3.0-b,4.6-a
