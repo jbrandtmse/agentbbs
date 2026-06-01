@@ -1041,3 +1041,337 @@ describe('handleApiRequest — join/reply/add_participant write endpoints (Story
     expect((res?.body as { code: string }).code).toBe('NOT_FOUND');
   });
 });
+
+// --- Story 9.11: the operator INITIATE-surface write endpoints (announce_project /
+// post_announcement) at the UNIT layer (handleApiRequest with a parsed-object body). These mirror
+// the agent ops EXACTLY (no operator backdoor): POST /api/projects { title, description } →
+// announceProject (operator = first member; duplicate → PROJECT_EXISTS 409, nothing appended);
+// POST /api/projects/:id/announcements { subject, body } → postAnnouncement (member-gate FIRST →
+// NOT_A_MEMBER 403 for a non-member / BOARD_NOT_FOUND 404 unknown board, then BODY_TOO_LARGE 413
+// over-cap, then announcement.posted). NO_OPERATOR (watching-only) + BAD_REQUEST (missing field)
+// gate every write. The host re-implements NONE of the core gates. ---
+describe('handleApiRequest — start-a-negotiation write endpoints (Story 9.11)', () => {
+  /** The current MAX(seq) in the ledger — to assert nothing was appended on a rejection. */
+  async function maxSeq(): Promise<number> {
+    const events = await dataAccess.eventsSince(0);
+    return events.reduce((max, e) => Math.max(max, e.seq), 0);
+  }
+
+  it('POST /api/projects { title, description } → 200, operator is the new sub-board first member', async () => {
+    await register(dataAccess, { handle: 'ops', currentFocus: 'initiating' });
+    const res = await handleApiRequest(
+      'POST',
+      '/api/projects',
+      dataAccess,
+      'ops',
+      {
+        title: 'Retry Budget',
+        description: 'Who owns the retry budget.',
+      },
+    );
+    expect(res?.status).toBe(200);
+    const body = res?.body as {
+      project: { project_id: string; announcer: string; members: string[] };
+    };
+    expect(body.project.project_id).toBe('retry-budget');
+    expect(body.project.announcer).toBe('ops');
+    expect(body.project.members).toEqual(['ops']);
+  });
+
+  it('POST /api/projects with a DUPLICATE title → 409 PROJECT_EXISTS, nothing appended (atomic rollback)', async () => {
+    await register(dataAccess, { handle: 'ops', currentFocus: 'initiating' });
+    // The beforeEach already announced "Calling Interface" by alice — re-announce it.
+    const before = await maxSeq();
+    const res = await handleApiRequest(
+      'POST',
+      '/api/projects',
+      dataAccess,
+      'ops',
+      {
+        title: 'Calling Interface',
+        description: 'a duplicate title.',
+      },
+    );
+    expect(res?.status).toBe(409);
+    expect((res?.body as { code: string }).code).toBe('PROJECT_EXISTS');
+    expect(await maxSeq()).toBe(before);
+  });
+
+  it('POST /api/projects with NO operator (watching-only) → 403 NO_OPERATOR, nothing appended', async () => {
+    const before = await maxSeq();
+    const res = await handleApiRequest(
+      'POST',
+      '/api/projects',
+      dataAccess,
+      null,
+      {
+        title: 'No Operator',
+        description: 'x.',
+      },
+    );
+    expect(res?.status).toBe(403);
+    expect((res?.body as { code: string }).code).toBe('NO_OPERATOR');
+    expect(await maxSeq()).toBe(before);
+  });
+
+  it('POST /api/projects with a missing/empty title or description → 400 BAD_REQUEST, nothing appended', async () => {
+    await register(dataAccess, { handle: 'ops', currentFocus: 'initiating' });
+    const before = await maxSeq();
+    const noTitle = await handleApiRequest(
+      'POST',
+      '/api/projects',
+      dataAccess,
+      'ops',
+      {
+        description: 'no title.',
+      },
+    );
+    expect(noTitle?.status).toBe(400);
+    expect((noTitle?.body as { code: string }).code).toBe('BAD_REQUEST');
+    const noDesc = await handleApiRequest(
+      'POST',
+      '/api/projects',
+      dataAccess,
+      'ops',
+      {
+        title: 'No Description',
+      },
+    );
+    expect(noDesc?.status).toBe(400);
+    expect((noDesc?.body as { code: string }).code).toBe('BAD_REQUEST');
+    const emptyTitle = await handleApiRequest(
+      'POST',
+      '/api/projects',
+      dataAccess,
+      'ops',
+      {
+        title: '',
+        description: 'x.',
+      },
+    );
+    expect(emptyTitle?.status).toBe(400);
+    expect(await maxSeq()).toBe(before);
+  });
+
+  it('POST /api/projects/:id/announcements { subject, body } by a MEMBER → 200, announcement.posted lands', async () => {
+    // alice (the beforeEach announcer) is a member of calling-interface.
+    const res = await handleApiRequest(
+      'POST',
+      '/api/projects/calling-interface/announcements',
+      dataAccess,
+      'alice',
+      { subject: 'Need a decision', body: 'who owns the retry budget?' },
+    );
+    expect(res?.status).toBe(200);
+    const body = res?.body as {
+      room: { room_id: string; project_id: string; posted_by: string };
+    };
+    expect(body.room.project_id).toBe('calling-interface');
+    expect(body.room.posted_by).toBe('alice');
+    const events = await dataAccess.eventsSince(0);
+    expect(
+      events.some(
+        (e) => e.type === 'announcement.posted' && e.actor === 'alice',
+      ),
+    ).toBe(true);
+  });
+
+  it('POST /api/projects/:id/announcements by a NON-member → 403 NOT_A_MEMBER, nothing appended (join-first trigger)', async () => {
+    await register(dataAccess, { handle: 'ops', currentFocus: 'watching' });
+    const before = await maxSeq();
+    // ops is NOT a member of calling-interface (alice announced it).
+    const res = await handleApiRequest(
+      'POST',
+      '/api/projects/calling-interface/announcements',
+      dataAccess,
+      'ops',
+      { subject: 'sneak in', body: 'not a member' },
+    );
+    expect(res?.status).toBe(403);
+    expect((res?.body as { code: string }).code).toBe('NOT_A_MEMBER');
+    expect(await maxSeq()).toBe(before);
+  });
+
+  it('POST /api/projects/:id/announcements for an UNKNOWN board → 404 BOARD_NOT_FOUND', async () => {
+    await register(dataAccess, { handle: 'ops', currentFocus: 'watching' });
+    const res = await handleApiRequest(
+      'POST',
+      '/api/projects/no-such-board/announcements',
+      dataAccess,
+      'ops',
+      { subject: 's', body: 'b' },
+    );
+    expect(res?.status).toBe(404);
+    expect((res?.body as { code: string }).code).toBe('BOARD_NOT_FOUND');
+  });
+
+  it('POST /api/projects/:id/announcements with an over-cap body → 413 BODY_TOO_LARGE, nothing appended', async () => {
+    const before = await maxSeq();
+    const tooBig = 'x'.repeat(MAX_BODY_BYTES + 1);
+    const res = await handleApiRequest(
+      'POST',
+      '/api/projects/calling-interface/announcements',
+      dataAccess,
+      'alice',
+      { subject: 'big', body: tooBig },
+    );
+    expect(res?.status).toBe(413);
+    expect((res?.body as { code: string }).code).toBe('BODY_TOO_LARGE');
+    expect(await maxSeq()).toBe(before);
+  });
+
+  it('POST /api/projects/:id/announcements with NO operator → 403 NO_OPERATOR, nothing appended', async () => {
+    const before = await maxSeq();
+    const res = await handleApiRequest(
+      'POST',
+      '/api/projects/calling-interface/announcements',
+      dataAccess,
+      null,
+      { subject: 's', body: 'b' },
+    );
+    expect(res?.status).toBe(403);
+    expect((res?.body as { code: string }).code).toBe('NO_OPERATOR');
+    expect(await maxSeq()).toBe(before);
+  });
+
+  it('POST /api/projects/:id/announcements with a missing subject or body field → 400 BAD_REQUEST', async () => {
+    const noSubject = await handleApiRequest(
+      'POST',
+      '/api/projects/calling-interface/announcements',
+      dataAccess,
+      'alice',
+      { body: 'b' },
+    );
+    expect(noSubject?.status).toBe(400);
+    expect((noSubject?.body as { code: string }).code).toBe('BAD_REQUEST');
+    const noBody = await handleApiRequest(
+      'POST',
+      '/api/projects/calling-interface/announcements',
+      dataAccess,
+      'alice',
+      { subject: 's' },
+    );
+    expect(noBody?.status).toBe(400);
+    expect((noBody?.body as { code: string }).code).toBe('BAD_REQUEST');
+  });
+
+  // Rule 13 drift-guard — this story adds NO core code and NO new error code. The operator
+  // INITIATE surface maps to the EXISTING core ops over EXISTING closed codes; the closed set is
+  // EXACTLY the ratified ten (any drift — a new code smuggled in, a rename, a drop — fails here).
+  it('Rule 13 — BOARD_ERROR_CODES is unchanged: EXACTLY the ratified ten codes (no new code in this story)', () => {
+    expect([...BOARD_ERROR_CODES].sort()).toEqual(
+      [
+        'BOARD_NOT_FOUND',
+        'BODY_TOO_LARGE',
+        'HANDLE_NOT_FOUND',
+        'HANDLE_TAKEN',
+        'LOGIN_UNKNOWN',
+        'MESSAGE_NOT_FOUND',
+        'NOT_A_MEMBER',
+        'NO_IDENTITY',
+        'PROJECT_EXISTS',
+        'ROOM_NOT_FOUND',
+      ].sort(),
+    );
+    // NO_OPERATOR is a HOST-surface code only — it must NEVER enter core's closed agent contract.
+    expect(BOARD_ERROR_CODES as readonly string[]).not.toContain('NO_OPERATOR');
+  });
+});
+
+// --- QA hardening (Story 9.11 qa stage) — the LOAD-BEARING semantics the dev's happy/gate cases
+// assert COARSELY (maxSeq only) or do not cover at all. The dev proves "nothing appended on a
+// rejection" via the ledger high-water-mark (maxSeq unchanged); these SHARPEN that to "neither of
+// the SPECIFIC events is present" (a partial-append regression that lands ONE event of an atomic
+// pair could, in principle, leave maxSeq tracking differently — the event-presence assertion is
+// the faithful "atomic rollback" pin), and add the GATE-ORDER case the dev's per-gate tests cannot
+// catch: post_announcement runs the membership gate BEFORE the body cap, so a NON-member with an
+// OVER-CAP body must get NOT_A_MEMBER (403), never BODY_TOO_LARGE (413). Real in-memory ledger
+// (Rule 3); each rejection asserted by the SPECIFIC missing event(s), not just maxSeq. ---
+describe('handleApiRequest — Story 9.11 qa: atomicity + gate-order (the load-bearing semantics)', () => {
+  /** All event types appended by `actor` (to assert the SPECIFIC events of an atomic op). */
+  async function typesByActor(actor: string): Promise<string[]> {
+    const events = await dataAccess.eventsSince(0);
+    return events.filter((e) => e.actor === actor).map((e) => e.type);
+  }
+
+  // ATOMICITY (announce_project, AC1/AC3) — a duplicate-title announce must roll back BOTH events
+  // of the atomic pair. The dev's duplicate test asserts maxSeq is unchanged; this asserts the
+  // STRONGER property the AC actually promises: NEITHER project.announced NOR board.joined from the
+  // re-announcing operator is present (a partial append that landed one but not the other — the
+  // exact failure "atomic" forbids — is invisible to a maxSeq-only check if the count happened to
+  // align, but is caught here by the specific-event absence).
+  it('a duplicate-title announce_project appends NEITHER project.announced NOR board.joined (atomic, by specific event)', async () => {
+    await register(dataAccess, { handle: 'ops', currentFocus: 'initiating' });
+    // alice already announced "Calling Interface" in the beforeEach. ops re-announces the SAME title.
+    const res = await handleApiRequest(
+      'POST',
+      '/api/projects',
+      dataAccess,
+      'ops',
+      { title: 'Calling Interface', description: 'a duplicate.' },
+    );
+    expect(res?.status).toBe(409);
+    expect((res?.body as { code: string }).code).toBe('PROJECT_EXISTS');
+    // ops appended NOTHING — neither half of the atomic announce+join pair landed.
+    const opsTypes = await typesByActor('ops');
+    expect(opsTypes).not.toContain('project.announced');
+    expect(opsTypes).not.toContain('board.joined');
+    // And the original project is intact: still announced by alice, still exactly one project.
+    const dir = await handleApiRequest('GET', '/api/directory', dataAccess);
+    const projects = (dir?.body as { projects: { announcer: string }[] })
+      .projects;
+    expect(projects).toHaveLength(1);
+    expect(projects[0].announcer).toBe('alice');
+  });
+
+  // ATOMICITY (post_announcement, AC2/AC3) — a non-member post rejects at the membership gate with
+  // NOTHING appended; sharpen the dev's maxSeq check to "no announcement.posted by the non-member".
+  it('a NON-member post_announcement appends NO announcement.posted (the membership gate rejects before any append)', async () => {
+    await register(dataAccess, { handle: 'ops', currentFocus: 'watching' });
+    const res = await handleApiRequest(
+      'POST',
+      '/api/projects/calling-interface/announcements',
+      dataAccess,
+      'ops',
+      { subject: 'sneak in', body: 'not a member' },
+    );
+    expect(res?.status).toBe(403);
+    expect((res?.body as { code: string }).code).toBe('NOT_A_MEMBER');
+    // The SPECIFIC event the op would have produced is absent (not merely "maxSeq unchanged").
+    expect(await typesByActor('ops')).not.toContain('announcement.posted');
+  });
+
+  // GATE ORDER (post_announcement) — THE marquee semantic the dev's separate NOT_A_MEMBER and
+  // BODY_TOO_LARGE cases cannot prove in isolation: a NON-member submitting an OVER-CAP body hits
+  // BOTH conditions, and core runs the membership gate FIRST (post-announcement.ts:123 before :129),
+  // so the operator gets NOT_A_MEMBER (403) — the JOIN-FIRST handoff — NOT BODY_TOO_LARGE (413). If
+  // the gate order ever flipped, a non-member would be told "your body is too large" and shrink it
+  // forever instead of being routed to join. This pins the order; nothing is appended either way.
+  it('a NON-member with an OVER-CAP body → 403 NOT_A_MEMBER (gate runs BEFORE the body cap), NOT 413 BODY_TOO_LARGE', async () => {
+    await register(dataAccess, { handle: 'ops', currentFocus: 'watching' });
+    const before = await dataAccess.eventsSince(0);
+    const beforeMax = before.reduce((m, e) => Math.max(m, e.seq), 0);
+    // ops is NOT a member of calling-interface AND the body is one byte over the core cap.
+    const overCap = 'x'.repeat(MAX_BODY_BYTES + 1);
+    const res = await handleApiRequest(
+      'POST',
+      '/api/projects/calling-interface/announcements',
+      dataAccess,
+      'ops',
+      { subject: 'big AND not a member', body: overCap },
+    );
+    expect(res?.status).toBe(403);
+    expect((res?.body as { code: string }).code).toBe('NOT_A_MEMBER');
+    // Explicitly NOT the body-cap outcome — the membership gate short-circuited first.
+    expect(res?.status).not.toBe(413);
+    expect((res?.body as { code: string }).code).not.toBe('BODY_TOO_LARGE');
+    // Nothing appended by the POST (the gate rejected before the cap check, let alone the append):
+    // the ledger high-water-mark is unchanged from before the POST (the `register` above is part
+    // of the seed, so `beforeMax` is captured AFTER it), and ops produced NO announcement.posted.
+    const after = await dataAccess.eventsSince(0);
+    expect(after.reduce((m, e) => Math.max(m, e.seq), 0)).toBe(beforeMax);
+    expect(
+      after.some((e) => e.actor === 'ops' && e.type === 'announcement.posted'),
+    ).toBe(false);
+  });
+});

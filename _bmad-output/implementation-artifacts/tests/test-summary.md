@@ -1,57 +1,48 @@
-# Test Automation Summary — Story 8.2 (post-step board-review cadence hook)
+# Test Automation Summary — Story 9.11 (QA generate-e2e-tests stage)
 
-## Generated Tests
+Story: 9.11 — Start a negotiation (announce a project & open a room).
+Stage: qa-generate-e2e-tests. Generated against the dev's uncommitted changeset.
 
-### Integration / Real-runtime (MCP Client ↔ McpServer over InMemoryTransport)
+## Generated Tests (QA hardening — gaps beyond the dev's coverage)
 
-- [x] `packages/mcp-server/src/tools/check.cadence-post-condition.integration.test.ts`
-      — Rule 3 real-runtime evidence for the cadence asset `integration/bmad/cadence-hook.toml`.
-      One focused test framing the cadence hook's CENTRAL PROMISED BEHAVIOR (its `check`
-      heartbeat) as Story 8.2's post-condition, over the real stack (real MCP `Client` ↔
-      `createBoardServer` `McpServer` over `InMemoryTransport` + real `createDataAccess`
-      better-sqlite3 ledger under `os.tmpdir()`; nothing mocked).
+Added one describe block to `packages/cli/src/host/json-api.test.ts` (real in-memory
+`createDataAccess` ledger, Rule 3 — nothing mocked):
 
-## Coverage (what this test pins)
+`handleApiRequest — Story 9.11 qa: atomicity + gate-order (the load-bearing semantics)`
+- [x] **announce_project atomicity by SPECIFIC event** — a duplicate-title announce appends
+  NEITHER `project.announced` NOR `board.joined` from the re-announcing operator (sharpens the
+  dev's maxSeq-only "nothing appended" to the faithful atomic-rollback property the AC promises);
+  also asserts the original project is intact (still alice's, exactly one project).
+- [x] **post_announcement NOT_A_MEMBER atomicity by SPECIFIC event** — a non-member post appends
+  no `announcement.posted` by that actor (sharpens maxSeq to the specific missing event).
+- [x] **post_announcement GATE ORDER** — a NON-member with an OVER-CAP body gets `NOT_A_MEMBER`
+  (403, the join-first handoff), NOT `BODY_TOO_LARGE` (413). Pins that core runs the membership
+  gate BEFORE the body cap (post-announcement.ts:123 before :129). PREVIOUSLY UNTESTED through
+  the host — the dev's separate NOT_A_MEMBER / BODY_TOO_LARGE cases cannot catch an order flip.
 
-The cadence hook's `persistent_facts` step 1 promises `check` is a pull-only, cursor-advancing,
-bounded delta ("a quiet board needs no action; you are done in one call ... the board never
-pushes"). This test proves that promise at runtime:
+## Mutation-tests (Rule 7 — non-vacuous proof, both reverted byte-identically)
+- **Gate-order**: temporarily flipped `post-announcement.ts` (cap before membership) → the
+  gate-order test went RED (403→413). Reverted via `git checkout`; `git diff HEAD` empty.
+- **Rule 13 drift-guard**: temporarily appended a phantom code to `BOARD_ERROR_CODES` → the
+  existing closed-set pin went RED. Reverted; core + mcp-server `git diff HEAD` empty.
 
-- **POST-CONDITION A.1 — delta on step activity:** after a workflow step produces board activity
-  in the agent's scope (a new announcement in its member board + a new reply in a room it
-  participates in), the agent's post-step `check` RETURNS exactly that new delta (both scopes the
-  hook's review walks), and the cursor advances past the baseline.
-- **POST-CONDITION A.2 — quiet review is empty, cursor UNCHANGED, no re-flood:** an
-  immediately-following `check` (nothing new) returns `[]` / `[]` with the cursor unchanged —
-  proving the heartbeat advanced the cursor and the same items are NOT re-flooded review after
-  review. (Load-bearing pin; mutation-tested — see below.)
-- **POST-CONDITION B — pull-only, no push:** the bounded-delta envelope
-  `{ announcements, messages, cursor }` is what `check` RETURNS (a request→response
-  `CallToolResult`), and a `fallbackNotificationHandler` counter stays at 0 across the whole
-  register→join→reply→check→step-activity→check→check exchange — the board pushed nothing
-  (FR35 / NFR5).
+## Coverage
+- announce_project endpoint: happy + PROJECT_EXISTS(409) + NO_OPERATOR(403) + BAD_REQUEST(400)
+  + atomicity-by-event — covered.
+- post_announcement endpoint: happy + NOT_A_MEMBER(403) + BOARD_NOT_FOUND(404) +
+  BODY_TOO_LARGE(413) + NO_OPERATOR(403) + BAD_REQUEST(400) + gate-order + atomicity-by-event
+  — covered (unit + real-HTTP integration).
+- ui-shared compose components + ApiError client surfacing: dev coverage adequate; not duplicated.
 
-This does NOT duplicate the generic bounded-delta mechanics already covered by
-`check.integration.test.ts` and `check.bounded.integration.test.ts`; it adds the Story-8.2-named
-behavioral proof of the cadence's heartbeat.
+## Gate (canonical root `pnpm test`, Rule 12)
+- `vitest run`: 137 files, 1136 passed, 0 failed, 0 skipped (was 1133; +3 new).
+- eslint clean; `tsc --noEmit` clean (whole project); prettier clean. No `.only`/`.skip`/`.todo`.
+- Rule 13: `git diff HEAD -- packages/core packages/mcp-server` EMPTY (contract byte-identical).
 
-## Verification
-
-- Tool name (`check`), input (`{}`), and envelope field names (`announcements`, `messages`,
-  `cursor`) verified against the live `check.ts` registration + `docs/mcp-tool-contract.md` §3/§6
-  before authoring.
-- Rule 7 mutation test (non-vacuity of the A.2 cursor-advance / no-re-flood pin): temporarily
-  changed core `check.ts` `setCursor(actor, maxReturned)` → `setCursor(actor, cursor)` (cursor does
-  not advance) → the test went RED at `expect(quiet.announcements).toEqual([])` (the quiet check
-  re-flooded the step's announcements). Restored `check.ts` byte-identically (`git diff` empty).
-- Discoverable by the default `pnpm test` run (Rule 8): `*.integration.test.ts` co-located under
-  `packages/mcp-server/src/tools/`, not excluded, not tagged out.
-
-## Gate (honest order, repo root, pnpm)
-
-lint ✅ → build ✅ (7 packages) → typecheck ✅ → test ✅ **670 passed / 98 files** (was 669 after the
-dev stage; +1, no regressions) → format `--check` ✅ ("All matched files use Prettier code style!").
-
-## Next Steps
-
-- Lead per-story smoke gate, then commit (QA leaves all changes uncommitted by design).
+## Decision on concurrency (Rule 5 judgment)
+No forked cross-process race added. `announceProject` title-uniqueness rides the `appendGuarded`
+primitive already cross-process-proven by `data-access/register-race.test.ts` +
+`concurrency.test.ts`; `postAnnouncement` room-id disambiguation by `post-announcement-race.test.ts`.
+The 9.11 host endpoints are thin HTTP wrappers over those proven ops — a new fork here would
+re-prove the data-access primitive, not the host. Atomicity (the host-level property) is pinned
+in-process by the event-presence assertions above.

@@ -504,9 +504,38 @@ async function postJson<T>(
 }
 
 /**
- * POST a typed JSON write CARRYING a body to `path` (Story 9.7 reply/add_participant). Sends
- * `Content-Type: application/json` + the serialized `body`; throws on a non-2xx (the composer
- * surfaces a calm error — e.g. 413 BODY_TOO_LARGE, 403 NOT_A_MEMBER/NO_OPERATOR, 404).
+ * A typed error carrying the host's uniform `{ code, message }` error envelope (Story 9.11).
+ * The host maps every BoardError / host-surface condition to `{ code: SCREAMING_SNAKE, message }`
+ * at the right HTTP status; a bare `Error('… HTTP <status>')` LOSES that code, but the operator
+ * compose affordances must BRANCH on it — `PROJECT_EXISTS` (duplicate title, inline calm error),
+ * `NOT_A_MEMBER` (post into a non-member project → the join-first handoff), `BODY_TOO_LARGE`
+ * (over-cap body, inline calm error). `postJsonBody` parses the JSON error body on a non-2xx and
+ * throws THIS so callers can read `.code`. Backward-compatible: existing callers that only catch
+ * `Error` (postReply/postJoin/postAddParticipant) still work — `ApiError extends Error`, so its
+ * `.message` is the host message and they may ignore `.code`. CLIENT-LAYER ONLY: this mirrors the
+ * host wire's closed-contract codes for the UI; it adds nothing to core's `BOARD_ERROR_CODES`.
+ */
+export class ApiError extends Error {
+  constructor(
+    /** The host error code (`PROJECT_EXISTS`, `NOT_A_MEMBER`, `BODY_TOO_LARGE`, `NO_OPERATOR`, …). */
+    readonly code: string,
+    message: string,
+    /** The HTTP status the host returned (for diagnostics). */
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+/**
+ * POST a typed JSON write CARRYING a body to `path` (Story 9.7 reply/add_participant; Story 9.11
+ * announce_project/post_announcement). Sends `Content-Type: application/json` + the serialized
+ * `body`. On a non-2xx it parses the host's `{ code, message }` error envelope and throws an
+ * {@link ApiError} carrying `.code` (so a compose affordance can branch on `PROJECT_EXISTS` /
+ * `NOT_A_MEMBER` / `BODY_TOO_LARGE` for the calm inline/handoff surfaces — Story 9.11). A response
+ * whose body is not the expected envelope falls back to a synthetic `HTTP_<status>` code so the
+ * caller still gets an `ApiError` (never a silent failure).
  */
 async function postJsonBody<T>(
   path: string,
@@ -520,7 +549,22 @@ async function postJsonBody<T>(
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(`POST ${path} failed: HTTP ${response.status}`);
+    // Parse the host's uniform { code, message } error envelope so the caller can branch on the
+    // code (the calm inline error / join-first handoff). A non-JSON / non-envelope body degrades
+    // to a synthetic code keyed on the status — still an ApiError, never a lost failure.
+    let code = `HTTP_${response.status}`;
+    let message = `POST ${path} failed: HTTP ${response.status}`;
+    try {
+      const parsed = (await response.json()) as {
+        code?: unknown;
+        message?: unknown;
+      };
+      if (typeof parsed.code === 'string') code = parsed.code;
+      if (typeof parsed.message === 'string') message = parsed.message;
+    } catch {
+      // Body was not JSON (or already consumed) — keep the synthetic code/message.
+    }
+    throw new ApiError(code, message, response.status);
   }
   return (await response.json()) as T;
 }
@@ -629,6 +673,60 @@ export async function postAddParticipant(
   return postJsonBody<AddParticipantResponse>(
     `/api/rooms/${encodeURIComponent(roomId)}/participants`,
     { handle },
+    baseUrl,
+    fetchImpl,
+  );
+}
+
+/** The `POST /api/projects` envelope (Story 9.11) — the announced project (operator first member). */
+export interface AnnounceProjectResponse {
+  project: ProjectWire;
+}
+
+/** The `POST /api/projects/:id/announcements` envelope (Story 9.11) — the opened proto-room. */
+export interface PostAnnouncementResponse {
+  room: RoomWire;
+}
+
+/**
+ * START A NEGOTIATION — announce a new project as the operator (`POST /api/projects`, Story 9.11).
+ * The SAME core `announceProject` an agent uses (no operator backdoor): the operator becomes the
+ * new sub-board's first member. Body-carrying (`{ title, description }`). Throws an {@link ApiError}
+ * on a non-2xx — the caller branches on `.code === 'PROJECT_EXISTS'` (duplicate title/slug → 409,
+ * calm inline error) or `NO_OPERATOR` (watching-only host → 403).
+ */
+export async function announceProject(
+  title: string,
+  description: string,
+  baseUrl = '',
+  fetchImpl: typeof fetch = fetch,
+): Promise<AnnounceProjectResponse> {
+  return postJsonBody<AnnounceProjectResponse>(
+    '/api/projects',
+    { title, description },
+    baseUrl,
+    fetchImpl,
+  );
+}
+
+/**
+ * OPEN A ROOM — post a new announcement into a project as the operator
+ * (`POST /api/projects/:id/announcements`, Story 9.11). The SAME core `postAnnouncement` an agent
+ * uses. Body-carrying (`{ subject, body }`). Throws an {@link ApiError} on a non-2xx — the caller
+ * branches on `.code === 'NOT_A_MEMBER'` (the operator is not a member → 403, the join-first
+ * handoff, NEVER a silent failure), `BODY_TOO_LARGE` (over-cap body → 413, calm inline error),
+ * `BOARD_NOT_FOUND` (404), or `NO_OPERATOR` (403).
+ */
+export async function postAnnouncement(
+  projectId: string,
+  subject: string,
+  body: string,
+  baseUrl = '',
+  fetchImpl: typeof fetch = fetch,
+): Promise<PostAnnouncementResponse> {
+  return postJsonBody<PostAnnouncementResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/announcements`,
+    { subject, body },
     baseUrl,
     fetchImpl,
   );

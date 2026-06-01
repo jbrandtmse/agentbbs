@@ -111,3 +111,13 @@ export type {
   ConnectionFooterProps,
   ConnectionStatus,
 } from './chrome/ConnectionFooter.js';
+
+// Story 9.11 — the operator INITIATE-surface compose affordances: "start a project"
+// (CreateProjectCompose → announce_project) + "open a room" (PostAnnouncementCompose →
+// post_announcement, with the calm join-first handoff for a non-member). Prop-driven +
+// presentation-only (NFR2 — no core/data-access import); the surface owns the writes + the live
+// tree refresh. The operator initiates via the SAME core ops an agent uses (no operator backdoor).
+export { CreateProjectCompose } from './compose/CreateProjectCompose.js';
+export type { CreateProjectComposeProps } from './compose/CreateProjectCompose.js';
+export { PostAnnouncementCompose } from './compose/PostAnnouncementCompose.js';
+export type { PostAnnouncementComposeProps } from './compose/PostAnnouncementCompose.js';

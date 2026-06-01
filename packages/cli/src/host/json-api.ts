@@ -25,6 +25,8 @@
 //   POST /api/projects/:projectId/join            → { project } (9.7, no body)
 //   POST /api/rooms/:roomId/reply  (body { body })→ { room } (9.7, BODY-carrying)
 //   POST /api/rooms/:roomId/participants (body { handle }) → { room, participants } (9.7)
+//   POST /api/projects (body { title, description }) → { project } (9.11, BODY-carrying)
+//   POST /api/projects/:projectId/announcements (body { subject, body }) → { room } (9.11)
 // The dispatch table is the documented extension seam: a write route slots in as a new
 // `{ method:'POST', pattern, handler }` entry — the SAME route-table shape as a read,
 // distinguished only by `method`. The write handlers are THIN (mirroring the read ones):
@@ -63,6 +65,7 @@
 import {
   BoardError,
   addParticipant,
+  announceProject,
   boardDirectory,
   findRoom,
   joinBoard,
@@ -70,6 +73,7 @@ import {
   listProjects,
   listRooms,
   needsYouRooms,
+  postAnnouncement,
   react,
   readContract,
   reply,
@@ -466,6 +470,47 @@ const ROUTES: Route[] = [
           participants: result.participants,
         },
       };
+    },
+  },
+  {
+    // Story 9.11 — START A NEGOTIATION (announce a project). The operator INITIATE surface,
+    // over the SAME core `announceProject` an agent uses (no operator backdoor). BODY-carrying:
+    // `{ title, description }`. Core appends `project.announced` + the operator's `board.joined`
+    // ATOMICALLY (announcer = first member); a duplicate title OR derived slug → PROJECT_EXISTS
+    // → 409 (nothing appended, atomic rollback). A watching-only host → 403 NO_OPERATOR.
+    method: 'POST',
+    pattern: '/api/projects',
+    handler: async (_params, { dataAccess, operatorHandle, body }) => {
+      const actor = requireOperator(operatorHandle);
+      const title = requireBodyString(body, 'title');
+      const description = requireBodyString(body, 'description');
+      const project = await announceProject(dataAccess, actor, {
+        title,
+        description,
+      });
+      return { status: 200, body: { project: projectToWire(project) } };
+    },
+  },
+  {
+    // Story 9.11 — OPEN A ROOM (post an announcement into a member project). The SAME core
+    // `postAnnouncement` an agent uses. BODY-carrying: `{ subject, body }`. Core runs the
+    // membership gate FIRST → BOARD_NOT_FOUND (404) unknown board / NOT_A_MEMBER (403)
+    // non-member (the AC2 join-first-handoff trigger — it does NOT auto-join), THEN the body
+    // cap → BODY_TOO_LARGE (413) over-cap, THEN appends `announcement.posted`. A watching-only
+    // host → 403 NO_OPERATOR. The host re-implements NONE of these gates.
+    method: 'POST',
+    pattern: '/api/projects/:projectId/announcements',
+    handler: async (params, { dataAccess, operatorHandle, body }) => {
+      const projectId = requireSlug(params.projectId, 'project_id');
+      const actor = requireOperator(operatorHandle);
+      const subject = requireBodyString(body, 'subject');
+      const announcementBody = requireBodyString(body, 'body');
+      const room = await postAnnouncement(dataAccess, actor, {
+        projectId,
+        subject,
+        body: announcementBody,
+      });
+      return { status: 200, body: { room: roomToWire(room) } };
     },
   },
 ];

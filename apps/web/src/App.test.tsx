@@ -2313,3 +2313,323 @@ describe('App shell — NO MODAL ANYWHERE, in any state (Story 9.10 calm-posture
     assertNoModalAnywhere();
   });
 });
+
+// --- Story 9.11 (POST-SMOKE REGRESSION GUARD) — AC2's PRIMARY path: a MEMBER of a ROOM-LESS
+// project must be able to open its FIRST room. The lead's real-Chrome smoke caught that the
+// `＋ open a room` compose was mounted ONLY inside `{activeRoom !== null}`, so a freshly-announced
+// (zero-room) board could never post its first announcement — breaking operator↔agent parity (an
+// agent CAN post_announcement into a room-less board it belongs to). The fix wires the NavTree
+// `announcements (N)` bucket → a PROJECT-SCOPED `＋ open a room` compose rendered at SHELL level,
+// independent of any open room. These tests pin the room-less reachability + the right projectId on
+// the write, plus the non-member join-first handoff from the same room-less entry. ---
+describe('App shell — open the FIRST room in a room-less project (Story 9.11, AC2 primary path)', () => {
+  /** Every board WRITE the shell issues (method + url + parsed JSON body). */
+  let writes: { url: string; body: unknown }[];
+  /** Whether the host has a room yet (post_announcement flips it → the tree refresh shows it). */
+  let hasRoom: boolean;
+  /** Whether `ops` is a member of calling-interface (false → post_announcement → NOT_A_MEMBER). */
+  let opsIsMember: boolean;
+
+  function directory() {
+    return {
+      projects: [
+        {
+          project_id: 'calling-interface',
+          title: 'Calling Interface',
+          description: 'How agents dial in.',
+          announcer: 'alice',
+          members: opsIsMember ? ['alice', 'ops'] : ['alice'],
+        },
+      ],
+    };
+  }
+
+  function callingInterfaceRooms() {
+    return {
+      rooms: hasRoom
+        ? [
+            {
+              room_id: 'need-a-decision',
+              project_id: 'calling-interface',
+              subject: 'Need a decision',
+              body: '',
+              posted_by: 'ops',
+              seq: 12,
+              active: false,
+            },
+          ]
+        : [],
+    };
+  }
+
+  function callingInterfaceAnnouncements() {
+    return {
+      announcements: hasRoom
+        ? [
+            {
+              room_id: 'need-a-decision',
+              project_id: 'calling-interface',
+              subject: 'Need a decision',
+              body: 'who owns the retry budget?',
+              posted_by: 'ops',
+              seq: 12,
+              active: false,
+            },
+          ]
+        : [],
+    };
+  }
+
+  beforeEach(() => {
+    writes = [];
+    hasRoom = false;
+    opsIsMember = true;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const method = init?.method ?? 'GET';
+        if (method === 'POST') {
+          const parsed =
+            typeof init?.body === 'string' && init.body.length > 0
+              ? (JSON.parse(init.body) as unknown)
+              : undefined;
+          writes.push({ url, body: parsed });
+          if (url === '/api/projects/calling-interface/announcements') {
+            if (!opsIsMember) {
+              return new Response(
+                JSON.stringify({
+                  code: 'NOT_A_MEMBER',
+                  message: 'ops is not a member of calling-interface.',
+                }),
+                { status: 403 },
+              );
+            }
+            // post_announcement succeeds → the board now has a room (the tree refresh shows it).
+            hasRoom = true;
+            return new Response(
+              JSON.stringify({
+                room: {
+                  room_id: 'need-a-decision',
+                  project_id: 'calling-interface',
+                  subject: 'Need a decision',
+                  body: 'who owns the retry budget?',
+                  posted_by: 'ops',
+                  seq: 12,
+                  active: false,
+                },
+              }),
+              { status: 200 },
+            );
+          }
+          if (url === '/api/projects/calling-interface/join') {
+            opsIsMember = true;
+            return new Response(
+              JSON.stringify({
+                project: {
+                  project_id: 'calling-interface',
+                  title: 'Calling Interface',
+                  description: 'd',
+                  announcer: 'alice',
+                  members: ['alice', 'ops'],
+                },
+              }),
+              { status: 200 },
+            );
+          }
+          return new Response('nope', { status: 404 });
+        }
+        // GETs — dynamic so a post_announcement's tree refresh sees the new room.
+        if (url === '/api/me') {
+          return new Response(JSON.stringify({ handle: 'ops' }), {
+            status: 200,
+          });
+        }
+        if (url === '/api/needs-you') {
+          return new Response(JSON.stringify({ rooms: [] }), { status: 200 });
+        }
+        if (url === '/api/directory') {
+          return new Response(JSON.stringify(directory()), { status: 200 });
+        }
+        if (url === '/api/projects/calling-interface/rooms') {
+          return new Response(JSON.stringify(callingInterfaceRooms()), {
+            status: 200,
+          });
+        }
+        if (url === '/api/projects/calling-interface/announcements') {
+          return new Response(JSON.stringify(callingInterfaceAnnouncements()), {
+            status: 200,
+          });
+        }
+        return new Response('nope', { status: 404 });
+      }),
+    );
+    vi.stubGlobal(
+      'EventSource',
+      FakeEventSource as unknown as typeof EventSource,
+    );
+  });
+
+  async function mountBoard(): Promise<void> {
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await flush();
+  }
+
+  /** Click the project's `announcements (N)` bucket — the room-less entry to the open-a-room compose. */
+  async function clickAnnouncementsBucket(): Promise<void> {
+    const bucket = container.querySelector<HTMLElement>(
+      '[data-project-id="calling-interface"] [data-testid="announcements-bucket"]',
+    );
+    await act(async () => {
+      bucket?.click();
+    });
+    await flush();
+  }
+
+  it('the room-less board has NO open room, yet the `＋ open a room` compose is REACHABLE via the announcements bucket', async () => {
+    await mountBoard();
+    // Precondition: the board is room-less (no room rows) and nothing is open (no RoomView).
+    expect(
+      container.querySelector(
+        '[data-project-id="calling-interface"] [data-room-id]',
+      ),
+    ).toBeNull();
+    expect(container.querySelector('[data-testid="room-view"]')).toBeNull();
+    // The open-a-room panel is NOT shown until the bucket is clicked.
+    expect(
+      container.querySelector('[data-testid="open-room-panel"]'),
+    ).toBeNull();
+
+    await clickAnnouncementsBucket();
+
+    // The PROJECT-SCOPED compose panel is now mounted (independent of any open room), targeting
+    // calling-interface — the exact gap the smoke caught.
+    const panel = container.querySelector('[data-testid="open-room-panel"]');
+    expect(panel).not.toBeNull();
+    expect(panel?.getAttribute('data-project-id')).toBe('calling-interface');
+    expect(
+      container.querySelector('[data-testid="post-announcement-compose"]'),
+    ).not.toBeNull();
+    // Still no RoomView (we never opened a room — this is the room-less primary path).
+    expect(container.querySelector('[data-testid="room-view"]')).toBeNull();
+  });
+
+  it('submitting the compose POSTs post_announcement with the RIGHT projectId + refreshes the tree (the new room appears live)', async () => {
+    await mountBoard();
+    await clickAnnouncementsBucket();
+
+    // Fill subject + body and submit through the real compose form.
+    const subject = container.querySelector<HTMLInputElement>(
+      '[data-testid="post-announcement-subject"]',
+    );
+    const body = container.querySelector<HTMLTextAreaElement>(
+      '[data-testid="post-announcement-body"]',
+    );
+    await act(async () => {
+      const inputSetter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )?.set;
+      inputSetter?.call(subject, 'Need a decision');
+      subject?.dispatchEvent(new Event('input', { bubbles: true }));
+      const taSetter = Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        'value',
+      )?.set;
+      taSetter?.call(body, 'who owns the retry budget?');
+      body?.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>(
+          '[data-testid="post-announcement-submit"]',
+        )
+        ?.click();
+    });
+    await flush();
+
+    // The shell POSTed post_announcement to the SELECTED project's endpoint with the typed payload
+    // — NOT derived from any open room (there was none).
+    const annWrite = writes.find((w) =>
+      w.url.endsWith('/api/projects/calling-interface/announcements'),
+    );
+    expect(annWrite).not.toBeUndefined();
+    expect(annWrite?.body).toEqual({
+      subject: 'Need a decision',
+      body: 'who owns the retry budget?',
+    });
+
+    // On success the panel closes + the tree refreshed: the new room row now appears LIVE.
+    expect(
+      container.querySelector('[data-testid="open-room-panel"]'),
+    ).toBeNull();
+    expect(
+      container.querySelector(
+        '[data-project-id="calling-interface"] [data-room-id="need-a-decision"]',
+      ),
+    ).not.toBeNull();
+  });
+
+  it('a NON-member opening the first room → the calm join-first handoff (never a silent failure), then join → back to the form', async () => {
+    opsIsMember = false; // ops is NOT a member → post_announcement → NOT_A_MEMBER.
+    await mountBoard();
+    await clickAnnouncementsBucket();
+
+    // Submit → core rejects NOT_A_MEMBER → the compose swaps to the join-first CTA (not silent).
+    const subject = container.querySelector<HTMLInputElement>(
+      '[data-testid="post-announcement-subject"]',
+    );
+    const body = container.querySelector<HTMLTextAreaElement>(
+      '[data-testid="post-announcement-body"]',
+    );
+    await act(async () => {
+      const inputSetter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )?.set;
+      inputSetter?.call(subject, 'sneak in');
+      subject?.dispatchEvent(new Event('input', { bubbles: true }));
+      const taSetter = Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        'value',
+      )?.set;
+      taSetter?.call(body, 'not a member yet');
+      body?.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>(
+          '[data-testid="post-announcement-submit"]',
+        )
+        ?.click();
+    });
+    await flush();
+
+    // The join-first CTA is shown (the handoff), the compose fields are gone — NOT a silent fail.
+    const cta = container.querySelector<HTMLButtonElement>(
+      '[data-testid="post-announcement-join-first"]',
+    );
+    expect(cta).not.toBeNull();
+    expect(cta?.textContent).toBe('[ join this project first ]');
+
+    // Click join-first → POSTs joinBoard for the SELECTED project, then drops back to the form.
+    await act(async () => {
+      cta?.click();
+    });
+    await flush();
+    expect(
+      writes.some((w) =>
+        w.url.endsWith('/api/projects/calling-interface/join'),
+      ),
+    ).toBe(true);
+    // Back to the compose form (now a member; the operator can re-submit to post).
+    expect(
+      container.querySelector('[data-testid="post-announcement-compose"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="post-announcement-join-first"]'),
+    ).toBeNull();
+  });
+});

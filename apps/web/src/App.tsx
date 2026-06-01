@@ -41,12 +41,16 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Composer,
   ConnectionFooter,
+  CreateProjectCompose,
   NavTree,
+  PostAnnouncementCompose,
   RoomView,
   TabStrip,
 } from '@agentbbs/ui-shared';
 
 import {
+  ApiError,
+  announceProject,
   appendPendingPost,
   deriveAgreedSeq,
   foldRoomDelta,
@@ -57,6 +61,7 @@ import {
   markPendingPostFailed,
   newClientToken,
   openEventStream,
+  postAnnouncement,
   postJoin,
   postReact,
   postReply,
@@ -88,6 +93,36 @@ const mainStyle: CSSProperties = {
   height: '100vh',
   display: 'flex',
   flexDirection: 'column',
+};
+
+// Story 9.11 — the calm INITIATE bar (a thin row holding the `＋ start a project` / `＋ open a
+// room` toggle). Quiet panel-bg row with a bottom rule; the toggle is a terse lowercase text
+// button (Story 9.10 calm voice), NOT a splashy CTA.
+const initiateBarStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 'var(--space-3)',
+  padding: 'var(--space-2) var(--space-7)',
+  background: 'var(--surface-panel)',
+  borderBottom: '1px solid var(--border)',
+};
+
+const initiateButtonStyle: CSSProperties = {
+  background: 'transparent',
+  border: 'none',
+  color: 'var(--text-dim)',
+  fontFamily: 'var(--ui-label-font)',
+  fontSize: 'var(--ui-label-size)',
+  cursor: 'pointer',
+  padding: 'var(--space-1) 0',
+};
+
+// Story 9.11 — the project-scoped "open a room in <project>" label above the shell-level
+// announcement compose (so the operator sees which board the new room lands in).
+const openRoomLabelStyle: CSSProperties = {
+  color: 'var(--text-dim)',
+  fontFamily: 'var(--ui-label-font)',
+  fontSize: 'var(--ui-label-size)',
 };
 
 // The sidebar column: the nav tree fills it, the connection footer sits at the bottom (Story
@@ -150,6 +185,28 @@ export function App() {
   // already-loaded content stays readable while reconnecting (the live fold resumes on reopen).
   const [connectionStatus, setConnectionStatus] =
     useState<ConnectionStatus>('reconnecting');
+
+  // Story 9.11 — the operator INITIATE-surface compose panels (calm, inline, never a modal).
+  // `createProjectOpen` toggles the "start a project" form; `createProjectError`/`createPending`
+  // drive its inline calm error (`PROJECT_EXISTS`) + disabled state. The "open a room" panel is
+  // PROJECT-SCOPED, NOT room-scoped: `announceProjectId` is the project it targets (an agent can
+  // `post_announcement` into a room-less board it belongs to, so the operator must be able to too
+  // — the affordance opens via the NavTree `announcements (N)` bucket, INDEPENDENT of any open
+  // room). `announceComposeOpen` toggles it; `announceError`/`announcePending` drive its inline
+  // state; `announceJoinFirst` flips it to the join-first CTA when core rejects a non-member with
+  // NOT_A_MEMBER (AC2 handoff, never a silent failure).
+  const [createProjectOpen, setCreateProjectOpen] = useState(false);
+  const [createProjectError, setCreateProjectError] = useState<string | null>(
+    null,
+  );
+  const [createPending, setCreatePending] = useState(false);
+  const [announceComposeOpen, setAnnounceComposeOpen] = useState(false);
+  const [announceProjectId, setAnnounceProjectId] = useState<string | null>(
+    null,
+  );
+  const [announceError, setAnnounceError] = useState<string | null>(null);
+  const [announcePending, setAnnouncePending] = useState(false);
+  const [announceJoinFirst, setAnnounceJoinFirst] = useState(false);
 
   // Build the tree model once on mount (real ledger data over the JSON API).
   useEffect(() => {
@@ -355,6 +412,108 @@ export function App() {
     console.info(
       'join a project… (sidebar board-picker is a later affordance)',
     );
+  }
+
+  // Story 9.11 — START A NEGOTIATION (announce a project). Open the calm compose panel; on submit
+  // call the SAME core `announceProject` an agent uses (no operator backdoor). On success the new
+  // `project.announced` + the operator's `board.joined` land in the ledger; refresh the tree so the
+  // new project appears LIVE (the operator is its first member), and close the panel. On
+  // PROJECT_EXISTS (duplicate title/slug → 409) show the calm inline error WITH the draft intact
+  // (the form stays open — no modal). NO_OPERATOR (watching-only) surfaces the same way.
+  function handleCreateProject(input: {
+    title: string;
+    description: string;
+  }): void {
+    setCreatePending(true);
+    setCreateProjectError(null);
+    announceProject(input.title, input.description)
+      .then(() => loadTreeModel())
+      .then((built) => {
+        // The new project appears live in the tree (a full re-derive of the global-read model —
+        // brand-new projects/rooms are outside foldTreeDelta's decoration scope, so we refetch the
+        // authoritative model, the same success-refetch discipline as the reply path in 9.9).
+        setModel(built);
+        setCreateProjectOpen(false);
+        setCreateProjectError(null);
+      })
+      .catch((err: unknown) => {
+        // Calm inline error (PROJECT_EXISTS / NO_OPERATOR / …) — the panel stays open, draft intact.
+        setCreateProjectError(
+          err instanceof Error ? err.message : 'Could not create the project.',
+        );
+      })
+      .finally(() => setCreatePending(false));
+  }
+
+  // Story 9.11 — OPEN THE PROJECT-SCOPED "open a room" compose (the AC2 PRIMARY path). Fired by the
+  // NavTree `announcements (N)` bucket so the affordance is reachable for a MEMBER of a ROOM-LESS
+  // project — an agent can post_announcement into a room-less board it belongs to, so the operator
+  // must be able to too (operator↔agent parity, the whole point of this correct-course story). The
+  // target is the SELECTED project, INDEPENDENT of any open room. (The in-room `＋ open a room`
+  // toggle below also routes here, passing the active room's projectId.)
+  function handleOpenAnnouncements(projectId: string): void {
+    setAnnounceProjectId(projectId);
+    setAnnounceError(null);
+    setAnnounceJoinFirst(false);
+    setAnnounceComposeOpen(true);
+  }
+
+  // Story 9.11 — OPEN A ROOM (post an announcement) into the SELECTED project (`announceProjectId`,
+  // set by handleOpenAnnouncements — NOT derived from an open room, so a room-less board works).
+  // The SAME core `postAnnouncement` an agent uses. On success the new `announcement.posted` lands;
+  // refresh the tree so the new room appears LIVE, and close the panel. AC2: on NOT_A_MEMBER (403)
+  // flip to the join-first CTA (never a silent failure); on BODY_TOO_LARGE (413) / other → calm
+  // inline error.
+  function handlePostAnnouncement(input: {
+    subject: string;
+    body: string;
+  }): void {
+    const projectId = announceProjectId;
+    if (projectId === null) return;
+    setAnnouncePending(true);
+    setAnnounceError(null);
+    setAnnounceJoinFirst(false);
+    postAnnouncement(projectId, input.subject, input.body)
+      .then(() => loadTreeModel())
+      .then((built) => {
+        setModel(built);
+        setAnnounceComposeOpen(false);
+        setAnnounceError(null);
+      })
+      .catch((err: unknown) => {
+        // AC2 — a non-member cannot open a room: surface the join-first handoff (never silent).
+        if (err instanceof ApiError && err.code === 'NOT_A_MEMBER') {
+          setAnnounceJoinFirst(true);
+          return;
+        }
+        // BODY_TOO_LARGE / BOARD_NOT_FOUND / NO_OPERATOR / … → calm inline error, draft intact.
+        setAnnounceError(
+          err instanceof Error ? err.message : 'Could not open the room.',
+        );
+      })
+      .finally(() => setAnnouncePending(false));
+  }
+
+  // Story 9.11 / AC2 — the join-first handoff: the operator clicks `[ join this project first ]`,
+  // so join the SELECTED project's sub-board (`joinBoard`, the SAME op an agent uses) then drop back
+  // to the compose form so they can post (now a member). Composes with Story 9.12's join path.
+  function handleAnnounceJoinFirst(): void {
+    const projectId = announceProjectId;
+    if (projectId === null) return;
+    setAnnouncePending(true);
+    setAnnounceError(null);
+    postJoin(projectId)
+      .then(() => {
+        // Now a member — drop the join-first CTA back to the compose form (the draft is in the
+        // component's own state; the operator re-submits to post).
+        setAnnounceJoinFirst(false);
+      })
+      .catch((err: unknown) => {
+        setAnnounceError(
+          err instanceof Error ? err.message : 'Could not join the project.',
+        );
+      })
+      .finally(() => setAnnouncePending(false));
   }
 
   // The currently ACTIVE tab (the one whose RoomView renders), or undefined when none is open.
@@ -614,6 +773,7 @@ export function App() {
           <NavTree
             model={model}
             onSelectRoom={handleSelectRoom}
+            onOpenAnnouncements={handleOpenAnnouncements}
             onJoinProject={handleJoinProject}
           />
         ) : (
@@ -639,6 +799,76 @@ export function App() {
       <main style={mainStyle} data-testid="main-pane" aria-label="room">
         {error !== null && (
           <p data-testid="error">couldn’t load the board — {error}</p>
+        )}
+
+        {/* Story 9.11 — the operator INITIATE bar: `＋ start a project` opens the calm
+            create-project compose panel (the SAME core announce_project an agent uses). Calm,
+            inline, never a modal; the new project appears LIVE in the tree on success. */}
+        {model !== null && error === null && (
+          <div style={initiateBarStyle} data-testid="initiate-bar">
+            <button
+              type="button"
+              data-testid="start-project-toggle"
+              onClick={() => {
+                setCreateProjectError(null);
+                setCreateProjectOpen((open) => !open);
+              }}
+              style={initiateButtonStyle}
+            >
+              ＋ start a project
+            </button>
+          </div>
+        )}
+        {createProjectOpen && (
+          <CreateProjectCompose
+            onSubmit={handleCreateProject}
+            onCancel={() => {
+              setCreateProjectOpen(false);
+              setCreateProjectError(null);
+            }}
+            onEscape={() => {
+              setCreateProjectOpen(false);
+              setCreateProjectError(null);
+            }}
+            error={createProjectError}
+            pending={createPending}
+          />
+        )}
+
+        {/* Story 9.11 (AC2 PRIMARY PATH) — the PROJECT-SCOPED "open a room" compose, rendered at
+            SHELL level (NOT gated behind an open room) so a MEMBER of a ROOM-LESS project can post
+            its first announcement — exactly what an agent can do via post_announcement. Opened by
+            the NavTree `announcements (N)` bucket (handleOpenAnnouncements sets announceProjectId);
+            targets THAT project. On success the new room appears LIVE in the tree; NOT_A_MEMBER →
+            the calm join-first CTA; BODY_TOO_LARGE → inline calm error. */}
+        {announceComposeOpen && announceProjectId !== null && (
+          <div
+            data-testid="open-room-panel"
+            data-project-id={announceProjectId}
+          >
+            <div style={initiateBarStyle} data-testid="open-room-bar">
+              <span style={openRoomLabelStyle}>
+                open a room in {announceProjectId}
+              </span>
+            </div>
+            <PostAnnouncementCompose
+              onSubmit={handlePostAnnouncement}
+              onCancel={() => {
+                setAnnounceComposeOpen(false);
+                setAnnounceError(null);
+                setAnnounceJoinFirst(false);
+              }}
+              onEscape={() => {
+                setAnnounceComposeOpen(false);
+                setAnnounceError(null);
+                setAnnounceJoinFirst(false);
+              }}
+              joinFirst={announceJoinFirst}
+              onJoinFirst={handleAnnounceJoinFirst}
+              error={announceError}
+              pending={announcePending}
+            />
+          </div>
         )}
 
         {/* Story 9.8 — the open-room editor tabs (side-by-side; active tab base+rail, the
@@ -667,26 +897,43 @@ export function App() {
             <p data-testid="room-loading">opening room…</p>
           )}
         {activeRoom !== null && (
-          <RoomView
-            room={activeRoom}
-            onToggleReaction={handleToggleReaction}
-            onRetryPost={handleRetryPost}
-            composerSlot={
-              <Composer
-                // The composer shows its JOINED (field + send) state when the operator is a true
-                // ROOM PARTICIPANT (posture `peer`) OR has just clicked `[ join room to post ]`
-                // (local intent). A watching operator who has not clicked join sees the
-                // `[ join room to post ]` gate.
-                joined={
-                  activeRoom.operatorPosture.kind === 'peer' ||
-                  activeJoinedIntent
-                }
-                pending={composerPending}
-                onJoin={handleJoinRoom}
-                onSend={handleSendMessage}
-              />
-            }
-          />
+          <>
+            {/* Story 9.11 — the IN-ROOM `＋ open a room` toggle: a convenience entry to open ANOTHER
+                room in the project the operator is currently viewing. It routes through the SAME
+                project-scoped handler (handleOpenAnnouncements) as the NavTree bucket, so the
+                compose panel (rendered at shell level above) targets THIS room's project. The
+                room-LESS path (a fresh board with no open room) is served by the NavTree bucket. */}
+            <div style={initiateBarStyle} data-testid="open-room-bar-inroom">
+              <button
+                type="button"
+                data-testid="open-room-toggle"
+                onClick={() => handleOpenAnnouncements(activeRoom.projectId)}
+                style={initiateButtonStyle}
+              >
+                ＋ open a room
+              </button>
+            </div>
+            <RoomView
+              room={activeRoom}
+              onToggleReaction={handleToggleReaction}
+              onRetryPost={handleRetryPost}
+              composerSlot={
+                <Composer
+                  // The composer shows its JOINED (field + send) state when the operator is a true
+                  // ROOM PARTICIPANT (posture `peer`) OR has just clicked `[ join room to post ]`
+                  // (local intent). A watching operator who has not clicked join sees the
+                  // `[ join room to post ]` gate.
+                  joined={
+                    activeRoom.operatorPosture.kind === 'peer' ||
+                    activeJoinedIntent
+                  }
+                  pending={composerPending}
+                  onJoin={handleJoinRoom}
+                  onSend={handleSendMessage}
+                />
+              }
+            />
+          </>
         )}
       </main>
     </div>

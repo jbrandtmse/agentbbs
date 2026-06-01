@@ -8,6 +8,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  announceProject,
+  ApiError,
   appendPendingPost,
   buildRoomViewModel,
   deriveAgreedSeq,
@@ -21,6 +23,7 @@ import {
   makePendingPost,
   markPendingPostFailed,
   postAddParticipant,
+  postAnnouncement,
   postJoin,
   postReply,
   removePendingPost,
@@ -539,13 +542,26 @@ describe('postJoin / postReply / postAddParticipant write helpers (Story 9.7)', 
   });
 
   it('a non-2xx (e.g. 413 BODY_TOO_LARGE) propagates as a throw the composer surfaces', async () => {
+    // Story 9.11: postJsonBody now parses the host { code, message } envelope and throws an
+    // ApiError carrying .code (the calm inline / handoff surfaces branch on it) with the host's
+    // message as .message. The body cap surfaces as BODY_TOO_LARGE (not a bare `HTTP 413`).
     const { fetch: fake } = capturingFetch(
       { code: 'BODY_TOO_LARGE', message: 'too big' },
       413,
     );
     await expect(postReply('need-a-reviewer', 'x', '', fake)).rejects.toThrow(
-      /HTTP 413/,
+      /too big/,
     );
+    const again = capturingFetch(
+      { code: 'BODY_TOO_LARGE', message: 'too big' },
+      413,
+    );
+    const err = await postReply('need-a-reviewer', 'x', '', again.fetch).catch(
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).code).toBe('BODY_TOO_LARGE');
+    expect((err as ApiError).status).toBe(413);
   });
 
   it('a 403 (NO_OPERATOR / NOT_A_MEMBER) on join/add_participant propagates as a throw', async () => {
@@ -557,6 +573,126 @@ describe('postJoin / postReply / postAddParticipant write helpers (Story 9.7)', 
     await expect(
       postAddParticipant('need-a-reviewer', 'cleo', '', add.fetch),
     ).rejects.toThrow(/HTTP 403/);
+  });
+});
+
+// =============================================================================
+// Story 9.11 — the operator INITIATE-surface write helpers (announceProject /
+// postAnnouncement) + the ApiError code-surfacing the calm inline / join-first
+// handoff branches on.
+// =============================================================================
+
+describe('announceProject / postAnnouncement write helpers + ApiError code (Story 9.11)', () => {
+  interface Captured {
+    url: string;
+    method?: string;
+    body?: string;
+  }
+
+  function capturingFetch(
+    responseBody: unknown,
+    status = 200,
+  ): { fetch: typeof fetch; calls: Captured[] } {
+    const calls: Captured[] = [];
+    const fn = (async (url: string, init?: RequestInit) => {
+      calls.push({
+        url,
+        method: init?.method,
+        body: typeof init?.body === 'string' ? init.body : undefined,
+      });
+      return new Response(JSON.stringify(responseBody), { status });
+    }) as unknown as typeof fetch;
+    return { fetch: fn, calls };
+  }
+
+  it('announceProject POSTs /api/projects with { title, description } and returns { project }', async () => {
+    const { fetch: fake, calls } = capturingFetch({
+      project: { project_id: 'retry-budget', members: ['ops'] },
+    });
+    const res = await announceProject('Retry Budget', 'Who owns it.', '', fake);
+    expect(calls[0].url).toBe('/api/projects');
+    expect(calls[0].method).toBe('POST');
+    expect(JSON.parse(calls[0].body!)).toEqual({
+      title: 'Retry Budget',
+      description: 'Who owns it.',
+    });
+    expect(res.project.project_id).toBe('retry-budget');
+  });
+
+  it('announceProject on 409 throws an ApiError carrying .code === PROJECT_EXISTS (the calm inline surface)', async () => {
+    const { fetch: fake } = capturingFetch(
+      { code: 'PROJECT_EXISTS', message: 'a project with that title exists.' },
+      409,
+    );
+    const err = await announceProject('Dup', 'x', '', fake).catch(
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).code).toBe('PROJECT_EXISTS');
+    expect((err as ApiError).status).toBe(409);
+    // .message carries the HOST's message (not a synthetic `HTTP 409`) — the calm inline text.
+    expect((err as ApiError).message).toContain('exists');
+  });
+
+  it('postAnnouncement POSTs /api/projects/:id/announcements with { subject, body } and returns { room }', async () => {
+    const { fetch: fake, calls } = capturingFetch({
+      room: { room_id: 'need-a-decision', project_id: 'retry-budget' },
+    });
+    const res = await postAnnouncement(
+      'retry-budget',
+      'Need a decision',
+      'who owns it?',
+      '',
+      fake,
+    );
+    expect(calls[0].url).toBe('/api/projects/retry-budget/announcements');
+    expect(calls[0].method).toBe('POST');
+    expect(JSON.parse(calls[0].body!)).toEqual({
+      subject: 'Need a decision',
+      body: 'who owns it?',
+    });
+    expect(res.room.room_id).toBe('need-a-decision');
+  });
+
+  it('postAnnouncement on 403 NOT_A_MEMBER throws an ApiError carrying .code (the join-first handoff branch)', async () => {
+    const { fetch: fake } = capturingFetch({ code: 'NOT_A_MEMBER' }, 403);
+    const err = await postAnnouncement(
+      'retry-budget',
+      's',
+      'b',
+      '',
+      fake,
+    ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).code).toBe('NOT_A_MEMBER');
+    expect((err as ApiError).status).toBe(403);
+  });
+
+  it('postAnnouncement on 413 BODY_TOO_LARGE throws an ApiError carrying .code (the calm inline cap surface)', async () => {
+    const { fetch: fake } = capturingFetch(
+      { code: 'BODY_TOO_LARGE', message: 'that body is too large.' },
+      413,
+    );
+    const err = await postAnnouncement(
+      'retry-budget',
+      's',
+      'b',
+      '',
+      fake,
+    ).catch((e: unknown) => e);
+    expect((err as ApiError).code).toBe('BODY_TOO_LARGE');
+  });
+
+  it('a non-JSON error body degrades to a synthetic HTTP_<status> code (still an ApiError, never silent)', async () => {
+    const fn = (async () =>
+      new Response('<html>500</html>', {
+        status: 500,
+      })) as unknown as typeof fetch;
+    const err = await announceProject('T', 'd', '', fn).catch(
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).code).toBe('HTTP_500');
   });
 });
 
