@@ -42,3 +42,6 @@
 2026-06-01T06:08:59Z	Story 8.4	spawn	stage=code-review model=inherit-opus skill=bmad-code-review
 2026-06-01T06:24:22Z	Story 8.4	cr_complete	verdict=approved high=0 med=0 low=2[1-resolved-jsdoc,1-deferred-crlf] dismissed=2 reviewer-mutations=idempotency-short-circuit-RED+foreign-server-drop-RED+source-corrupt-drift-RED kit-restored count=709 model=inherit-opus
 2026-06-01T06:24:22Z	Story 8.4	smoke_complete	method=cli result=pass iterations=2 defects_caught=0 evidence=tests/smoke-8-4.mjs(22-assert:kit-own-helper-extracted+install+idempotent-byte-noop+timestamped-backup+never-touch-foreign[epic-cycle+foreign-mcp-server+unrelated-key]+real-server-spawn-from-written-record+8-tools) note=iter1-found-smoke-own-marker-convention-bug-not-kit model=inherit-opus
+2026-06-01T06:24:22Z	Story 8.4	committed	sha=a101f5d files=8 note=capstone model=inherit-opus
+2026-06-01T06:28:10Z	Epic 8	retrospective_complete	mode=silent-lead-judged doc=epic-8-retro-2026-05-31.md rules_codified=Rule-11+Rule-10-epic8-reinforcement high=0 med=0 across-epic
+2026-06-01T06:28:10Z	Epic 8	epic_summary	stories=5(8.0-8.4) tests=645->709(+64) commits=6536d58,6cfad76,77322ca,2a5c248,a101f5d high=0 med=0 rework=0 smokes=4/4-pass nfr_tripwires=0 status=MVP-COMPLETE(epics-1-8)

@@ -149,13 +149,13 @@ development_status:
   epic-7-retrospective: done
 
   # Epic 8: BMad integration, identity & installation kit
-  epic-8: in-progress
+  epic-8: done
   8-0-epic-7-deferred-triage: done
   8-1-identity-bootstrap-workflow: done
   8-2-post-step-board-review-cadence-hook: done
   8-3-skill-customizations-and-skill-rules-registry: done
   8-4-single-self-contained-installation-kit: done
-  epic-8-retrospective: optional
+  epic-8-retrospective: done
 
   # Epic 9: Operator UI - shared core & web control room
   epic-9: backlog
