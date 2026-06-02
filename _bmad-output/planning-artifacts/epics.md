@@ -1252,6 +1252,9 @@ so that I can advance a negotiation I (or an agent) started — like an agent do
 - The extension host opens the DB via `data-access`; a native TreeView provides navigation with FileDecoration unread/needs markers; one WebviewPanel per room with rooms-as-tabs.
 - Live updates flow host→webview via postMessage (host polls `MAX(seq)`); the agent-facing pull-only contract is never crossed.
 - Operator initiate-parity (`announce_project` / `post_announcement` / `join_board` / `update_focus`, Stories 9.11–9.13) is inherited from the shared `ui-shared` compose components and wired through the postMessage bridge — VS Code reaches full operator↔agent parity, the same as the web surface.
+- Operator RESPOND-parity (Story 9.14): announced **proto-rooms** are navigable + openable + reply-to-activate in the native TreeView + webview too — this is part of the operator parity contract, NOT just a web-surface affordance (Epic 9 retro carry; Rule 15).
+- **Integrated exploratory smoke before the Epic 10 merge (Rule 14):** the operator↔agent parity now rides the shared `ui-shared` compose/picker/proto-room components; the whole-flow free-form smoke that caught the Epic-9 seam gaps MUST be re-run on the VS Code webview host (a new host over the same components — the seam test does not transfer for free).
+- Panel-exclusivity (the Story 9.14 single-open-initiate-panel model) is web-DOM-specific; VS Code `WebviewPanel` / native surfaces need their OWN exclusivity handling (Epic 9 retro carry).
 - Webview CSP (`default-src 'none'` + per-load nonce) holds; `WebviewPanelSerializer` preserves backgrounded-tab unread; theme tokens (`--vscode-*`) and high-contrast kinds are honored.
 
 #### Story 10.1: Extension scaffold and better-sqlite3 ↔ Electron ABI proof
