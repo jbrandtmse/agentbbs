@@ -892,3 +892,125 @@ describe('Story 9.13 — set-my-focus write endpoint over real HTTP (update_focu
     expect(me.registered).toBe(false);
   });
 });
+
+// --- Story 9.14: VIEW + RESPOND TO ANNOUNCED (PROTO) ROOMS over the REAL stack (AC1 — real
+// createDataAccess SQLite + real fetch, NOTHING mocked). The headline parity gap is purely a
+// CLIENT-layer tree-model change; this integration proves the EXISTING host endpoints already
+// support the whole flow with NO new op / NO new endpoint: (a) a proto-room (`active:false`) is
+// served by GET /api/rooms/:id AND listed under /announcements (NOT under /rooms); (b) a reply to
+// it ACTIVATES it (the Epic-4 min-seq activator, the SAME core `reply` an agent uses) so it
+// becomes `active:true` AND now appears under /api/projects/:id/rooms. Reuses the Epic-4 activator
+// semantics already proven at the core/mcp layer; this adds the HOST-PATH assertion (the now-active
+// room appears under /rooms) that the apps/web tree refresh depends on. ---
+describe('Story 9.14 — view + respond to an announced proto-room over real HTTP (proto-room → reply activates)', () => {
+  /** Seed a board + a proto-room (alice announces; NO reply yet → active:false). Returns roomId. */
+  async function seedProtoRoom(): Promise<string> {
+    await register(dataAccess!, { handle: 'alice', currentFocus: 'owner' });
+    await register(dataAccess!, { handle: 'ops', currentFocus: 'watching' });
+    await announceProject(dataAccess!, 'alice', {
+      title: 'Calling Interface',
+      description: 'How agents dial in.',
+    });
+    const room = await postAnnouncement(dataAccess!, 'alice', {
+      projectId: 'calling-interface',
+      subject: 'Kickoff',
+      body: 'who owns the retry budget?',
+    });
+    return room.roomId;
+  }
+
+  it('(a) a proto-room is served by GET /api/rooms/:id (active:false) + listed under /announcements, NOT under /rooms', async () => {
+    const roomId = await seedProtoRoom();
+    host = await startHost({
+      dataAccess: dataAccess!,
+      webDist: dir,
+      operatorHandle: 'ops',
+    });
+
+    // GET /api/rooms/:id serves the proto-room (the room view opens for it TODAY).
+    const roomRes = await fetch(`${host.url}/api/rooms/${roomId}`);
+    expect(roomRes.status).toBe(200);
+    const roomBody = (await roomRes.json()) as {
+      room: { room_id: string; active: boolean };
+      messages: { seq: number; body: string; kind: string }[];
+    };
+    expect(roomBody.room.room_id).toBe(roomId);
+    expect(roomBody.room.active).toBe(false);
+    // The announcement (the seeding message) is present (the inert body the operator reads).
+    expect(
+      roomBody.messages.some(
+        (m) => m.kind === 'announcement' && m.body.includes('retry budget'),
+      ),
+    ).toBe(true);
+
+    // It is listed under /announcements (proto-rooms) and NOT under /rooms (active rooms).
+    const annRes = await fetch(
+      `${host.url}/api/projects/calling-interface/announcements`,
+    );
+    const annBody = (await annRes.json()) as {
+      announcements: { room_id: string }[];
+    };
+    expect(annBody.announcements.some((r) => r.room_id === roomId)).toBe(true);
+
+    const roomsRes = await fetch(
+      `${host.url}/api/projects/calling-interface/rooms`,
+    );
+    const roomsBody = (await roomsRes.json()) as {
+      rooms: { room_id: string }[];
+    };
+    expect(roomsBody.rooms.some((r) => r.room_id === roomId)).toBe(false);
+  });
+
+  it('(b) replying to the proto-room ACTIVATES it (the SAME core reply) → active:true + it now appears under /rooms', async () => {
+    const roomId = await seedProtoRoom();
+    host = await startHost({
+      dataAccess: dataAccess!,
+      webDist: dir,
+      operatorHandle: 'ops',
+    });
+
+    // The operator replies via the EXISTING reply endpoint (the SAME core `reply` — no new op).
+    const replyRes = await fetch(`${host.url}/api/rooms/${roomId}/reply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body: 'I will own it.' }),
+    });
+    expect(replyRes.status).toBe(200);
+    const replyBody = (await replyRes.json()) as {
+      room: { room_id: string; active: boolean };
+    };
+    // The Epic-4 min-seq activator flipped it active:true.
+    expect(replyBody.room.active).toBe(true);
+
+    // A real room.replied landed in the ledger (out-of-band assertion).
+    const events = await dataAccess!.eventsSince(0);
+    expect(
+      events.some((e) => e.type === 'room.replied' && e.actor === 'ops'),
+    ).toBe(true);
+
+    // HOST-PATH assertion (the apps/web tree refresh depends on this): the now-active room is
+    // served under /rooms (it flips from a pending proto-row to an active room row on refresh).
+    const roomsRes = await fetch(
+      `${host.url}/api/projects/calling-interface/rooms`,
+    );
+    const roomsBody = (await roomsRes.json()) as {
+      rooms: { room_id: string; active: boolean }[];
+    };
+    const active = roomsBody.rooms.find((r) => r.room_id === roomId);
+    expect(active).toBeDefined();
+    expect(active?.active).toBe(true);
+
+    // The operator's reply is in the thread + they are now a room participant (grant-on-act).
+    const roomRes = await fetch(`${host.url}/api/rooms/${roomId}`);
+    const roomBody = (await roomRes.json()) as {
+      participants: string[];
+      messages: { actor: string; body: string }[];
+    };
+    expect(roomBody.participants).toContain('ops');
+    expect(
+      roomBody.messages.some(
+        (m) => m.actor === 'ops' && m.body === 'I will own it.',
+      ),
+    ).toBe(true);
+  });
+});

@@ -38,6 +38,12 @@ export interface PostAnnouncementComposeProps {
   /** Fired when the operator clicks the `[ join this project first ]` CTA (the join handoff). */
   onJoinFirst?: () => void;
   /**
+   * Story 9.14 (AC2 prominence) — the target project's display label, woven into the join-first
+   * callout heading ("you haven't joined <projectLabel> yet") so the handoff reads as a clear,
+   * deliberate step rather than a terse one-liner. Optional; falls back to "this project".
+   */
+  projectLabel?: string;
+  /**
    * A calm inline error message to render UNDER the form (e.g. `BODY_TOO_LARGE` — "that body is too
    * large"), or `null`/omitted for no error. NEVER a modal; the draft stays.
    */
@@ -104,6 +110,7 @@ export function PostAnnouncementCompose({
   onCancel,
   joinFirst = false,
   onJoinFirst,
+  projectLabel,
   error = null,
   pending = false,
   onEscape,
@@ -132,19 +139,45 @@ export function PostAnnouncementCompose({
   }
 
   // AC #2 — JOIN-FIRST HANDOFF: a non-member operator cannot post; show the calm CTA, not the form.
+  // Story 9.14 (prominence): render it as a LABELLED, PROMINENT calm callout (a clear heading +
+  // a sentence naming the project) — NOT a terse one-liner that reads as "nothing happened". Still
+  // inline + calm (no modal); the operator's typed subject/body live in this component's own state
+  // and are PRESERVED across the join (a re-render of the form re-shows them).
   if (joinFirst) {
-    const joinButtonStyle: CSSProperties = {
-      fontFamily: 'var(--ui-label-font)',
-      fontSize: 'var(--ui-label-size)',
-      padding: 'var(--space-2) var(--space-4)',
+    const project = projectLabel ?? 'this project';
+    const calloutStyle: CSSProperties = {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 'var(--space-2)',
+      padding: 'var(--space-3) var(--space-4)',
       borderRadius: 'var(--radius-default)',
       borderWidth: '1px',
       borderStyle: 'solid',
       borderColor: 'var(--border)',
       background: 'var(--surface-input)',
-      color: 'var(--text)',
+    };
+    const calloutHeadingStyle: CSSProperties = {
+      fontFamily: 'var(--ui-label-font)',
+      fontSize: 'var(--ui-label-size)',
+      fontWeight: 600,
+      color: 'var(--text-strong, var(--text))',
+    };
+    const calloutBodyStyle: CSSProperties = {
+      fontFamily: 'var(--ui-label-font)',
+      fontSize: 'var(--ui-label-size)',
+      color: 'var(--text-dim)',
+    };
+    const joinButtonStyle: CSSProperties = {
+      fontFamily: 'var(--ui-label-font)',
+      fontSize: 'var(--ui-label-size)',
+      padding: 'var(--space-2) var(--space-4)',
+      borderRadius: 'var(--radius-default)',
+      border: 'none',
+      background: 'var(--accent)',
+      color: 'var(--accent-fg)',
       cursor: pending ? 'not-allowed' : 'pointer',
       opacity: pending ? 0.6 : 1,
+      alignSelf: 'flex-start',
     };
     return (
       <div
@@ -153,18 +186,34 @@ export function PostAnnouncementCompose({
         data-join-first="true"
         style={containerStyle}
       >
-        <span style={labelStyle}>you're not a member of this project yet</span>
-        <button
-          type="button"
-          className="post-announcement-join-first"
-          data-testid="post-announcement-join-first"
-          disabled={pending}
-          aria-disabled={pending}
-          onClick={onJoinFirst}
-          style={joinButtonStyle}
+        <div
+          className="post-announcement-join-first-callout"
+          data-testid="post-announcement-join-first-callout"
+          role="status"
+          style={calloutStyle}
         >
-          [ join this project first ]
-        </button>
+          <span
+            className="post-announcement-join-first-heading"
+            data-testid="post-announcement-join-first-heading"
+            style={calloutHeadingStyle}
+          >
+            you haven't joined {project} yet
+          </span>
+          <span style={calloutBodyStyle}>
+            join {project} to open a room here — your draft is kept.
+          </span>
+          <button
+            type="button"
+            className="post-announcement-join-first"
+            data-testid="post-announcement-join-first"
+            disabled={pending}
+            aria-disabled={pending}
+            onClick={onJoinFirst}
+            style={joinButtonStyle}
+          >
+            [ join this project first ]
+          </button>
+        </div>
       </div>
     );
   }

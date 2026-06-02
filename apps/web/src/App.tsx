@@ -123,6 +123,22 @@ const initiateButtonStyle: CSSProperties = {
   padding: 'var(--space-1) 0',
 };
 
+// Story 9.14 (AC3) — the DISABLED initiate-button treatment (watching-only host): inert + faint,
+// `not-allowed` cursor, no pointer events (mirrors the Story 9.13 FocusAffordance disabled state).
+const initiateButtonDisabledStyle: CSSProperties = {
+  ...initiateButtonStyle,
+  color: 'var(--text-faint)',
+  cursor: 'not-allowed',
+  opacity: 0.6,
+};
+
+// Story 9.14 (AC3) — the terse inline reason shown next to a disabled initiate affordance.
+const initiateReasonStyle: CSSProperties = {
+  color: 'var(--text-faint)',
+  fontFamily: 'var(--ui-label-font)',
+  fontSize: 'var(--ui-label-size)',
+};
+
 // Story 9.11 — the project-scoped "open a room in <project>" label above the shell-level
 // announcement compose (so the operator sees which board the new room lands in).
 const openRoomLabelStyle: CSSProperties = {
@@ -416,6 +432,12 @@ export function App() {
     loadTabRoom(roomId);
   }
 
+  /** Find a project's display title from the tree model (Story 9.14 — the join-first callout). */
+  function projectTitle(projectId: string | null): string | undefined {
+    if (projectId === null || model === null) return undefined;
+    return model.projects.find((p) => p.projectId === projectId)?.title;
+  }
+
   /** Find a room's display label (its subject, falling back to the id) from the tree model. */
   function roomLabelFromTree(roomId: string): string {
     if (model !== null) {
@@ -450,6 +472,38 @@ export function App() {
     });
   }
 
+  // Story 9.14 (AC5) — COMPOSE-PANEL EXCLUSIVITY. The operator INITIATE panels (start-a-project,
+  // open-a-room, join-picker) are calm inline affordances that previously toggled INDEPENDENTLY, so
+  // two could stack at once (e.g. open-a-room over the create-project form) and overlay an open room
+  // view confusingly. This central helper makes them MUTUALLY EXCLUSIVE: opening one CLOSES the
+  // others (and clears their inline state), so at most one initiate panel is ever open and the open
+  // room stays legible. Each open-site routes through here instead of flipping its own flag directly.
+  // (The FocusAffordance owns its own internal edit toggle in the sidebar; the three main panels are
+  // the ones that stack over the room view — AC5's primary concern.)
+  type InitiatePanel = 'create-project' | 'open-room' | 'join-picker';
+  function openInitiatePanel(panel: InitiatePanel): void {
+    // Close create-project unless it's the one being opened.
+    if (panel !== 'create-project') {
+      setCreateProjectOpen(false);
+      setCreateProjectError(null);
+    }
+    // Close open-a-room unless it's the one being opened.
+    if (panel !== 'open-room') {
+      setAnnounceComposeOpen(false);
+      setAnnounceError(null);
+      setAnnounceJoinFirst(false);
+    }
+    // Close the join-picker unless it's the one being opened.
+    if (panel !== 'join-picker') {
+      setJoinPickerOpen(false);
+      setJoinPickerError(null);
+    }
+    // Open the requested one.
+    if (panel === 'create-project') setCreateProjectOpen(true);
+    if (panel === 'open-room') setAnnounceComposeOpen(true);
+    if (panel === 'join-picker') setJoinPickerOpen(true);
+  }
+
   // Story 9.12 — OPEN THE JOIN-A-PROJECT PICKER (wires the previously-inert `＋ join a project…`
   // row). Fetch the global-read directory (`fetchDirectory`, the same read the tree builds from)
   // and compute the JOINABLE set = every project MINUS the ones the operator already belongs to
@@ -476,7 +530,8 @@ export function App() {
           )
           .map((p) => ({ projectId: p.project_id, title: p.title }));
         setJoinable(next);
-        setJoinPickerOpen(true);
+        // AC5 — opening the picker closes any other initiate panel (no stacking).
+        openInitiatePanel('join-picker');
       })
       .catch((err: unknown) => {
         // Even on a read failure, open the picker so the affordance is not a silent no-op; the
@@ -485,7 +540,7 @@ export function App() {
         setJoinPickerError(
           err instanceof Error ? err.message : 'Could not load projects.',
         );
-        setJoinPickerOpen(true);
+        openInitiatePanel('join-picker');
       });
   }
 
@@ -556,7 +611,8 @@ export function App() {
     setAnnounceProjectId(projectId);
     setAnnounceError(null);
     setAnnounceJoinFirst(false);
-    setAnnounceComposeOpen(true);
+    // AC5 — opening this panel closes any other initiate panel (no stacking).
+    openInitiatePanel('open-room');
   }
 
   // Story 9.11 — OPEN A ROOM (post an announcement) into the SELECTED project (`announceProjectId`,
@@ -817,6 +873,20 @@ export function App() {
     return postReply(roomId, body)
       .then(() => loadRoomViewModel(roomId))
       .then((rebuilt) => {
+        // Story 9.14 — a reply to a PROTO-ROOM ACTIVATES it (the Epic-4 min-seq activator, the
+        // SAME core `reply` an agent uses; no new op). Refresh the tree so the sidebar row flips
+        // from a PENDING proto-row to a normal ACTIVE room row LIVE (the now-active room is now
+        // returned by `/api/projects/:id/rooms`, so `loadTreeModel` lists it as a normal row).
+        // This is the 9.11 refetch-on-success discipline (loadTreeModel() + setModel); it is a
+        // no-op flip for an already-active room. A tree-refresh failure must NOT fail the reply
+        // reconciliation, so it is fire-and-forget + best-effort (the room model already
+        // reconciled below is the authoritative open-thread state).
+        void loadTreeModel()
+          .then((built) => setModel(built))
+          .catch(() => {
+            // Best-effort: the sidebar pending→active flip lags to the next load; the open
+            // thread already reconciled. Never surfaces an error on the reply success path.
+          });
         // RECONCILE: the refetched model is authoritative (it has the confirmed post at its real
         // seq + the flipped posture). Carry over any OTHER still-in-flight echoes (concurrent
         // sends); drop THIS reconciled echo so there is no duplicate.
@@ -893,6 +963,14 @@ export function App() {
   const activeRoom = activeTab?.room ?? null;
   const activeRoomError = activeTab?.roomError ?? null;
   const activeJoinedIntent = activeTab?.joinedIntent ?? false;
+
+  // Story 9.14 (AC3) — a WATCHING-ONLY host (no resolved operator handle) cannot initiate: the
+  // `＋ start a project` / `＋ open a room` writes would fail at submit with NO_OPERATOR (403). So
+  // those affordances render DISABLED inline with a terse reason — matching the Story 9.13
+  // FocusAffordance disabled treatment — rather than appearing active and only failing at submit.
+  const watchingOnly = model !== null && model.operatorHandle === null;
+  const watchingOnlyReason =
+    'watching-only — start `agentbbs ui --as <handle>`';
 
   return (
     <div style={shellStyle} data-testid="web-shell">
@@ -980,14 +1058,36 @@ export function App() {
             <button
               type="button"
               data-testid="start-project-toggle"
-              onClick={() => {
-                setCreateProjectError(null);
-                setCreateProjectOpen((open) => !open);
-              }}
-              style={initiateButtonStyle}
+              disabled={watchingOnly}
+              aria-disabled={watchingOnly}
+              onClick={
+                watchingOnly
+                  ? undefined
+                  : () => {
+                      // Toggle: a second click on an OPEN create-project closes it; otherwise open
+                      // it (and close any other initiate panel — AC5 exclusivity).
+                      if (createProjectOpen) {
+                        setCreateProjectOpen(false);
+                        setCreateProjectError(null);
+                      } else {
+                        openInitiatePanel('create-project');
+                      }
+                    }
+              }
+              style={
+                watchingOnly ? initiateButtonDisabledStyle : initiateButtonStyle
+              }
             >
               ＋ start a project
             </button>
+            {watchingOnly && (
+              <span
+                data-testid="start-project-disabled-reason"
+                style={initiateReasonStyle}
+              >
+                {watchingOnlyReason}
+              </span>
+            )}
           </div>
         )}
         {createProjectOpen && (
@@ -1036,6 +1136,7 @@ export function App() {
               }}
               joinFirst={announceJoinFirst}
               onJoinFirst={handleAnnounceJoinFirst}
+              projectLabel={projectTitle(announceProjectId)}
               error={announceError}
               pending={announcePending}
             />
@@ -1078,11 +1179,29 @@ export function App() {
               <button
                 type="button"
                 data-testid="open-room-toggle"
-                onClick={() => handleOpenAnnouncements(activeRoom.projectId)}
-                style={initiateButtonStyle}
+                disabled={watchingOnly}
+                aria-disabled={watchingOnly}
+                onClick={
+                  watchingOnly
+                    ? undefined
+                    : () => handleOpenAnnouncements(activeRoom.projectId)
+                }
+                style={
+                  watchingOnly
+                    ? initiateButtonDisabledStyle
+                    : initiateButtonStyle
+                }
               >
                 ＋ open a room
               </button>
+              {watchingOnly && (
+                <span
+                  data-testid="open-room-disabled-reason"
+                  style={initiateReasonStyle}
+                >
+                  {watchingOnlyReason}
+                </span>
+              )}
             </div>
             <RoomView
               room={activeRoom}

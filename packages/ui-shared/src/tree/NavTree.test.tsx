@@ -9,7 +9,7 @@
 
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { NavTree } from './NavTree.js';
 
@@ -222,5 +222,89 @@ describe('NavTree — NEEDS YOU is flag-warm, NEVER red (AC3)', () => {
     const html = item!.outerHTML.toLowerCase();
     expect(html).not.toContain('red');
     expect(html).not.toMatch(/#(f00|ff0000|e0|d0)0000/);
+  });
+});
+
+// --- Story 9.14 (AC1) — PROTO-ROOMS render as navigable PENDING rows, visually distinct from
+// active rooms, yet still real selectable treeitems (opening one fires onSelectRoom, the SAME path
+// an active room uses). The surface marks `pending:true` on a proto-room row (an announced,
+// not-yet-activated `active:false` room). ---
+describe('NavTree — proto-rooms as navigable pending rows (Story 9.14, AC1)', () => {
+  /** A project with one ACTIVE room + one PENDING proto-room (an unanswered announcement). */
+  const pendingModel: NavTreeModel = {
+    operatorHandle: 'ops',
+    activeRoomId: null,
+    needsYou: [],
+    projects: [
+      {
+        projectId: 'calling-interface',
+        title: 'Calling Interface',
+        announcementCount: 1,
+        rooms: [
+          {
+            roomId: 'active-room',
+            subject: 'Active room',
+            unread: false,
+            activityCount: 0,
+            needsYou: false,
+            pending: false,
+          },
+          {
+            roomId: 'proto-room',
+            subject: 'Proto room',
+            unread: false,
+            activityCount: 0,
+            needsYou: false,
+            pending: true,
+          },
+        ],
+      },
+    ],
+  };
+
+  function renderWith(
+    model: NavTreeModel,
+    onSelectRoom?: (roomId: string) => void,
+  ): void {
+    act(() => {
+      root = createRoot(container);
+      root.render(<NavTree model={model} onSelectRoom={onSelectRoom} />);
+    });
+  }
+
+  it('a proto-room row renders DISTINCT (data-pending=true + the pending `°` marker, dimmed) while an active room does not', () => {
+    renderWith(pendingModel);
+    const proto = container.querySelector('[data-room-id="proto-room"]');
+    const active = container.querySelector('[data-room-id="active-room"]');
+    expect(proto).not.toBeNull();
+    expect(active).not.toBeNull();
+    // The proto-row is marked pending; the active row is not.
+    expect(proto?.getAttribute('data-pending')).toBe('true');
+    expect(active?.getAttribute('data-pending')).toBe('false');
+    // The proto-row carries the distinct pending glyph; the active (read) row carries the
+    // normal read/unread glyph instead.
+    expect(
+      proto?.querySelector('[data-testid="pending-glyph"]'),
+    ).not.toBeNull();
+    expect(active?.querySelector('[data-testid="pending-glyph"]')).toBeNull();
+    // The pending row is dimmed (the --text-dim ramp), distinct from the active row's --text.
+    expect((proto as HTMLElement).style.color).toBe('var(--text-dim)');
+    // Its aria-label announces `pending` (not read/unread — the read axis does not apply yet).
+    expect(proto?.getAttribute('aria-label')).toContain('pending');
+    expect(proto?.getAttribute('aria-label')).not.toContain('read');
+  });
+
+  it('a proto-room row is still a NAVIGABLE treeitem — clicking it fires onSelectRoom (same path as an active room)', () => {
+    const onSelectRoom = vi.fn();
+    renderWith(pendingModel, onSelectRoom);
+    const proto = container.querySelector(
+      '[data-room-id="proto-room"]',
+    ) as HTMLElement;
+    act(() => proto.click());
+    // The proto-room opens via the SAME onSelectRoom(roomId) handler as an active room — there
+    // is no separate proto-open path (the room view already serves proto-rooms; reply activates).
+    expect(onSelectRoom).toHaveBeenCalledWith('proto-room');
+    // It is a real treeitem (role + selectable).
+    expect(proto.getAttribute('role')).toBe('treeitem');
   });
 });

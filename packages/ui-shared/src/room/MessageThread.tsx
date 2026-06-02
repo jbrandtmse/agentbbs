@@ -93,8 +93,19 @@ export function MessageThread({
   // announce). When that count GROWS, schedule a single debounced summary; a burst within the
   // window collapses to ONE announcement. We REPLACE the region text (not append) so assistive
   // tech announces it once (the APG batch pattern). The first render seeds the baseline silently.
+  //
+  // Story 9.14 (AC4) — EXCLUDE the OPERATOR'S OWN confirmed posts from this count: only genuinely-
+  // new posts from OTHERS are announced. Without this, when the operator's OWN optimistic echo
+  // RECONCILES (pending → confirmed, via the refetch), the confirmed count grows by one and the
+  // operator hears "1 new post" for their OWN just-sent message — wrong (they typed it; it's not
+  // an arrival). Counting only NON-operator confirmed posts means the operator's send/reconcile is
+  // invisible to the announcer (its echo was excluded as pending AND its confirmed form is excluded
+  // as operator-authored — no net delta), while another actor's reply still bumps the count by one.
   const confirmedCount = ordered.filter(
-    (m) => m.pending !== true && m.failed !== true,
+    (m) =>
+      m.pending !== true &&
+      m.failed !== true &&
+      !(operatorHandle !== null && m.actor === operatorHandle),
   ).length;
   const [announcement, setAnnouncement] = useState('');
   const prevCountRef = useRef<number | null>(null);

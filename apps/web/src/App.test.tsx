@@ -3259,3 +3259,564 @@ describe('App shell — set my focus (Story 9.13)', () => {
     expect(writes.some((w) => w.url === '/api/me/focus')).toBe(false);
   });
 });
+
+// --- Story 9.14 — VIEW AND RESPOND TO ANNOUNCED (PROTO) ROOMS + operator-UI polish, through the
+// real App shell (Rule 3 real-runtime DOM evidence). The headline AC1: a proto-room (`active:false`,
+// no one replied yet) is a NAVIGABLE PENDING row; opening it shows the announcement; replying
+// ACTIVATES it (the SAME core `reply`, the Epic-4 min-seq activator) and the row flips pending →
+// active LIVE. Plus the four polish ACs: watching-only disables the initiate affordances (AC3);
+// the compose panels are mutually exclusive (AC5). A STATEFUL fetch stub models the host: before
+// the reply the room is a proto-room (active:false, listed only under /announcements); the reply
+// POST flips it active (listed under /rooms, grant-on-act makes `ops` a participant). ---
+describe('App shell — view + respond to announced proto-rooms (Story 9.14, AC1)', () => {
+  /** Every board WRITE the shell issues (url + parsed body). */
+  let writes: { url: string; body: unknown }[];
+  /** Whether the proto-room has been activated yet (the reply flips this). */
+  let activated: boolean;
+
+  function protoRoomRow(active: boolean) {
+    return {
+      room_id: 'kickoff',
+      project_id: 'calling-interface',
+      subject: 'Kickoff',
+      body: 'who owns the retry budget?',
+      posted_by: 'alice',
+      seq: 12,
+      active,
+      ...(active ? { activated_by: 'ops', activated_at_seq: 20 } : {}),
+    };
+  }
+
+  function roomEnvelope() {
+    return {
+      room: protoRoomRow(activated),
+      messages: [
+        {
+          seq: 12,
+          actor: 'alice',
+          body: 'who owns the retry budget?',
+          kind: 'announcement',
+          reactions: [],
+          created_at: '2026-06-01T08:00:00.000Z',
+        },
+        ...(activated
+          ? [
+              {
+                seq: 20,
+                actor: 'ops',
+                body: 'I will own it.',
+                kind: 'reply',
+                reactions: [],
+                created_at: '2026-06-01T08:05:00.000Z',
+              },
+            ]
+          : []),
+      ],
+      // grant-on-act: ops becomes a participant only after replying (activating the room).
+      participants: activated ? ['ops'] : [],
+    };
+  }
+
+  beforeEach(() => {
+    writes = [];
+    activated = false;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const method = init?.method ?? 'GET';
+        if (method === 'POST') {
+          const parsed =
+            typeof init?.body === 'string' && init.body.length > 0
+              ? (JSON.parse(init.body) as unknown)
+              : undefined;
+          writes.push({ url, body: parsed });
+          if (url === '/api/projects/calling-interface/join') {
+            return new Response(
+              JSON.stringify({
+                project: {
+                  project_id: 'calling-interface',
+                  title: 'Calling Interface',
+                  description: 'd',
+                  announcer: 'alice',
+                  members: ['alice', 'ops'],
+                },
+              }),
+              { status: 200 },
+            );
+          }
+          if (url === '/api/rooms/kickoff/reply') {
+            // The reply ACTIVATES the proto-room (the Epic-4 min-seq activator).
+            activated = true;
+            return new Response(JSON.stringify({ room: protoRoomRow(true) }), {
+              status: 200,
+            });
+          }
+          return new Response('nope', { status: 404 });
+        }
+        // GETs — dynamic so the post-reply tree refresh sees the now-active room.
+        if (url === '/api/me') {
+          return new Response(JSON.stringify({ handle: 'ops' }), {
+            status: 200,
+          });
+        }
+        if (url === '/api/needs-you') {
+          return new Response(JSON.stringify({ rooms: [] }), { status: 200 });
+        }
+        if (url === '/api/directory') {
+          return new Response(
+            JSON.stringify({
+              projects: [
+                {
+                  project_id: 'calling-interface',
+                  title: 'Calling Interface',
+                  description: 'd',
+                  announcer: 'alice',
+                  members: ['alice', 'ops'],
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url === '/api/projects/calling-interface/rooms') {
+          // The room appears under /rooms ONLY once active (activated by the reply).
+          return new Response(
+            JSON.stringify({ rooms: activated ? [protoRoomRow(true)] : [] }),
+            { status: 200 },
+          );
+        }
+        if (url === '/api/projects/calling-interface/announcements') {
+          // The proto-room is always listed under /announcements (active:false form).
+          return new Response(
+            JSON.stringify({ announcements: [protoRoomRow(false)] }),
+            { status: 200 },
+          );
+        }
+        if (url === '/api/rooms/kickoff') {
+          return new Response(JSON.stringify(roomEnvelope()), { status: 200 });
+        }
+        if (url === '/api/rooms/kickoff/contract') {
+          return new Response(
+            JSON.stringify({ room_id: 'kickoff', contract: null }),
+            { status: 200 },
+          );
+        }
+        return new Response('nope', { status: 404 });
+      }),
+    );
+    vi.stubGlobal(
+      'EventSource',
+      FakeEventSource as unknown as typeof EventSource,
+    );
+  });
+
+  async function mountBoard(): Promise<void> {
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await flush();
+  }
+
+  function protoRow(): HTMLElement | null {
+    return container.querySelector<HTMLElement>(
+      '[data-project-id="calling-interface"] [data-room-id="kickoff"]',
+    );
+  }
+
+  it('a proto-room appears as a NAVIGABLE PENDING row (data-pending=true), not just an announcements count', async () => {
+    await mountBoard();
+    const row = protoRow();
+    expect(row).not.toBeNull();
+    // It is a PENDING row (distinct from an active room).
+    expect(row?.getAttribute('data-pending')).toBe('true');
+    expect(row?.querySelector('[data-testid="pending-glyph"]')).not.toBeNull();
+  });
+
+  it('opening the proto-room shows the room view with the announcement body (inert-rendered)', async () => {
+    await mountBoard();
+    await act(async () => {
+      protoRow()?.click();
+    });
+    await flush();
+    const roomView = container.querySelector('[data-testid="room-view"]');
+    expect(roomView).not.toBeNull();
+    // The announcement (#12) is shown; the operator is watching (not yet a participant).
+    expect(
+      container.querySelector('[data-message-seq="12"]')?.textContent,
+    ).toContain('who owns the retry budget?');
+    expect(
+      container.querySelector('[data-testid="operator-posture"]')?.textContent,
+    ).toBe('you: watching');
+  });
+
+  it('replying to the proto-room ACTIVATES it via the SAME core reply, and the row flips PENDING → ACTIVE live', async () => {
+    await mountBoard();
+    await act(async () => {
+      protoRow()?.click();
+    });
+    await flush();
+
+    // Join (sub-board membership) to reveal the composer field, then send a reply.
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="composer-join"]')
+        ?.click();
+    });
+    await flush();
+    const field = container.querySelector<HTMLInputElement>(
+      '[data-testid="composer-field"]',
+    );
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )?.set;
+      setter?.call(field, 'I will own it.');
+      field?.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="composer-send"]')
+        ?.click();
+    });
+    await flush();
+
+    // The reply went to the SAME core reply endpoint (no operator backdoor, no new op).
+    expect(writes.some((w) => w.url === '/api/rooms/kickoff/reply')).toBe(true);
+
+    // The sidebar row flipped PENDING → ACTIVE live (the tree refetch now lists it under /rooms).
+    const row = protoRow();
+    expect(row).not.toBeNull();
+    expect(row?.getAttribute('data-pending')).toBe('false');
+    expect(row?.querySelector('[data-testid="pending-glyph"]')).toBeNull();
+    // The operator is now a peer of the now-active room.
+    expect(
+      container.querySelector('[data-testid="operator-posture"]')?.textContent,
+    ).toBe('you: @ops (peer)');
+  });
+});
+
+// --- Story 9.14 (AC3) — a WATCHING-ONLY host (no operator handle) disables the initiate
+// affordances (`＋ start a project`, `＋ open a room`) inline with a terse reason — matching the
+// Story 9.13 FocusAffordance disabled pattern — rather than appearing active and failing at submit
+// with NO_OPERATOR. ---
+describe('App shell — watching-only disables initiate affordances (Story 9.14, AC3)', () => {
+  function stubWatchingOnly(): void {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const body: Record<string, unknown> = {
+          '/api/me': { handle: null, focus: null, registered: false },
+          '/api/needs-you': { rooms: [] },
+          '/api/directory': {
+            projects: [
+              {
+                project_id: 'p1',
+                title: 'Project One',
+                description: 'd',
+                announcer: 'alice',
+                members: ['alice'],
+              },
+            ],
+          },
+          '/api/projects/p1/rooms': { rooms: [] },
+          '/api/projects/p1/announcements': { announcements: [] },
+        };
+        const found = body[url];
+        if (found === undefined) return new Response('nope', { status: 404 });
+        return new Response(JSON.stringify(found), { status: 200 });
+      }),
+    );
+    vi.stubGlobal(
+      'EventSource',
+      FakeEventSource as unknown as typeof EventSource,
+    );
+  }
+
+  it('a watching-only host shows `＋ start a project` DISABLED with a terse reason (no open on click)', async () => {
+    stubWatchingOnly();
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await flush();
+
+    const toggle = container.querySelector<HTMLButtonElement>(
+      '[data-testid="start-project-toggle"]',
+    );
+    expect(toggle).not.toBeNull();
+    expect(toggle?.disabled).toBe(true);
+    expect(
+      container.querySelector('[data-testid="start-project-disabled-reason"]')
+        ?.textContent,
+    ).toContain('watching-only');
+    // Clicking the disabled affordance does NOT open the compose panel.
+    await act(async () => {
+      toggle?.click();
+    });
+    await flush();
+    expect(
+      container.querySelector('[data-testid="create-project-compose"]') ??
+        container.querySelector('[data-testid="post-announcement-compose"]'),
+    ).toBeNull();
+  });
+
+  it('a REGISTERED operator keeps `＋ start a project` ENABLED (no disabled reason)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const body: Record<string, unknown> = {
+          '/api/me': { handle: 'ops', focus: null, registered: true },
+          '/api/needs-you': { rooms: [] },
+          '/api/directory': {
+            projects: [
+              {
+                project_id: 'p1',
+                title: 'Project One',
+                description: 'd',
+                announcer: 'alice',
+                members: ['alice'],
+              },
+            ],
+          },
+          '/api/projects/p1/rooms': { rooms: [] },
+          '/api/projects/p1/announcements': { announcements: [] },
+        };
+        const found = body[url];
+        if (found === undefined) return new Response('nope', { status: 404 });
+        return new Response(JSON.stringify(found), { status: 200 });
+      }),
+    );
+    vi.stubGlobal(
+      'EventSource',
+      FakeEventSource as unknown as typeof EventSource,
+    );
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await flush();
+    const toggle = container.querySelector<HTMLButtonElement>(
+      '[data-testid="start-project-toggle"]',
+    );
+    expect(toggle?.disabled).toBe(false);
+    expect(
+      container.querySelector('[data-testid="start-project-disabled-reason"]'),
+    ).toBeNull();
+  });
+});
+
+// --- Story 9.14 (AC5) — COMPOSE PANEL EXCLUSIVITY: opening one initiate panel CLOSES any other
+// open one (at most one open at a time), so panels do not stack over an open room view. ---
+describe('App shell — compose panel exclusivity (Story 9.14, AC5)', () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const method = init?.method ?? 'GET';
+        if (method === 'POST') return new Response('{}', { status: 200 });
+        const body: Record<string, unknown> = {
+          '/api/me': { handle: 'ops', focus: null, registered: true },
+          '/api/needs-you': { rooms: [] },
+          '/api/directory': {
+            projects: [
+              {
+                project_id: 'p1',
+                title: 'Project One',
+                description: 'd',
+                announcer: 'alice',
+                members: ['alice', 'ops'],
+              },
+            ],
+          },
+          '/api/projects/p1/rooms': { rooms: [] },
+          '/api/projects/p1/announcements': { announcements: [] },
+        };
+        const found = body[url];
+        if (found === undefined) return new Response('nope', { status: 404 });
+        return new Response(JSON.stringify(found), { status: 200 });
+      }),
+    );
+    vi.stubGlobal(
+      'EventSource',
+      FakeEventSource as unknown as typeof EventSource,
+    );
+  });
+
+  async function mountBoard(): Promise<void> {
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await flush();
+  }
+
+  it('opening the open-a-room panel (announcements bucket) CLOSES an already-open start-a-project panel', async () => {
+    await mountBoard();
+    // Open start-a-project.
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>(
+          '[data-testid="start-project-toggle"]',
+        )
+        ?.click();
+    });
+    await flush();
+    expect(
+      container.querySelector('[data-testid="create-project-compose"]'),
+    ).not.toBeNull();
+
+    // Now open the open-a-room panel via the announcements bucket → the start-a-project closes.
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>(
+          '[data-project-id="p1"] [data-testid="announcements-bucket"]',
+        )
+        ?.click();
+    });
+    await flush();
+    // The open-a-room panel is open AND the create-project panel is now CLOSED (no stacking).
+    expect(
+      container.querySelector('[data-testid="open-room-panel"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="create-project-compose"]'),
+    ).toBeNull();
+  });
+
+  it('opening the join-a-project picker CLOSES an already-open open-a-room panel', async () => {
+    await mountBoard();
+    // Open the open-a-room panel.
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>(
+          '[data-project-id="p1"] [data-testid="announcements-bucket"]',
+        )
+        ?.click();
+    });
+    await flush();
+    expect(
+      container.querySelector('[data-testid="open-room-panel"]'),
+    ).not.toBeNull();
+
+    // Open the join picker → the open-a-room panel closes.
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="nav-join-project"]')
+        ?.click();
+    });
+    await flush();
+    expect(
+      container.querySelector('[data-testid="join-project-picker"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="open-room-panel"]'),
+    ).toBeNull();
+  });
+});
+
+// --- Story 9.14 (AC5, QA hardening) — "the open room stays LEGIBLE". The dev's exclusivity tests
+// prove opening one initiate panel CLOSES another; this pins the SECOND half of AC5 the dev's tests
+// do not assert: when an initiate panel is opened WHILE a room view is open, the room view is NOT
+// destroyed/overlaid — it stays mounted and legible alongside the (single) open panel. The initiate
+// panel renders at shell level ABOVE the room (not as a stacking overlay over it), so both coexist.
+// Mutation note: this would go RED if AC5 were (mis)implemented by unmounting the room on panel open.
+describe('App shell — an open room stays legible when an initiate panel opens (Story 9.14, AC5)', () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const method = init?.method ?? 'GET';
+        if (method === 'POST') return new Response('{}', { status: 200 });
+        const activeRoom = {
+          room_id: 'live-room',
+          project_id: 'p1',
+          subject: 'Live room',
+          body: 'hello',
+          posted_by: 'alice',
+          seq: 5,
+          active: true,
+        };
+        const body: Record<string, unknown> = {
+          '/api/me': { handle: 'ops', focus: null, registered: true },
+          '/api/needs-you': { rooms: [] },
+          '/api/directory': {
+            projects: [
+              {
+                project_id: 'p1',
+                title: 'Project One',
+                description: 'd',
+                announcer: 'alice',
+                members: ['alice', 'ops'],
+              },
+            ],
+          },
+          '/api/projects/p1/rooms': { rooms: [activeRoom] },
+          '/api/projects/p1/announcements': { announcements: [] },
+          '/api/rooms/live-room': {
+            room: activeRoom,
+            messages: [
+              {
+                seq: 5,
+                actor: 'alice',
+                body: 'hello',
+                kind: 'announcement',
+                reactions: [],
+                created_at: '2026-06-01T08:00:00.000Z',
+              },
+            ],
+            participants: ['alice', 'ops'],
+          },
+          '/api/rooms/live-room/contract': {
+            room_id: 'live-room',
+            contract: null,
+          },
+        };
+        const found = body[url];
+        if (found === undefined) return new Response('nope', { status: 404 });
+        return new Response(JSON.stringify(found), { status: 200 });
+      }),
+    );
+    vi.stubGlobal(
+      'EventSource',
+      FakeEventSource as unknown as typeof EventSource,
+    );
+  });
+
+  it('opening the in-room open-a-room panel keeps the room view mounted (no destructive overlay)', async () => {
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await flush();
+    // Open the active room.
+    await act(async () => {
+      container
+        .querySelector<HTMLElement>(
+          '[data-project-id="p1"] [data-room-id="live-room"]',
+        )
+        ?.click();
+    });
+    await flush();
+    expect(container.querySelector('[data-testid="room-view"]')).not.toBeNull();
+
+    // Open the in-room `＋ open a room` panel WHILE the room is open.
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="open-room-toggle"]')
+        ?.click();
+    });
+    await flush();
+    // BOTH coexist: the initiate panel opened AND the room view is STILL mounted/legible (the
+    // panel does not stack-over-and-hide the room — AC5's "the open room stays legible").
+    expect(
+      container.querySelector('[data-testid="open-room-panel"]'),
+    ).not.toBeNull();
+    expect(container.querySelector('[data-testid="room-view"]')).not.toBeNull();
+    // The room's announcement message is still readable underneath the panel.
+    expect(
+      container.querySelector('[data-message-seq="5"]')?.textContent,
+    ).toContain('hello');
+  });
+});

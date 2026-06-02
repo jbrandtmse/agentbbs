@@ -34,6 +34,15 @@ export interface SidebarTreeItemProps {
   label: ReactNode;
   /** The leading read/unread glyph (`•` accent / `°` faint / nothing). */
   readState?: ReadState;
+  /**
+   * Story 9.14 — whether this row is a PROTO-ROOM (an announced, not-yet-activated room:
+   * `active:false`). When true the row renders VISUALLY DISTINCT as pending/unanswered: a
+   * leading `°` pending marker (in the faint/dim ramp) REPLACES the read/unread glyph, and the
+   * label is dimmed — so an unanswered negotiation reads differently from an active room. The
+   * row stays a real, selectable `treeitem` (opening it shows the announcement; replying
+   * activates it). Default `false`.
+   */
+  pending?: boolean;
   /** Whether to also show the `!` NEEDS YOU glyph (flag-warm, never red). */
   needsYou?: boolean;
   /** The activity count; renders the unread badge when > 0. */
@@ -68,6 +77,7 @@ export interface SidebarTreeItemProps {
 export function SidebarTreeItem({
   label,
   readState = 'none',
+  pending = false,
   needsYou = false,
   activityCount = 0,
   selected = false,
@@ -87,7 +97,8 @@ export function SidebarTreeItem({
     fontFamily: 'var(--tree-item-font)',
     fontSize: 'var(--tree-item-size)',
     fontWeight: 'var(--tree-item-weight)' as CSSProperties['fontWeight'],
-    color: 'var(--text)',
+    // Story 9.14 — a PROTO-ROOM (pending/unanswered) row reads dimmer than an active room.
+    color: pending ? 'var(--text-dim)' : 'var(--text)',
     padding: 'var(--space-tree-row-y) var(--space-3)',
     paddingLeft: `calc(var(--space-3) + ${depth} * var(--space-4))`,
     cursor: onClick ? 'pointer' : 'default',
@@ -96,7 +107,11 @@ export function SidebarTreeItem({
     boxShadow: selected ? 'inset 2px 0 0 var(--accent)' : 'none',
   };
 
-  const className = ['nav-row', selected ? 'nav-row-selected' : '']
+  const className = [
+    'nav-row',
+    selected ? 'nav-row-selected' : '',
+    pending ? 'nav-row-pending' : '',
+  ]
     .filter(Boolean)
     .join(' ');
 
@@ -118,7 +133,19 @@ export function SidebarTreeItem({
           {leadingGlyph}
         </span>
       )}
-      {readState !== 'none' && (
+      {/* Story 9.14 — a PROTO-ROOM shows the distinct `°` pending marker (faint ramp) in place
+          of the read/unread glyph: it is unanswered, so the read/unread axis does not apply. */}
+      {pending && (
+        <span
+          className="nav-glyph-pending"
+          data-testid="pending-glyph"
+          aria-hidden="true"
+          style={{ color: 'var(--text-faint)' }}
+        >
+          {'°'}
+        </span>
+      )}
+      {!pending && readState !== 'none' && (
         <span
           className={
             readState === 'unread' ? 'nav-glyph-unread' : 'nav-glyph-read'

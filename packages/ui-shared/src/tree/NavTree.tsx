@@ -49,6 +49,15 @@ export interface NavTreeRoom {
   activityCount: number;
   /** Whether the operator was escalated into this room (→ `!` flag-warm glyph). */
   needsYou: boolean;
+  /**
+   * Story 9.14 — whether this row is a PROTO-ROOM (an announced room not yet activated,
+   * `active:false`): a negotiation no one has replied to yet. A pending row is still a real,
+   * navigable `treeitem` (opening it shows the announcement, replying activates it via the
+   * EXISTING core `reply` — the Epic-4 min-seq activator), but it renders VISUALLY DISTINCT
+   * from an active room (a leading `°`-style pending marker, the row dimmed) so the operator
+   * can tell "answered" from "unanswered". Default `false` (active room) when omitted.
+   */
+  pending?: boolean;
 }
 
 /** One project (sub-board) section in the tree model. */
@@ -436,9 +445,15 @@ export function NavTree({
                         treeId: roomRowId,
                         isProject: false,
                       };
-                      // The SR label announces the room id + its read/escalation state.
+                      // The SR label announces the room id + its read/escalation state. A
+                      // PROTO-ROOM (Story 9.14) announces `pending` instead of read/unread (it
+                      // is unanswered, not "read" — the read/unread axis does not apply yet).
                       const stateWords = [
-                        room.unread ? 'unread' : 'read',
+                        room.pending === true
+                          ? 'pending'
+                          : room.unread
+                            ? 'unread'
+                            : 'read',
                         room.needsYou ? 'needs you' : '',
                       ]
                         .filter(Boolean)
@@ -448,11 +463,15 @@ export function NavTree({
                           key={room.roomId}
                           label={`#${room.roomId}`}
                           readState={room.unread ? 'unread' : 'read'}
+                          pending={room.pending === true}
                           needsYou={room.needsYou}
                           activityCount={room.activityCount}
                           selected={room.roomId === activeRoomId}
                           depth={1}
-                          dataAttrs={{ 'data-room-id': room.roomId }}
+                          dataAttrs={{
+                            'data-room-id': room.roomId,
+                            'data-pending': String(room.pending === true),
+                          }}
                           treeId={roomRowId}
                           tabIndex={effectiveActiveId === roomRowId ? 0 : -1}
                           ariaLabel={`#${room.roomId}, ${stateWords}`}

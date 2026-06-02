@@ -310,6 +310,84 @@ describe('loadTreeModel — builds the model from the JSON API (global read FR28
     expect(needOps?.needsYou).toBe(true);
     expect(model.needsYou.map((r) => r.roomId)).toEqual(['need-ops']);
   });
+
+  // --- Story 9.14 (AC1) — loadTreeModel builds each project's rooms from BOTH the active rooms
+  // AND the proto-rooms (announcements, `active:false`), so an announced-but-unanswered room is a
+  // navigable PENDING row. Deduped by roomId (defensive); the announcements (N) bucket count is
+  // unchanged. ---
+  it('builds proto-rooms as PENDING rows (active rooms first, then pending), deduped by roomId, bucket count unchanged', async () => {
+    const responses: Record<string, unknown> = {
+      '/api/me': { handle: 'ops' },
+      '/api/needs-you': { rooms: [] },
+      '/api/directory': {
+        projects: [
+          {
+            project_id: 'p1',
+            title: 'Project One',
+            description: '',
+            announcer: 'alice',
+            members: ['alice'],
+          },
+        ],
+      },
+      '/api/projects/p1/rooms': {
+        rooms: [
+          {
+            room_id: 'active-room',
+            project_id: 'p1',
+            subject: 'Active',
+            body: '',
+            posted_by: 'alice',
+            seq: 5,
+            active: true,
+          },
+        ],
+      },
+      // Two announcements: one is a genuine proto-room; the other is `active-room` again (a
+      // defensive dedupe target — an active room must NOT also appear as a stale proto-row).
+      '/api/projects/p1/announcements': {
+        announcements: [
+          {
+            room_id: 'proto-room',
+            project_id: 'p1',
+            subject: 'Proto',
+            body: 'unanswered',
+            posted_by: 'bob',
+            seq: 9,
+            active: false,
+          },
+          {
+            room_id: 'active-room',
+            project_id: 'p1',
+            subject: 'Active (stale proto echo)',
+            body: '',
+            posted_by: 'alice',
+            seq: 5,
+            active: false,
+          },
+        ],
+      },
+    };
+    const fakeFetch = (async (url: string) => {
+      const body = responses[url];
+      if (body === undefined) return new Response('not found', { status: 404 });
+      return new Response(JSON.stringify(body), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const model = await loadTreeModel('', fakeFetch);
+    const p1 = model.projects[0];
+    // Active room first, then the pending proto-room — `active-room` appears ONCE (deduped).
+    expect(p1.rooms.map((r) => r.roomId)).toEqual([
+      'active-room',
+      'proto-room',
+    ]);
+    const active = p1.rooms.find((r) => r.roomId === 'active-room');
+    const proto = p1.rooms.find((r) => r.roomId === 'proto-room');
+    expect(active?.pending).toBe(false);
+    expect(proto?.pending).toBe(true);
+    // The announcements bucket count still reflects ALL announcements (2), unchanged by the rows.
+    expect(p1.announcementCount).toBe(2);
+  });
 });
 
 // --- Story 9.5: room fetch + the RoomViewModel builder (operator posture + seq order) ---

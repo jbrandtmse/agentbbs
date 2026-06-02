@@ -302,6 +302,161 @@ describe('a11y — thread is an announced list with a coalescing live region (AC
     });
     expect(live()).toBe('3 new posts');
   });
+
+  // --- Story 9.14 (AC4) — the operator's OWN reconciled post is NOT announced as "1 new post";
+  // only genuinely-new posts from OTHERS are. The bug: when the operator's optimistic echo
+  // reconciles (pending → confirmed via the refetch), a naive confirmed-count grows by one and the
+  // operator hears "1 new post" for their OWN message. Passing operatorHandle excludes operator-
+  // authored confirmed posts from the count, so the operator's send/reconcile is silent while
+  // another actor's reply still announces. ---
+  it("AC4 — the operator's OWN reconciled post is NOT announced (only OTHERS' new posts are)", () => {
+    vi.useFakeTimers();
+    const live = () =>
+      container.querySelector('[data-testid="thread-live-region"]')
+        ?.textContent;
+    // Baseline: a thread with the operator's existing post #2, opened with operatorHandle=ops.
+    act(() => {
+      root = createRoot(container);
+      root.render(
+        <MessageThread
+          messages={messages}
+          operatorHandle="ops"
+          liveRegionDebounceMs={50}
+        />,
+      );
+    });
+    // The operator sends a post: it appears PENDING first (excluded from the count), then
+    // RECONCILES to a confirmed post authored by `ops`. Simulate the reconciled state directly.
+    const withOwnReconciled: MessagePostModel[] = [
+      ...messages,
+      {
+        seq: 3,
+        actor: 'ops',
+        body: 'my own reply',
+        kind: 'reply',
+        reactions: [],
+        createdAt: '2026-06-01T08:10:00.000Z',
+      },
+    ];
+    act(() => {
+      root.render(
+        <MessageThread
+          messages={withOwnReconciled}
+          operatorHandle="ops"
+          liveRegionDebounceMs={50}
+        />,
+      );
+    });
+    act(() => {
+      vi.advanceTimersByTime(60);
+    });
+    // SILENCE: the operator's own reconciled post produced NO "1 new post" announcement.
+    expect(live()).toBe('');
+
+    // Now ANOTHER actor (alice) posts a genuinely-new reply → THAT is announced.
+    const withOthersReply: MessagePostModel[] = [
+      ...withOwnReconciled,
+      {
+        seq: 4,
+        actor: 'alice',
+        body: 'a peer reply',
+        kind: 'reply',
+        reactions: [],
+        createdAt: '2026-06-01T08:15:00.000Z',
+      },
+    ];
+    act(() => {
+      root.render(
+        <MessageThread
+          messages={withOthersReply}
+          operatorHandle="ops"
+          liveRegionDebounceMs={50}
+        />,
+      );
+    });
+    act(() => {
+      vi.advanceTimersByTime(60);
+    });
+    expect(live()).toBe('1 new post');
+  });
+
+  // --- Story 9.14 (AC4, QA hardening) — the FULL operator send→reconcile LIFECYCLE is silent. The
+  // dev's AC4 test jumps straight to the reconciled (confirmed) steady-state; this pins the ACTUAL
+  // bug path: an operator post that first appears as a PENDING optimistic echo (excluded as pending)
+  // and THEN reconciles to a confirmed `ops`-authored post (excluded as operator-authored) — so NO
+  // "1 new post" fires at EITHER phase (the pending phase and the confirmed phase both produce zero
+  // net delta). Without the AC4 operator-exclusion, the confirmed phase would announce "1 new post".
+  it("AC4 — operator's own post is silent across the WHOLE pending→reconciled lifecycle", () => {
+    vi.useFakeTimers();
+    const live = () =>
+      container.querySelector('[data-testid="thread-live-region"]')
+        ?.textContent;
+    // Phase 0: baseline thread (operator viewing, operatorHandle=ops).
+    act(() => {
+      root = createRoot(container);
+      root.render(
+        <MessageThread
+          messages={messages}
+          operatorHandle="ops"
+          liveRegionDebounceMs={50}
+        />,
+      );
+    });
+    // Phase 1: the operator's optimistic echo appears (pending, synthetic large seq) — excluded
+    // from the count as pending. Must NOT announce.
+    const withPendingEcho: MessagePostModel[] = [
+      ...messages,
+      {
+        seq: 1e15 + 1,
+        actor: 'ops',
+        body: 'my own reply',
+        kind: 'reply',
+        reactions: [],
+        pending: true,
+        clientToken: 'tok-1',
+      },
+    ];
+    act(() => {
+      root.render(
+        <MessageThread
+          messages={withPendingEcho}
+          operatorHandle="ops"
+          liveRegionDebounceMs={50}
+        />,
+      );
+    });
+    act(() => {
+      vi.advanceTimersByTime(60);
+    });
+    expect(live()).toBe('');
+
+    // Phase 2: the echo RECONCILES — the pending post becomes a confirmed `ops` post at a real
+    // seq. Excluded as operator-authored → STILL no announcement (the net delta is zero).
+    const withReconciled: MessagePostModel[] = [
+      ...messages,
+      {
+        seq: 3,
+        actor: 'ops',
+        body: 'my own reply',
+        kind: 'reply',
+        reactions: [],
+        createdAt: '2026-06-01T08:10:00.000Z',
+      },
+    ];
+    act(() => {
+      root.render(
+        <MessageThread
+          messages={withReconciled}
+          operatorHandle="ops"
+          liveRegionDebounceMs={50}
+        />,
+      );
+    });
+    act(() => {
+      vi.advanceTimersByTime(60);
+    });
+    expect(live()).toBe('');
+  });
 });
 
 describe('a11y — composer keyboard reachable + Esc returns focus (AC3)', () => {

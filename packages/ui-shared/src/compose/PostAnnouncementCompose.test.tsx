@@ -209,4 +209,33 @@ describe('PostAnnouncementCompose — join-first handoff (AC #2, NOT_A_MEMBER, n
     });
     expect(joined).toBe(1);
   });
+
+  // --- Story 9.14 (AC2 prominence) — the join-first handoff is a PROMINENT, LABELLED callout (a
+  // clear heading naming the project + a sentence), NOT a terse one-liner that reads as "nothing
+  // happened". ---
+  it('renders a PROMINENT, LABELLED callout naming the project (not a terse one-liner)', () => {
+    const el = render(
+      <PostAnnouncementCompose joinFirst projectLabel="Calling Interface" />,
+    );
+    const callout = el.querySelector(
+      '[data-testid="post-announcement-join-first-callout"]',
+    );
+    expect(callout).not.toBeNull();
+    const heading = el.querySelector(
+      '[data-testid="post-announcement-join-first-heading"]',
+    );
+    expect(heading).not.toBeNull();
+    // The heading NAMES the project (clear, prominent wording) and says the draft is kept.
+    expect(heading?.textContent).toContain('Calling Interface');
+    expect(callout?.textContent?.toLowerCase()).toContain('joined');
+    expect(callout?.textContent?.toLowerCase()).toContain('kept');
+  });
+
+  it('falls back to "this project" in the callout when no projectLabel is supplied', () => {
+    const el = render(<PostAnnouncementCompose joinFirst />);
+    expect(
+      el.querySelector('[data-testid="post-announcement-join-first-heading"]')
+        ?.textContent,
+    ).toContain('this project');
+  });
 });

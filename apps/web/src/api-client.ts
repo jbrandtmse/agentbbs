@@ -320,17 +320,46 @@ export async function loadTreeModel(
         fetchProjectRooms(project.project_id, baseUrl, fetchImpl),
         fetchProjectAnnouncements(project.project_id, baseUrl, fetchImpl),
       ]);
-      return {
-        projectId: project.project_id,
-        title: project.title,
-        announcementCount: announcements.announcements.length,
-        rooms: rooms.rooms.map((room) => ({
+      // Story 9.14 — build the project's room rows from BOTH the ACTIVE rooms
+      // (`/api/projects/:id/rooms`) AND the PROTO-ROOMS (`/api/projects/:id/announcements`,
+      // `active:false` — announced negotiations no one has replied to yet). A proto-room is a
+      // navigable PENDING row (the operator can open it, read the announcement, and reply to
+      // ACTIVATE it via the EXISTING core `reply` — the Epic-4 min-seq activator; no new op).
+      // The two sets are disjoint by `active`, but we dedupe by `roomId` DEFENSIVELY so an
+      // active room can never also appear as a stale proto-row. Active rooms render first, then
+      // pending rooms — a stable order. The `announcements (N)` bucket (which opens the
+      // post-compose, Story 9.11) keeps its OWN count; proto-rooms are SIBLING rows, not the
+      // bucket (Design decision).
+      const seenRoomIds = new Set<string>();
+      const activeRows = rooms.rooms.map((room) => {
+        seenRoomIds.add(room.room_id);
+        return {
           roomId: room.room_id,
           subject: room.subject,
           unread: false,
           activityCount: 0,
           needsYou: needsYouRoomIds.has(room.room_id),
-        })),
+          pending: false,
+        };
+      });
+      const pendingRows = announcements.announcements
+        .filter((room) => !seenRoomIds.has(room.room_id))
+        .map((room) => {
+          seenRoomIds.add(room.room_id);
+          return {
+            roomId: room.room_id,
+            subject: room.subject,
+            unread: false,
+            activityCount: 0,
+            needsYou: needsYouRoomIds.has(room.room_id),
+            pending: true,
+          };
+        });
+      return {
+        projectId: project.project_id,
+        title: project.title,
+        announcementCount: announcements.announcements.length,
+        rooms: [...activeRows, ...pendingRows],
       };
     }),
   );
