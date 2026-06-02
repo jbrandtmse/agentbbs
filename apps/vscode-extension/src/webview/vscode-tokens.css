@@ -92,3 +92,69 @@
     monospace
   );
 }
+
+/*
+ * HIGH-CONTRAST overrides (Story 10.6, AC2).
+ *
+ * Keyed off the `data-theme-kind` attribute the webview sets on the #root mount from the host's
+ * `vscode.window.activeColorTheme.kind` (light=…, dark=…, high-contrast / high-contrast-light).
+ * We do NOT branch on the PRESENCE of `--vscode-contrastBorder` — VS Code injects all `--vscode-*`
+ * webview variables append-only and never removes them on a theme switch, so absence is NOT a
+ * reliable HC signal (verified via the VS Code webview-theming docs, Rule 3/Research-First). The
+ * authoritative HC switch is the ColorThemeKind the host pushes; the CSS keys off it.
+ *
+ * Custom properties cascade, so redefining a token on `#root[data-theme-kind^="high-contrast"]`
+ * overrides the `:root` value for the WHOLE app (every ui-shared component inside #root) — without
+ * editing tokens.css or any component (Rule 13 — mount, don't fork).
+ *
+ * HC PRINCIPLE (the VS Code HC contract): lean on `--vscode-contrastBorder` for SOLID borders where
+ * the default themes use soft/alpha rules; promote the converged-message green / NEEDS-YOU warm to
+ * the CHARTED decoration tokens (always defined, AA-legible); make focus unmistakable via
+ * `--vscode-focusBorder`. The agreed WASH (a translucent fill) becomes TRANSPARENT under HC — the
+ * meaning is carried by the SOLID `--agreed-line` rail/border instead, never a low-contrast tint.
+ */
+#root[data-theme-kind^='high-contrast'] {
+  /* ---- Borders → SOLID contrastBorder (the HC contract). The soft border collapses onto the
+   *      same solid contrast rule so every region edge is unmistakable. ---- */
+  --border: var(--vscode-contrastBorder, var(--vscode-panel-border, #6fc3df));
+  --border-soft: var(
+    --vscode-contrastBorder,
+    var(--vscode-editorWidget-border, #6fc3df)
+  );
+
+  /* ---- Agreed (✓ ratified / 👍-has): the green stays the charted green (AA under HC); the agreed
+   *      LINE (the rail/border that carries the meaning when the wash is dropped) becomes the SOLID
+   *      contrast border so the converged post is bounded by a hard edge, not a faint tint. ---- */
+  --agreed-green: var(--vscode-charts-green, #89d185);
+  --agreed-line: var(
+    --vscode-contrastBorder,
+    var(--vscode-charts-green, #89d185)
+  );
+
+  /* ---- Flag-warm (NEEDS YOU): the charted yellow (AA), bounded by the solid contrast border. ---- */
+  --flag-warm: var(
+    --vscode-contrastBorder,
+    var(--vscode-charts-yellow, #e2c184)
+  );
+  --flag-warm-text: var(--vscode-charts-yellow, #e2c184);
+
+  /* ---- Focus: the inherited 9.10 :focus-visible ring is `outline: 2px solid var(--accent)`
+   *      (ui-shared chrome.css — NOT forked, Rule 13). Under HC we promote `--accent` (and its hover)
+   *      to the unmistakable `--vscode-focusBorder` so the keyboard ring is the HC focus color the
+   *      AC requires; HC themes use a single bright accent, so recoloring the accent to focusBorder
+   *      under HC is the idiomatic HC treatment (the AA ring is satisfied by focusBorder's contrast). ---- */
+  --accent: var(--vscode-focusBorder, var(--vscode-button-background, #f38518));
+  --accent-hover: var(
+    --vscode-focusBorder,
+    var(--vscode-button-hoverBackground, #f38518)
+  );
+  --accent-on-dark: var(
+    --vscode-focusBorder,
+    var(--vscode-textLink-foreground, #f38518)
+  );
+
+  /* NOTE on the agreed WASH: the translucent green fill behind the converged post (ui-shared's
+   * AGREED_POST_WASH) is a JS constant gated behind the RoomView `highContrast` prop — under HC the
+   * webview passes `highContrast` so MessagePost renders the wash as `transparent` and the SOLID
+   * --agreed-line rail (above) carries the meaning. No CSS wash token to override here. */
+}

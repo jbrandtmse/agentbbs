@@ -117,6 +117,14 @@ export interface RoomPanelManagerOptions {
    */
   resolveOperatorHandle?: () => string | null;
   /**
+   * Story 10.6 (AC2) — resolve the CURRENT webview theme-kind token (from
+   * `vscode.window.activeColorTheme.kind` via {@link webviewThemeKind}) for the INITIAL `data-theme-kind`
+   * attribute on each panel's mount root, so the HC overrides apply on first paint. A function so a
+   * theme switch is picked up on the NEXT open; live re-theming of OPEN panels goes through
+   * {@link RoomPanelManager.postThemeKind}. Defaults to `dark` when absent.
+   */
+  resolveThemeKind?: () => string;
+  /**
    * How many most-recent rooms are kept warm with `retainContextWhenHidden` (the LRU cap; AC2).
    * Beyond this, a (re)opened panel is created NON-retained so it re-renders on focus — bounded
    * memory. Defaults to {@link DEFAULT_RETAIN_CAP}.
@@ -339,8 +347,22 @@ export class RoomPanelManager {
       styleUris,
       roomId,
       operatorHandle: this.options.resolveOperatorHandle?.() ?? '',
+      themeKind: this.options.resolveThemeKind?.() ?? 'dark',
     };
     panel.webview.html = buildRoomWebviewHtml(html);
+  }
+
+  /**
+   * Story 10.6 (AC2) — push a live theme-kind change to ALL open room panels (host→its-own-webviews
+   * only; NFR5 preserved). Called by the extension on `vscode.window.onDidChangeActiveColorTheme` so
+   * the open RoomViews re-apply their `data-theme-kind` and the HC overrides flip without a reload.
+   *
+   * @param kind The new webview theme-kind token (from {@link webviewThemeKind}).
+   */
+  postThemeKind(kind: string): void {
+    for (const { panel } of this.panels.values()) {
+      void panel.webview.postMessage({ type: 'themeKind', kind });
+    }
   }
 
   /** Dispose all open panels' bridges + listeners (extension deactivate). The host owns the panels. */

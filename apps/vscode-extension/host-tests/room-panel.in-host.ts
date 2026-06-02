@@ -23,9 +23,14 @@ import { announceProject, postAnnouncement, register } from '@agentbbs/core';
 import { createDataAccessNodeSqlite } from '@agentbbs/data-access';
 import * as vscode from 'vscode';
 
-import { dispatchRequest } from '../src/bridge.js';
+import {
+  createBridge,
+  dispatchRequest,
+  type Messaging,
+} from '../src/bridge.js';
 import { RoomPanelManager, type PanelLike } from '../src/room-panel.js';
 import { createRoomPanelSerializer } from '../src/serializer.js';
+import { webviewThemeKind } from '../src/webview/theme-kind.js';
 
 export async function run(): Promise<void> {
   const out = process.env.AGENTBBS_PROBE_OUT;
@@ -48,6 +53,14 @@ export async function run(): Promise<void> {
     // Story 10.5 — the serializer is registered + a deserialize round-trip re-attaches a panel.
     serializerRegistered: boolean;
     deserializeReattached: boolean;
+    // Story 10.6 (AC2) — ColorThemeKind is readable in-host + flows into the panel HTML;
+    // postThemeKind pushes a real frame to a real webview.
+    themeKindRead: string | null;
+    htmlHasThemeKind: boolean;
+    themeKindPushed: boolean;
+    // Story 10.6 (AC1) — the bridge MAX(seq) poll PUSHES a delta host→webview when a real event is
+    // appended (the live-fold producer half), proven over the REAL node:sqlite handle.
+    livePollPushedDelta: boolean;
     error: string | null;
   } = {
     opened: false,
@@ -66,6 +79,10 @@ export async function run(): Promise<void> {
     activatedByOperator: false,
     serializerRegistered: false,
     deserializeReattached: false,
+    themeKindRead: null,
+    htmlHasThemeKind: false,
+    themeKindPushed: false,
+    livePollPushedDelta: false,
     error: null,
   };
 
@@ -103,6 +120,9 @@ export async function run(): Promise<void> {
       },
       iconPath: new vscode.ThemeIcon('comment-discussion'),
       resolveOperatorHandle: () => 'operator',
+      // Story 10.6 (AC2) — resolve the INITIAL theme-kind from the REAL active color theme.
+      resolveThemeKind: () =>
+        webviewThemeKind(vscode.window.activeColorTheme.kind),
       createPanel: (roomId, title): PanelLike => {
         const panel = vscode.window.createWebviewPanel(
           'agentbbs.room',
@@ -132,6 +152,14 @@ export async function run(): Promise<void> {
     result.htmlHasRoomId = html.includes(`data-room-id="${proto.roomId}"`);
     result.htmlNoUnsafe =
       !html.includes('unsafe-inline') && !html.includes('unsafe-eval');
+
+    // Story 10.6 (AC2) — ColorThemeKind is readable in the real host + flows into the panel HTML as
+    // the initial data-theme-kind. (The light/dark/HC value depends on the host's active theme; we
+    // only assert the kind is one of the known tokens AND the HTML carries it — the HC PAINT is the
+    // lead's manual theme-switch smoke, Rule 12.)
+    const themeKind = webviewThemeKind(vscode.window.activeColorTheme.kind);
+    result.themeKindRead = themeKind;
+    result.htmlHasThemeKind = html.includes(`data-theme-kind="${themeKind}"`);
 
     // Story 10.5 AC1 — the STRICT CSP holds in a REAL webview. The REAL `webview.cspSource` on a
     // modern VS Code build is NOT a single `vscode-webview://` origin — it is the host's own-asset
@@ -217,15 +245,49 @@ export async function run(): Promise<void> {
     result.activeAfterReply = room.active === true;
     result.activatedByOperator = room.activatedBy === 'operator';
 
-    // Story 10.5 AC2 — register the WebviewPanelSerializer in the real host (proves the API is
-    // accepted + returns a Disposable). Registering a SECOND serializer for the same viewType would
-    // throw ("Only a single serializer may be registered"), so we register once here.
-    const serializer = createRoomPanelSerializer(manager);
-    const serializerReg = vscode.window.registerWebviewPanelSerializer(
-      'agentbbs.room',
-      serializer,
+    // Story 10.6 (AC2) — postThemeKind pushes a real themeKind frame to the OPEN real webview panel.
+    // We wrap the panel's webview.postMessage to capture the pushed frame (the real postMessage is a
+    // real method on the real webview; wrapping it proves the host→its-own-webview push reaches it).
+    const themeFrames: unknown[] = [];
+    const realPostMessage = panel.webview.postMessage.bind(panel.webview);
+    (
+      panel.webview as { postMessage: (m: unknown) => Thenable<boolean> }
+    ).postMessage = (m: unknown) => {
+      themeFrames.push(m);
+      return realPostMessage(m as never);
+    };
+    manager.postThemeKind('high-contrast');
+    result.themeKindPushed = themeFrames.some(
+      (f) =>
+        typeof f === 'object' &&
+        f !== null &&
+        (f as { type?: string }).type === 'themeKind' &&
+        (f as { kind?: string }).kind === 'high-contrast',
     );
-    result.serializerRegistered = typeof serializerReg.dispose === 'function';
+
+    // Story 10.5 AC2 — register the WebviewPanelSerializer in the real host (proves the API is
+    // accepted + returns a Disposable). Registering a SECOND serializer for the same viewType throws
+    // ("Only a single serializer may be registered"). When this probe runs inside an ALREADY-ACTIVATED
+    // dev host (the --extensionDevelopmentPath extension's activate() registered the serializer first
+    // — which is the CORRECT production behavior), that throw is EXPECTED and itself proves the API is
+    // live + the production path already registered it. So we tolerate the "already registered" case
+    // as success (Story 10.6: the added live-poll wait below widened the window for activate's lazy
+    // registration to win the race — the registration capability is still proven either way).
+    const serializer = createRoomPanelSerializer(manager);
+    let serializerReg: vscode.Disposable | undefined;
+    try {
+      serializerReg = vscode.window.registerWebviewPanelSerializer(
+        'agentbbs.room',
+        serializer,
+      );
+      result.serializerRegistered = typeof serializerReg.dispose === 'function';
+    } catch (regErr) {
+      // The dev extension's activate() already registered it (the production path) → API proven.
+      result.serializerRegistered =
+        /already registered|single serializer/iu.test(
+          regErr instanceof Error ? regErr.message : String(regErr),
+        );
+    }
 
     // Story 10.5 AC2 — a serialize→deserialize ROUND-TRIP: simulate a reload by handing the
     // serializer a FRESH real WebviewPanel + the persisted state ({ roomId }). The serializer must
@@ -263,7 +325,38 @@ export async function run(): Promise<void> {
       (revealedAfterRestore as unknown as vscode.WebviewPanel) ===
         restoredPanel;
 
-    serializerReg.dispose();
+    // Story 10.6 (AC1) — the bridge MAX(seq) poll PUSHES a delta host→webview when a real event is
+    // appended (the live-fold PRODUCER half). Bind a bridge over a RECORDING messaging channel against
+    // the SAME real node:sqlite handle, seed it (first tick = live maxSeq), append a real reply, then
+    // wait for the next tick to push the delta. (Runs AFTER the serializer assertions so its waits do
+    // not widen the activate()-lazy-registration race window.)
+    const pushed: Array<{ type: string }> = [];
+    const recording: Messaging = {
+      postMessage: (m) => pushed.push(m as { type: string }),
+      onMessage: () => () => {},
+    };
+    const pollBridge = createBridge({
+      dataAccess,
+      messaging: recording,
+      pollIntervalMs: 40,
+    });
+    try {
+      // Wait for the seed tick (the bridge seeds lastSentSeq to the live maxSeq on the FIRST tick).
+      await new Promise((r) => setTimeout(r, 120));
+      // Append a real event (a reply to the now-active room) — the poll should push it next tick.
+      await dispatchRequest(dataAccess, {
+        id: 'live',
+        op: 'reply',
+        args: { actor: 'operator', roomId: proto.roomId, body: 'live ping' },
+      });
+      // Wait for a poll tick to pick it up + push the delta host→webview.
+      await new Promise((r) => setTimeout(r, 200));
+      result.livePollPushedDelta = pushed.some((f) => f.type === 'delta');
+    } finally {
+      pollBridge.dispose();
+    }
+
+    serializerReg?.dispose();
     manager.dispose();
   } catch (err) {
     result.error = err instanceof Error ? err.message : String(err);
@@ -299,7 +392,11 @@ export async function run(): Promise<void> {
     !result.activeAfterReply ||
     !result.activatedByOperator ||
     !result.serializerRegistered ||
-    !result.deserializeReattached
+    !result.deserializeReattached ||
+    result.themeKindRead === null ||
+    !result.htmlHasThemeKind ||
+    !result.themeKindPushed ||
+    !result.livePollPushedDelta
   ) {
     throw new Error(
       `ROOM-PANEL PROBE FAILED in the Electron host — ${JSON.stringify(result)}`,

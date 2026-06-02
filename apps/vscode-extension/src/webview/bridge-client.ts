@@ -14,6 +14,7 @@
 // in plain Node with a fake bridge — exactly the discipline src/bridge.test.ts uses host-side.
 
 import type {
+  ConnectionStatus,
   MessagePostModel,
   OperatorPosture,
   RoomViewModel,
@@ -157,7 +158,7 @@ export interface VsCodeWebviewApi {
   postMessage(message: unknown): void;
 }
 
-/** A host→webview frame as the bridge posts it (response or delta). */
+/** A host→webview frame as the bridge posts it (response / delta / themeKind). */
 interface HostFrame {
   type?: string;
   id?: string;
@@ -166,32 +167,70 @@ interface HostFrame {
   error?: { code: string; message: string };
 }
 
+/** Optional host→webview frame hooks for {@link createPostMessageBridge} (Story 10.6). */
+export interface PostMessageBridgeHooks {
+  /**
+   * Called with each DELTA frame's `{ events, maxSeq }` (the host MAX(seq) poll, Story 10.2/10.4).
+   * Story 10.6 wires this to the live RoomView fold. The events are RAW CORE Events (camelCase).
+   */
+  onDelta?: (delta: { events: unknown[]; maxSeq: number }) => void;
+  /**
+   * Story 10.6 (AC2) — called with each THEME-KIND frame's token when the operator switches color
+   * theme (`vscode.window.onDidChangeActiveColorTheme` → host `postThemeKind`). The webview re-applies
+   * its `data-theme-kind` attribute so the HC overrides flip live.
+   */
+  onThemeKind?: (kind: string) => void;
+  /**
+   * Story 10.6 (AC3) — called with the live host→webview channel status for the ConnectionFooter LED.
+   * Starts `reconnecting` (no frame received yet), flips to `connected` on the FIRST frame of any kind
+   * (a delta tick or a response proves the channel is live). The VS Code postMessage channel does not
+   * "drop" like an EventSource while the panel is alive, so this is a calm liveness signal, never an alarm.
+   */
+  onStatus?: (status: ConnectionStatus) => void;
+}
+
 /**
  * Create a {@link Bridge} over the real VS Code webview messaging channel. Each `request` mints a
  * correlation id, posts `{ id, op, args }` to the host, and resolves/rejects when the matching
  * `{ type:'response', id, ok, result|error }` arrives. A `window` `message` listener routes frames
- * by id. Delta frames (`type:'delta'`) are forwarded to the optional `onDelta` callback (the live
- * fold is Story 10.6; here we just expose the hook). Returns the bridge + a `dispose()`.
+ * by type/id: `response` → the pending waiter; `delta` → {@link PostMessageBridgeHooks.onDelta};
+ * `themeKind` → {@link PostMessageBridgeHooks.onThemeKind}. The FIRST frame of any kind flips
+ * {@link PostMessageBridgeHooks.onStatus} to `connected`. Returns the bridge + a `dispose()`.
  *
  * @param api The `acquireVsCodeApi()` handle (the webview's host channel).
- * @param onDelta Optional — called with each delta frame's `{ events, maxSeq }` (10.6 wires the fold).
+ * @param hooks Optional frame hooks (the live fold / theme switch / connection LED — Story 10.6).
  */
 export function createPostMessageBridge(
   api: VsCodeWebviewApi,
-  onDelta?: (delta: { events: unknown[]; maxSeq: number }) => void,
+  hooks: PostMessageBridgeHooks = {},
 ): Bridge & { dispose(): void } {
+  const { onDelta, onThemeKind, onStatus } = hooks;
   let counter = 0;
+  let sawFrame = false;
   const pending = new Map<
     string,
     { resolve: (value: unknown) => void; reject: (err: Error) => void }
   >();
 
+  function markConnected(): void {
+    if (sawFrame) return;
+    sawFrame = true;
+    onStatus?.('connected');
+  }
+
   function handleMessage(event: MessageEvent): void {
     const frame = event.data as HostFrame;
     if (frame === null || typeof frame !== 'object') return;
-    if (frame.type === 'delta' && onDelta) {
+    // Any well-formed host frame proves the channel is live (the calm connection LED, AC3).
+    markConnected();
+    if (frame.type === 'delta') {
       const d = frame as unknown as { events: unknown[]; maxSeq: number };
-      onDelta({ events: d.events ?? [], maxSeq: d.maxSeq ?? 0 });
+      onDelta?.({ events: d.events ?? [], maxSeq: d.maxSeq ?? 0 });
+      return;
+    }
+    if (frame.type === 'themeKind') {
+      const t = frame as unknown as { kind?: string };
+      if (typeof t.kind === 'string') onThemeKind?.(t.kind);
       return;
     }
     if (frame.type !== 'response' || typeof frame.id !== 'string') return;

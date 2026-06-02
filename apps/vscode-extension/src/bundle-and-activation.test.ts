@@ -95,6 +95,9 @@ vi.mock('vscode', () => {
       }),
       // Story 10.5 — activate() registers the room WebviewPanelSerializer; return a disposable.
       registerWebviewPanelSerializer: () => ({ dispose: () => {} }),
+      // Story 10.6 — activate() reads the active color theme kind + subscribes to theme changes.
+      activeColorTheme: { kind: 2 /* Dark */ },
+      onDidChangeActiveColorTheme: () => ({ dispose: () => {} }),
     },
     workspace: {
       getConfiguration: () => ({ get: () => undefined }),

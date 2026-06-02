@@ -26,6 +26,7 @@ import {
 } from './tree/BoardTreeProvider.js';
 import { BoardDecorationProvider } from './tree/decorations.js';
 import { resolveOperatorHandle } from './tree/operator-handle.js';
+import { webviewThemeKind } from './webview/theme-kind.js';
 
 import type { PanelLike } from './room-panel.js';
 import type { OpenedLedger } from './db.js';
@@ -145,6 +146,10 @@ function registerBoardTree(
     assetUris: { script: scriptRef, styles: [cssRef] },
     iconPath: new vscode.ThemeIcon('comment-discussion'),
     resolveOperatorHandle: () => readOperatorHandle(),
+    // Story 10.6 (AC2) — the INITIAL theme-kind for a freshly-opened panel (so HC applies on first
+    // paint). Live re-theming of OPEN panels is the onDidChangeActiveColorTheme subscription below.
+    resolveThemeKind: () =>
+      webviewThemeKind(vscode.window.activeColorTheme.kind),
     createPanel: (roomId, title, retain): PanelLike => {
       const panel = vscode.window.createWebviewPanel(
         ROOM_PANEL_VIEW_TYPE,
@@ -165,6 +170,16 @@ function registerBoardTree(
   });
   roomPanels = manager;
   context.subscriptions.push({ dispose: () => manager.dispose() });
+
+  // Story 10.6 (AC2) — re-theme OPEN room panels LIVE when the operator switches color theme
+  // (light↔dark↔high-contrast). VS Code re-injects its `--vscode-*` variables automatically, but the
+  // HIGH-CONTRAST overrides in vscode-tokens.css key off the `data-theme-kind` attribute the webview
+  // sets from the host — so we must push the new kind. Host→its-own-webviews only (NFR5 preserved).
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveColorTheme((theme) => {
+      manager.postThemeKind(webviewThemeKind(theme.kind));
+    }),
+  );
 
   // Story 10.5 (AC2) — the WebviewPanelSerializer. On a window reload, VS Code calls
   // deserializeWebviewPanel for each persisted room panel; the serializer re-attaches it to its

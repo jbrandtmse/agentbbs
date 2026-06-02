@@ -134,3 +134,55 @@ describe('vscode-tokens.css — load order (AC3) + Rule 13 byte-identical', () =
     expect(diff).toBe('');
   });
 });
+
+// =============================================================================
+// Story 10.6 (AC2) — the HIGH-CONTRAST override block content-guard. The HC overrides live under
+// `#root[data-theme-kind^="high-contrast"]` (the webview sets the attribute from the host's
+// ColorThemeKind). This guards the load-bearing HC claims: the HC selector exists; borders lean on
+// `--vscode-contrastBorder`; the agreed/flag tokens map to charted/contrast tokens; focus is driven
+// via `--vscode-focusBorder`. Mutation-tested non-vacuous (Rule 7): a guard that passes whether or
+// not the HC block exists guards nothing — see the slice() that isolates the HC block so a dropped
+// `contrastBorder`/`focusBorder` inside it turns the assertion RED.
+// =============================================================================
+
+/** Isolate the `#root[data-theme-kind^="high-contrast"] { … }` rule body from the CSS. */
+function highContrastBlock(css: string): string | null {
+  const m = css.match(
+    /#root\[data-theme-kind\^=['"]high-contrast['"]\]\s*\{([^}]*)\}/s,
+  );
+  return m ? m[1] : null;
+}
+
+describe('vscode-tokens.css — high-contrast overrides (AC2)', () => {
+  it('declares an HC override block keyed on the data-theme-kind^="high-contrast" attribute', () => {
+    // MUTATION (Rule 7): renaming the selector (so the regex misses it) makes EVERY assertion below
+    // RED — the block is null and the `.toContain` calls throw / fail.
+    expect(highContrastBlock(themeCss)).not.toBeNull();
+  });
+
+  it('leans on --vscode-contrastBorder for solid borders under HC', () => {
+    const block = highContrastBlock(themeCss)!;
+    // The border tokens resolve through contrastBorder (the HC contract — solid edges).
+    expect(block).toMatch(/--border\s*:\s*var\(\s*--vscode-contrastBorder/);
+    expect(block).toMatch(
+      /--border-soft\s*:\s*var\(\s*--vscode-contrastBorder/,
+    );
+    // The agreed LINE (the rail that carries the meaning when the wash drops) is a solid contrast border.
+    expect(block).toMatch(
+      /--agreed-line\s*:\s*var\(\s*--vscode-contrastBorder/,
+    );
+  });
+
+  it('maps agreed-green / flag-warm to charted decoration tokens (AA under HC)', () => {
+    const block = highContrastBlock(themeCss)!;
+    expect(block).toContain('--vscode-charts-green');
+    expect(block).toContain('--vscode-charts-yellow');
+  });
+
+  it('drives focus via --vscode-focusBorder (the AC2 focus requirement)', () => {
+    const block = highContrastBlock(themeCss)!;
+    // The inherited 9.10 :focus-visible ring is `outline: 2px solid var(--accent)`; under HC we
+    // promote --accent to --vscode-focusBorder so the keyboard ring is the HC focus color.
+    expect(block).toMatch(/--accent\s*:\s*var\(\s*--vscode-focusBorder/);
+  });
+});

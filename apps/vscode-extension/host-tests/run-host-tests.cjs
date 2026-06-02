@@ -317,6 +317,25 @@ async function main() {
             'the serializer deserialize round-trip did NOT re-attach the restored panel to its room.',
           );
         }
+        // Story 10.6 (AC2) — ColorThemeKind is read in-host + flows into the panel HTML; a live
+        // theme switch (postThemeKind) pushes a real frame to the real webview.
+        if (!r.themeKindRead || !r.htmlHasThemeKind) {
+          throw new Error(
+            `ColorThemeKind was not read / did not flow into the panel HTML (themeKindRead=${JSON.stringify(r.themeKindRead)}, htmlHasThemeKind=${r.htmlHasThemeKind}).`,
+          );
+        }
+        if (!r.themeKindPushed) {
+          throw new Error(
+            'postThemeKind did NOT push a themeKind frame to the real webview (live re-theme regression).',
+          );
+        }
+        // Story 10.6 (AC1) — the bridge MAX(seq) poll pushed a delta host→webview on a real appended
+        // event (the live-fold producer half) over the REAL node:sqlite handle.
+        if (!r.livePollPushedDelta) {
+          throw new Error(
+            'the bridge MAX(seq) poll did NOT push a delta when a real event was appended (live-fold producer regression).',
+          );
+        }
       },
       { AGENTBBS_DB: panelDb },
     );

@@ -38,6 +38,14 @@ export interface WebviewHtmlOptions {
    * a data attribute (no inline script — keeps the CSP clean).
    */
   operatorHandle: string;
+  /**
+   * Story 10.6 (AC2) — the INITIAL webview theme-kind token (`light` / `dark` / `high-contrast` /
+   * `high-contrast-light`), resolved host-side from `vscode.window.activeColorTheme.kind`. Placed on
+   * the mount root as `data-theme-kind` so the `vscode-tokens.css` HC overrides apply on FIRST paint
+   * (before any postMessage); the host re-pushes a `themeKind` frame on `onDidChangeActiveColorTheme`
+   * so the webview re-themes live. Defaults to `dark` (the ui-shared canonical default).
+   */
+  themeKind?: string;
 }
 
 /**
@@ -83,8 +91,15 @@ export function generateNonce(
  * @param options The resolved URIs + cspSource + nonce + room id.
  */
 export function buildRoomWebviewHtml(options: WebviewHtmlOptions): string {
-  const { cspSource, nonce, scriptUri, styleUris, roomId, operatorHandle } =
-    options;
+  const {
+    cspSource,
+    nonce,
+    scriptUri,
+    styleUris,
+    roomId,
+    operatorHandle,
+    themeKind = 'dark',
+  } = options;
 
   const csp = [
     `default-src 'none'`,
@@ -112,7 +127,7 @@ export function buildRoomWebviewHtml(options: WebviewHtmlOptions): string {
     <title>AgentBBS room</title>
   </head>
   <body>
-    <div id="root" data-room-id="${escapeAttr(roomId)}" data-operator-handle="${escapeAttr(operatorHandle)}"></div>
+    <div id="root" data-room-id="${escapeAttr(roomId)}" data-operator-handle="${escapeAttr(operatorHandle)}" data-theme-kind="${escapeAttr(themeKind)}"></div>
     <script type="module" nonce="${nonce}" src="${escapeAttr(scriptUri)}"></script>
   </body>
 </html>`;

@@ -189,7 +189,7 @@ development_status:
   10-3-native-treeview-navigation-with-decorations: done
   10-4-rooms-as-webviewpanels-mounting-ui-shared-with-theme-inheritance: done
   10-5-webview-csp-hardening-and-state-serialization: done
-  10-6-live-updates-high-contrast-and-accessibility-parity: backlog
+  10-6-live-updates-high-contrast-and-accessibility-parity: done
   10-7-operator-initiate-parity-compose-surfaces-wired-through-the-bridge: backlog
   epic-10-retrospective: optional
 

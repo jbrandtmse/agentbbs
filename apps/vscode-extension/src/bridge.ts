@@ -73,8 +73,20 @@ export interface BridgeDelta {
   maxSeq: number;
 }
 
+/**
+ * A host→webview THEME-KIND frame (Story 10.6, AC2): the operator's active color-theme kind changed
+ * (`vscode.window.onDidChangeActiveColorTheme`). Carries the {@link webviewThemeKind} token so the
+ * webview re-applies its `data-theme-kind` attribute and the `vscode-tokens.css` HC overrides flip
+ * LIVE. Host→its-own-webview only (NFR5 — no agent path; this is purely the operator's editor view).
+ */
+export interface BridgeThemeKind {
+  type: 'themeKind';
+  /** The theme-kind token (`light` / `dark` / `high-contrast` / `high-contrast-light`). */
+  kind: string;
+}
+
 /** Anything the host posts to the webview. */
-export type HostToWebview = BridgeResponse | BridgeDelta;
+export type HostToWebview = BridgeResponse | BridgeDelta | BridgeThemeKind;
 
 /**
  * A transport-agnostic message channel — the seam that lets the bridge be unit-tested with a
