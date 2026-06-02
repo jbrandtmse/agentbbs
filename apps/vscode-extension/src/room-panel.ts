@@ -62,6 +62,12 @@ export interface PanelLike {
   };
   /** Bring an existing panel to the foreground (the reveal-not-duplicate path). */
   reveal(viewColumn?: unknown, preserveFocus?: boolean): void;
+  /**
+   * Programmatically close the panel (the real `vscode.WebviewPanel.dispose`). Optional so the room
+   * fakes that pre-date Story 10.7 still satisfy the type; the compose manager's cancel/Esc path
+   * calls it to close the single reused compose panel.
+   */
+  dispose?(): void;
   /** Fired when the panel is closed (the × / the editor closing it) — cleanup hook. */
   onDidDispose(handler: () => void): { dispose(): void };
   /**

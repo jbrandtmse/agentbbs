@@ -346,6 +346,71 @@ async function main() {
     );
   }
 
+  // Story 10.7 (AC1/AC2/AC3): the compose panel — a REAL single reused panel, each of the 4
+  // INITIATE writes LANDS in the ledger, and a posted announcement is a NAVIGABLE proto-room that
+  // reply-activates (the initiate→respond loop, Rule 15 both directions).
+  const composeProbePath = path.join(
+    __dirname,
+    'dist',
+    'compose-panel.in-host.cjs',
+  );
+  if (fs.existsSync(composeProbePath)) {
+    const composeDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'agentbbs-host-compose-'),
+    );
+    const composeDb = path.join(composeDir, '.agentbbs', 'agentbbs.db');
+    await runInHost(
+      composeProbePath,
+      'AC1/AC3 compose-initiate-writes-land',
+      (r) => {
+        if (!r.opened || !r.panelCreated || !r.singlePanelReused) {
+          throw new Error(
+            `the compose panel was not created / not single-reused in the host: ${JSON.stringify(r)}`,
+          );
+        }
+        if (!r.htmlHasComposeKind || !r.htmlHasNonceCsp || !r.htmlNoUnsafe) {
+          throw new Error(
+            `the compose panel HTML shell is wrong (compose-kind / nonce CSP / no-unsafe): ${JSON.stringify(r)}`,
+          );
+        }
+        // AC1 — each of the 4 INITIATE writes landed in the ledger (out-of-band).
+        if (
+          !r.announceLanded ||
+          !r.postAnnouncementLanded ||
+          !r.joinBoardLanded ||
+          !r.updateFocusLanded
+        ) {
+          throw new Error(
+            `not all 4 INITIATE writes landed in the ledger: ${JSON.stringify(r)}`,
+          );
+        }
+        // AC3 (Rule 15) — the load-bearing assertion: the posted announcement is a NAVIGABLE
+        // proto-room (not just counted) AND it reply-activates (the initiate→respond loop).
+        if (!r.protoRoomNavigable) {
+          throw new Error(
+            'the posted announcement is NOT a navigable proto-room in the host tree (Rule-15 initiate→respond regression).',
+          );
+        }
+        if (!r.protoRoomActivatesByReply) {
+          throw new Error(
+            'the posted proto-room did NOT activate on a reply (the respond half of the loop is broken).',
+          );
+        }
+        if (!r.watchingOnlyGated) {
+          throw new Error(
+            'a watching-only initiate write did NOT yield the host-surface NO_OPERATOR gate.',
+          );
+        }
+      },
+      { AGENTBBS_DB: composeDb },
+    );
+  } else {
+    console.log(
+      '\n[AC1/AC3 compose-initiate-writes-land] SKIPPED — bundle not built. Run ' +
+        '`node host-tests/build-host-tests.cjs` first (the test:host script does this).',
+    );
+  }
+
   console.log('\nAll in-host probes passed. Electron host:', {
     electron: gate.electron,
     modules: gate.modules,

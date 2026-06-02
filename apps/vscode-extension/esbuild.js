@@ -75,19 +75,39 @@ const webviewBuildOptions = {
   logLevel: 'info',
 };
 
+/**
+ * @type {import('esbuild').BuildOptions} — the COMPOSE webview bundle (Story 10.7). The operator
+ * INITIATE compose surfaces (CreateProjectCompose/PostAnnouncementCompose/JoinProjectPicker/
+ * FocusAffordance) mounted into the single reused compose panel. SAME browser/ESM/React-bundled
+ * shape as the room bundle, distinct entry — emits dist/webview/compose.js (+ compose.css, the SAME
+ * ui-shared stylesheets + vscode-tokens theme layer).
+ */
+const composeWebviewBuildOptions = {
+  ...webviewBuildOptions,
+  entryPoints: ['src/webview/compose-main.tsx'],
+  outfile: 'dist/webview/compose.js',
+};
+
 async function main() {
   if (watch) {
     const hostCtx = await esbuild.context(hostBuildOptions);
     const webviewCtx = await esbuild.context(webviewBuildOptions);
-    await Promise.all([hostCtx.watch(), webviewCtx.watch()]);
+    const composeCtx = await esbuild.context(composeWebviewBuildOptions);
+    await Promise.all([
+      hostCtx.watch(),
+      webviewCtx.watch(),
+      composeCtx.watch(),
+    ]);
     console.log(
-      '[esbuild] watching apps/vscode-extension/src/extension.ts + src/webview/main.tsx …',
+      '[esbuild] watching apps/vscode-extension/src/extension.ts + src/webview/main.tsx + src/webview/compose-main.tsx …',
     );
   } else {
     await esbuild.build(hostBuildOptions);
     console.log('[esbuild] built dist/extension.cjs');
     await esbuild.build(webviewBuildOptions);
     console.log('[esbuild] built dist/webview/main.js (+ main.css)');
+    await esbuild.build(composeWebviewBuildOptions);
+    console.log('[esbuild] built dist/webview/compose.js (+ compose.css)');
   }
 }
 

@@ -179,12 +179,18 @@ export default tseslint.config(
   //    `main.tsx` is the conventional Vite/React APP ENTRY filename (lowercase) — it
   //    mounts the root, it is not a component module — so it is ignored by the
   //    PascalCase rule (mirrors how `.config.js` is ignored above). Story 9.3.
+  //    `compose-main.tsx` (Story 10.7) is the SECOND webview ENTRY POINT (the compose
+  //    bundle) — same role as `main.tsx` (mounts the root, not a component module), so
+  //    it is ignored on the same grounds.
   {
     files: ['**/*.tsx'],
     rules: {
       'unicorn/filename-case': [
         'error',
-        { case: 'pascalCase', ignore: [/^main\.tsx$/u] },
+        {
+          case: 'pascalCase',
+          ignore: [/^main\.tsx$/u, /^compose-main\.tsx$/u],
+        },
       ],
       'import-x/no-default-export': 'off',
     },

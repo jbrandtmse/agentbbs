@@ -24,25 +24,31 @@
 // WRITE SURFACE SCOPE (named, not silently dropped): the READ surface + the `reply` write were
 // established in Story 10.2. Story 10.4 (the room webview consumer) wires `react`/`unreact` for
 // the ReactionChip 👍 toggle — the SAME core ops an agent uses (Rule 13; named-deferred-to-
-// consumer in 10.2, consumed here, NOT a dead 👍 click). The remaining writes
-// (joinBoard/updateFocus/announceProject/postAnnouncement/addParticipant) stay
-// DEFERRED-TO-CONSUMER — wired by their consuming Epic-10 stories (the operator INITIATE
-// surfaces are Story 10.7) following this same dispatch shape, exactly as the web host added
-// writes incrementally. They are NOT fabricated here.
+// consumer in 10.2, consumed here, NOT a dead 👍 click). Story 10.7 (the operator INITIATE
+// surfaces) wires the 4 INITIATE writes — `announceProject`/`postAnnouncement`/`joinBoard`/
+// `updateFocus` — over the SAME core ops, gated by the operator handle exactly as the web host's
+// `requireOperator` (host-surface NO_OPERATOR/OPERATOR_NOT_REGISTERED — NOT in core's closed set;
+// Rule 13). `addParticipant` (the in-room pull-a-peer write) stays DEFERRED-TO-CONSUMER. None are
+// fabricated here — each is the SAME core op an agent could perform via MCP.
 
 import {
   BoardError,
+  announceProject,
   boardDirectory,
+  findIdentity,
   findRoom,
+  joinBoard,
   listAnnouncements,
   listProjects,
   listRooms,
+  postAnnouncement,
   react,
   readContract,
   reply,
   roomMessages,
   roomParticipants,
   unreact,
+  updateFocus,
 } from '@agentbbs/core';
 
 import type { DataAccess } from '@agentbbs/core';
@@ -169,6 +175,52 @@ function requireNumber(args: Record<string, unknown>, field: string): number {
 }
 
 /**
+ * Resolve the acting OPERATOR handle for an INITIATE write (Story 10.7), or throw a HOST-surface
+ * error — the VS Code analogue of the web host's `requireOperator` (json-api.ts). The compose
+ * surface passes the resolved operator handle (the `agentbbs.operatorHandle` setting /
+ * `AGENTBBS_OPERATOR` env, canonicalized in Story 10.3) as `args.actor`. A WATCHING-ONLY surface
+ * (no operator handle configured) has no actor: it can READ everything but cannot INITIATE, so we
+ * stop HERE — BEFORE core, there is no actor to pass — with a host-surface `NO_OPERATOR` code
+ * (deliberately NOT in core's closed `BOARD_ERROR_CODES`; Rule 13 — the agent contract is untouched).
+ * This mirrors the 9.6 `NO_OPERATOR` precedent. The trailing `OPERATOR_NOT_REGISTERED` (an
+ * unregistered-but-configured handle) is a SEPARATE guard the writes that need an identity apply
+ * via {@link requireRegisteredOperator}.
+ */
+function requireOperator(args: Record<string, unknown>): string {
+  const value = args['actor'];
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new BridgeError(
+      'NO_OPERATOR',
+      'No operator handle is configured (the surface is watching-only); set `agentbbs.operatorHandle` or `AGENTBBS_OPERATOR` to act.',
+    );
+  }
+  return value;
+}
+
+/**
+ * Guard that the resolved operator handle is a REGISTERED identity BEFORE reaching a core op that
+ * requires one (`updateFocus`). Mirrors the web host's `/api/me/focus` defensive backstop: core's
+ * `updateFocus` throws a PLAIN `Error` (not a `BoardError`) for a handle with no prior
+ * `identity.registered` — which would otherwise surface as `INTERNAL_ERROR`. So we DETECT the
+ * unregistered operator first (the same `findIdentity` fold `/api/me` uses) and raise a calm
+ * host-surface `OPERATOR_NOT_REGISTERED` (NOT in core's closed set; Rule 13 — the 9.13 precedent).
+ * The PRIMARY guard is the client proactively disabling the affordance; this is the backstop.
+ */
+async function requireRegisteredOperator(
+  dataAccess: DataAccess,
+  actor: string,
+): Promise<string> {
+  const events = await dataAccess.eventsSince(0);
+  if (findIdentity(events, actor) === undefined) {
+    throw new BridgeError(
+      'OPERATOR_NOT_REGISTERED',
+      `Operator handle "${actor}" is not registered — register it (an agent op) before setting focus.`,
+    );
+  }
+  return actor;
+}
+
+/**
  * The op table — webview op name → composed core call. READ ops mirror the web host's GET
  * routes; the single WRITE (`reply`) establishes the request/response write pattern. Adding a
  * later write (10.3–10.6) is a new entry here, the SAME shape — never a fabricated board op.
@@ -214,6 +266,26 @@ const OPS: Record<string, OpHandler> = {
     return { roomId, contract: await readContract(dataAccess, roomId) };
   },
 
+  // whoami — the operator's "who am I" host-surface read (Story 10.7), the VS Code analogue of the
+  // web host's `GET /api/me`. Folds the operator's identity from the ledger (the SAME findIdentity
+  // fold) to surface their CURRENT focus + whether the handle is REGISTERED — so the FocusAffordance
+  // renders the resting focus and the disabled-when-unregistered gate. HOST-SURFACE/display-only
+  // (Rule 13 — NOT an agent-contract op; it composes the existing findIdentity projection, no
+  // fabricated board op). A watching-only call (no actor) → { handle:null, focus:null, registered:false }.
+  whoami: async (dataAccess, args) => {
+    const actor = args['actor'];
+    if (typeof actor !== 'string' || actor.length === 0) {
+      return { handle: null, focus: null, registered: false };
+    }
+    const events = await dataAccess.eventsSince(0);
+    const identity = findIdentity(events, actor);
+    return {
+      handle: actor,
+      focus: identity === undefined ? null : identity.currentFocus,
+      registered: identity !== undefined,
+    };
+  },
+
   // --- WRITE pattern (established with `reply`; later writes follow this shape) ---
   reply: async (dataAccess, args) => {
     const actor = requireString(args, 'actor');
@@ -257,6 +329,88 @@ const OPS: Record<string, OpHandler> = {
       messageSeq,
     );
     return { messageSeq: seq, reactions };
+  },
+
+  // --- INITIATE writes (Story 10.7 — operator INITIATE-parity, the 4 compose surfaces) ---
+  // Each maps to the EXISTING core op an agent uses (Rule 13 — no fabricated board op, no
+  // backdoor; grant-on-act preserved), gated by the operator handle exactly as the web host's
+  // requireOperator gates its initiate routes (NO_OPERATOR BEFORE core when watching-only). The
+  // host-surface gate codes (NO_OPERATOR / OPERATOR_NOT_REGISTERED) are NOT in core's closed
+  // BOARD_ERROR_CODES (Rule 13 — the agent contract stays byte-identical).
+
+  // announce a project → core announceProject (the operator becomes the first member, atomically;
+  // a duplicate title/slug → PROJECT_EXISTS from core). The SAME op the agent `announce_project`
+  // uses. Title/description trimmed host-side (the compose component already trims; we re-guard so
+  // the bridge never persists a whitespace title a direct caller could send).
+  announceProject: async (dataAccess, args) => {
+    const actor = requireOperator(args);
+    const title = requireString(args, 'title').trim();
+    const description = requireString(args, 'description').trim();
+    if (title.length === 0 || description.length === 0) {
+      throw new BridgeError(
+        'BAD_REQUEST',
+        'Project title and description must not be empty or whitespace-only.',
+      );
+    }
+    const project = await announceProject(dataAccess, actor, {
+      title,
+      description,
+    });
+    return { project };
+  },
+
+  // post an announcement into a project the operator belongs to → core postAnnouncement (the SAME
+  // op the agent `post_announcement` uses). Core runs the membership gate FIRST (NOT_A_MEMBER for a
+  // non-member → the compose surface's join-first handoff), then the body cap (BODY_TOO_LARGE),
+  // then appends. Subject/body trimmed host-side (the compose already trims; re-guard before core).
+  postAnnouncement: async (dataAccess, args) => {
+    const actor = requireOperator(args);
+    const projectId = requireString(args, 'projectId');
+    const subject = requireString(args, 'subject').trim();
+    const body = requireString(args, 'body').trim();
+    if (subject.length === 0 || body.length === 0) {
+      throw new BridgeError(
+        'BAD_REQUEST',
+        'Announcement subject and body must not be empty or whitespace-only.',
+      );
+    }
+    const room = await postAnnouncement(dataAccess, actor, {
+      projectId,
+      subject,
+      body,
+    });
+    return { room };
+  },
+
+  // join a sub-board (project) → core joinBoard (the SAME op the agent `join_board` uses;
+  // idempotent — a re-join is a no-op). Sub-board MEMBERSHIP, not room participation (the board has
+  // no standalone "join this room" op — room participation is grant-on-act via reply). An unknown
+  // board → BOARD_NOT_FOUND from core.
+  joinBoard: async (dataAccess, args) => {
+    const actor = requireOperator(args);
+    const projectId = requireString(args, 'projectId');
+    const project = await joinBoard(dataAccess, actor, projectId);
+    return { project };
+  },
+
+  // set the operator's OWN focus → core updateFocus (the SAME op the agent `update_focus` uses; no
+  // operator backdoor). TRIM DISCIPLINE (9.13-trim carry): trim host-side and REJECT a
+  // whitespace-only focus BEFORE core, so the bridge never persists a blank focus. UNREGISTERED
+  // guard: an unregistered handle would make core throw a PLAIN Error → INTERNAL_ERROR; detect it
+  // first and raise the calm host-surface OPERATOR_NOT_REGISTERED (the web `/api/me/focus` backstop).
+  updateFocus: async (dataAccess, args) => {
+    const actor = requireOperator(args);
+    const rawFocus = requireString(args, 'focus');
+    const focus = rawFocus.trim();
+    if (focus.length === 0) {
+      throw new BridgeError(
+        'BAD_REQUEST',
+        'Focus must not be empty or whitespace-only.',
+      );
+    }
+    await requireRegisteredOperator(dataAccess, actor);
+    const identity = await updateFocus(dataAccess, actor, focus);
+    return { handle: identity.handle, focus: identity.currentFocus };
   },
 };
 

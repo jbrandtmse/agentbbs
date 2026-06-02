@@ -33,8 +33,12 @@ import type { DataAccess } from '@agentbbs/core';
 export const BOARD_TREE_VIEW_ID = 'agentbbs.boardTree';
 /** The command a room/proto-room row invokes when selected (filled by Story 10.4). */
 export const OPEN_ROOM_COMMAND = 'agentbbs.openRoom';
-/** The command the `＋ join a project…` action row invokes (a seam; full flow is a later story). */
+/** The command the `＋ join a project…` action row invokes (filled by Story 10.7's compose picker). */
 export const JOIN_PROJECT_COMMAND = 'agentbbs.joinProject';
+/** Story 10.7 — the operator INITIATE commands (the 4 compose surfaces). */
+export const CREATE_PROJECT_COMMAND = 'agentbbs.createProject';
+export const POST_ANNOUNCEMENT_COMMAND = 'agentbbs.postAnnouncement';
+export const SET_FOCUS_COMMAND = 'agentbbs.setFocus';
 
 /** The discriminated node union the tree is built from. */
 export type BoardTreeNode =

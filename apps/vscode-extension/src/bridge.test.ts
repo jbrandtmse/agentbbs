@@ -321,6 +321,366 @@ describe('bridge dispatch — react/unreact (the ReactionChip 👍 toggle, Story
   });
 });
 
+describe('bridge dispatch — INITIATE writes (Story 10.7, AC1) + the operator gate', () => {
+  // Each of the 4 INITIATE writes maps to the EXISTING core op an agent uses (Rule 13 — no
+  // fabricated op, no backdoor) and LANDS in the ledger; the operator gate fires BEFORE core when
+  // no operator handle is configured (host-surface NO_OPERATOR — NOT in core's closed set).
+
+  it('announceProject creates a project via core announceProject (operator = first member) and it LANDS', async () => {
+    await register(da!, { handle: 'operator', currentFocus: 'leading' });
+    const res = await dispatchRequest(da!, {
+      id: 'ip1',
+      op: 'announceProject',
+      args: {
+        actor: 'operator',
+        title: 'Operator Project',
+        description: 'started from the editor',
+      },
+    });
+    expect(res.ok).toBe(true);
+    const projectId = (res.result as { project: { projectId: string } }).project
+      .projectId;
+    // OUT-OF-BAND: the project is now in the ledger (a fresh read, not the write's own return).
+    const listed = await dispatchRequest(da!, {
+      id: 'ip1b',
+      op: 'listProjects',
+    });
+    expect(
+      (
+        listed.result as { projects: Array<{ projectId: string }> }
+      ).projects.map((p) => p.projectId),
+    ).toContain(projectId);
+  });
+
+  it('postAnnouncement opens a proto-room via core postAnnouncement and it LANDS as a navigable announcement', async () => {
+    await register(da!, { handle: 'operator', currentFocus: 'leading' });
+    const project = await announceProject(da!, 'operator', {
+      title: 'Member Project',
+      description: 'the operator belongs here',
+    });
+    const res = await dispatchRequest(da!, {
+      id: 'ip2',
+      op: 'postAnnouncement',
+      args: {
+        actor: 'operator',
+        projectId: project.projectId,
+        subject: 'Need a hand',
+        body: 'who can take this?',
+      },
+    });
+    expect(res.ok).toBe(true);
+    const roomId = (res.result as { room: { roomId: string } }).room.roomId;
+    // OUT-OF-BAND: the new proto-room appears in listAnnouncements (the navigable respond half).
+    const anns = await dispatchRequest(da!, {
+      id: 'ip2b',
+      op: 'listAnnouncements',
+      args: { projectId: project.projectId },
+    });
+    expect(
+      (
+        anns.result as { announcements: Array<{ roomId: string }> }
+      ).announcements.map((r) => r.roomId),
+    ).toContain(roomId);
+  });
+
+  it('postAnnouncement by a NON-member surfaces the core NOT_A_MEMBER closed code (the join-first handoff trigger)', async () => {
+    // alice owns the project; the operator is not a member.
+    await register(da!, { handle: 'alice', currentFocus: 'owning' });
+    await register(da!, { handle: 'operator', currentFocus: 'lurking' });
+    const project = await announceProject(da!, 'alice', {
+      title: 'Aliceland',
+      description: 'alice only',
+    });
+    const res = await dispatchRequest(da!, {
+      id: 'ip3',
+      op: 'postAnnouncement',
+      args: {
+        actor: 'operator',
+        projectId: project.projectId,
+        subject: 's',
+        body: 'b',
+      },
+    });
+    expect(res.ok).toBe(false);
+    expect(res.error?.code).toBe('NOT_A_MEMBER');
+  });
+
+  it('joinBoard joins a sub-board via core joinBoard and the membership LANDS', async () => {
+    await register(da!, { handle: 'alice', currentFocus: 'owning' });
+    await register(da!, { handle: 'operator', currentFocus: 'joining' });
+    const project = await announceProject(da!, 'alice', {
+      title: 'Shared Project',
+      description: 'open to join',
+    });
+    const res = await dispatchRequest(da!, {
+      id: 'ip4',
+      op: 'joinBoard',
+      args: { actor: 'operator', projectId: project.projectId },
+    });
+    expect(res.ok).toBe(true);
+    // OUT-OF-BAND: the operator is now a member (boardDirectory lists them).
+    const members = await dispatchRequest(da!, {
+      id: 'ip4b',
+      op: 'boardDirectory',
+      args: { projectId: project.projectId },
+    });
+    expect(
+      (members.result as { members: Array<{ handle: string }> }).members.map(
+        (m) => m.handle,
+      ),
+    ).toContain('operator');
+  });
+
+  it('updateFocus sets the operator focus via core updateFocus and the new focus LANDS', async () => {
+    await register(da!, { handle: 'operator', currentFocus: 'before' });
+    const res = await dispatchRequest(da!, {
+      id: 'ip5',
+      op: 'updateFocus',
+      args: { actor: 'operator', focus: 'reviewing the bridge' },
+    });
+    expect(res.ok).toBe(true);
+    expect(res.result).toMatchObject({
+      handle: 'operator',
+      focus: 'reviewing the bridge',
+    });
+    // OUT-OF-BAND: the focus is the operator's CURRENT focus in the ledger.
+    const events = await da!.eventsSince(0);
+    const focusEvents = events.filter(
+      (e) => e.type === 'identity.focus_updated',
+    );
+    expect(focusEvents.length).toBeGreaterThan(0);
+  });
+
+  // --- THE OPERATOR GATE (mutation-test target, Rule 7): NO_OPERATOR fires BEFORE core, so a
+  // watching-only call (no actor) persists NOTHING. Mutating requireOperator to fall through (e.g.
+  // returning '' instead of throwing) would let core be reached → these go RED. ---
+  it('a watching-only announceProject (no operator handle) → NO_OPERATOR BEFORE core (nothing persists)', async () => {
+    const before = await da!.maxSeq();
+    const res = await dispatchRequest(da!, {
+      id: 'g1',
+      op: 'announceProject',
+      args: { title: 'Should Not Exist', description: 'no actor' },
+    });
+    expect(res.ok).toBe(false);
+    expect(res.error?.code).toBe('NO_OPERATOR');
+    // The gate fired BEFORE core — no event appended.
+    expect(await da!.maxSeq()).toBe(before);
+  });
+
+  it('a watching-only postAnnouncement / joinBoard / updateFocus all → NO_OPERATOR (consistent gate)', async () => {
+    for (const [op, args] of [
+      ['postAnnouncement', { projectId: 'x', subject: 's', body: 'b' }],
+      ['joinBoard', { projectId: 'x' }],
+      ['updateFocus', { focus: 'f' }],
+    ] as const) {
+      const before = await da!.maxSeq();
+      const res = await dispatchRequest(da!, { id: `g-${op}`, op, args });
+      expect(res.ok).toBe(false);
+      expect(res.error?.code).toBe('NO_OPERATOR');
+      expect(await da!.maxSeq()).toBe(before);
+    }
+  });
+
+  it('updateFocus by an UNREGISTERED operator → OPERATOR_NOT_REGISTERED (not INTERNAL_ERROR), nothing persists', async () => {
+    // The handle is configured (actor present) but never registered.
+    const before = await da!.maxSeq();
+    const res = await dispatchRequest(da!, {
+      id: 'g2',
+      op: 'updateFocus',
+      args: { actor: 'ghost', focus: 'haunting' },
+    });
+    expect(res.ok).toBe(false);
+    expect(res.error?.code).toBe('OPERATOR_NOT_REGISTERED');
+    expect(await da!.maxSeq()).toBe(before);
+  });
+
+  // --- THE updateFocus TRIM (mutation-test target, Rule 7): a whitespace-only focus is rejected
+  // BEFORE core (9.13-trim carry). Mutating the trim guard away would persist a blank focus → RED. ---
+  it('updateFocus REJECTS a whitespace-only focus (BAD_REQUEST) and persists NOTHING (9.13-trim)', async () => {
+    await register(da!, { handle: 'operator', currentFocus: 'before' });
+    const before = await da!.maxSeq();
+    const res = await dispatchRequest(da!, {
+      id: 'g3',
+      op: 'updateFocus',
+      args: { actor: 'operator', focus: '   \n\t  ' },
+    });
+    expect(res.ok).toBe(false);
+    expect(res.error?.code).toBe('BAD_REQUEST');
+    expect(await da!.maxSeq()).toBe(before);
+  });
+
+  it('announceProject / postAnnouncement REJECT a whitespace-only title/subject (BAD_REQUEST), nothing persists', async () => {
+    await register(da!, { handle: 'operator', currentFocus: 'leading' });
+    const project = await announceProject(da!, 'operator', {
+      title: 'Trim Project',
+      description: 'desc',
+    });
+    const before = await da!.maxSeq();
+    const r1 = await dispatchRequest(da!, {
+      id: 'g4',
+      op: 'announceProject',
+      args: { actor: 'operator', title: '   ', description: 'desc' },
+    });
+    expect(r1.ok).toBe(false);
+    expect(r1.error?.code).toBe('BAD_REQUEST');
+    const r2 = await dispatchRequest(da!, {
+      id: 'g5',
+      op: 'postAnnouncement',
+      args: {
+        actor: 'operator',
+        projectId: project.projectId,
+        subject: '  ',
+        body: 'b',
+      },
+    });
+    expect(r2.ok).toBe(false);
+    expect(r2.error?.code).toBe('BAD_REQUEST');
+    expect(await da!.maxSeq()).toBe(before);
+  });
+});
+
+describe('bridge dispatch — INITIATE seams (QA value-add: whoami / idempotency / positive-trim)', () => {
+  // QA value-add (Story 10.7 candidates a/b + whoami coverage). The dev's INITIATE block proves
+  // each write LANDS, the NO_OPERATOR gate-order, the whitespace-only rejections, and the
+  // OPERATOR_NOT_REGISTERED backstop. These seams are the ones NO existing test exercises:
+  //   - the brand-new `whoami` host-read (the FocusAffordance gate driver) in all three shapes;
+  //   - `joinBoard` IDEMPOTENCY (a re-join is a no-op, no second membership event — Rule 13 grant);
+  //   - `updateFocus` POSITIVE trim (a valid focus with surrounding whitespace persists TRIMMED —
+  //     the dev only covered whitespace-ONLY rejection; candidate (b) names the positive case).
+
+  it('whoami for a watching-only call (no actor) → { handle:null, focus:null, registered:false }', async () => {
+    const res = await dispatchRequest(da!, { id: 'wa1', op: 'whoami' });
+    expect(res.ok).toBe(true);
+    expect(res.result).toMatchObject({
+      handle: null,
+      focus: null,
+      registered: false,
+    });
+  });
+
+  it('whoami for a REGISTERED operator returns their handle + current focus + registered:true', async () => {
+    await register(da!, { handle: 'operator', currentFocus: 'leading' });
+    const res = await dispatchRequest(da!, {
+      id: 'wa2',
+      op: 'whoami',
+      args: { actor: 'operator' },
+    });
+    expect(res.ok).toBe(true);
+    expect(res.result).toMatchObject({
+      handle: 'operator',
+      focus: 'leading',
+      registered: true,
+    });
+  });
+
+  it('whoami reflects a LIVE updateFocus (the gate driver re-reads the latest focus)', async () => {
+    await register(da!, { handle: 'operator', currentFocus: 'before' });
+    await dispatchRequest(da!, {
+      id: 'wa3a',
+      op: 'updateFocus',
+      args: { actor: 'operator', focus: 'after' },
+    });
+    const res = await dispatchRequest(da!, {
+      id: 'wa3b',
+      op: 'whoami',
+      args: { actor: 'operator' },
+    });
+    expect((res.result as { focus: string | null }).focus).toBe('after');
+  });
+
+  it('whoami for an UNREGISTERED but configured handle → registered:false (the disabled-gate driver)', async () => {
+    const res = await dispatchRequest(da!, {
+      id: 'wa4',
+      op: 'whoami',
+      args: { actor: 'ghost' },
+    });
+    expect(res.ok).toBe(true);
+    expect(res.result).toMatchObject({
+      handle: 'ghost',
+      focus: null,
+      registered: false,
+    });
+  });
+
+  it('joinBoard is IDEMPOTENT — a re-join succeeds and appends NO second membership event', async () => {
+    await register(da!, { handle: 'alice', currentFocus: 'owning' });
+    await register(da!, { handle: 'operator', currentFocus: 'joining' });
+    const project = await announceProject(da!, 'alice', {
+      title: 'Re-join Project',
+      description: 'idempotent join target',
+    });
+    // First join lands a membership event.
+    const first = await dispatchRequest(da!, {
+      id: 'idem1',
+      op: 'joinBoard',
+      args: { actor: 'operator', projectId: project.projectId },
+    });
+    expect(first.ok).toBe(true);
+    const afterFirst = await da!.maxSeq();
+
+    // Second join (same operator, same board) is a no-op: it still succeeds, but the ledger does
+    // NOT advance (core's joinBoard dedups — the bridge maps to the SAME op, no second membership).
+    const second = await dispatchRequest(da!, {
+      id: 'idem2',
+      op: 'joinBoard',
+      args: { actor: 'operator', projectId: project.projectId },
+    });
+    expect(second.ok).toBe(true);
+    expect(await da!.maxSeq()).toBe(afterFirst);
+    // And the operator appears EXACTLY once in the directory (not duplicated).
+    const members = await dispatchRequest(da!, {
+      id: 'idem3',
+      op: 'boardDirectory',
+      args: { projectId: project.projectId },
+    });
+    const operatorRows = (
+      members.result as { members: Array<{ handle: string }> }
+    ).members.filter((m) => m.handle === 'operator');
+    expect(operatorRows.length).toBe(1);
+  });
+
+  it('updateFocus TRIMS a valid focus (leading/trailing whitespace stripped before it persists)', async () => {
+    await register(da!, { handle: 'operator', currentFocus: 'before' });
+    const res = await dispatchRequest(da!, {
+      id: 'trim1',
+      op: 'updateFocus',
+      args: { actor: 'operator', focus: '   reviewing the bridge   ' },
+    });
+    expect(res.ok).toBe(true);
+    // The RETURNED focus is trimmed.
+    expect(res.result).toMatchObject({
+      handle: 'operator',
+      focus: 'reviewing the bridge',
+    });
+    // OUT-OF-BAND: the PERSISTED focus is the trimmed value (no surrounding whitespace in the ledger).
+    const me = await dispatchRequest(da!, {
+      id: 'trim2',
+      op: 'whoami',
+      args: { actor: 'operator' },
+    });
+    expect((me.result as { focus: string | null }).focus).toBe(
+      'reviewing the bridge',
+    );
+  });
+
+  it('announceProject TRIMS a valid title/description (surrounding whitespace stripped, project lands)', async () => {
+    await register(da!, { handle: 'operator', currentFocus: 'leading' });
+    const res = await dispatchRequest(da!, {
+      id: 'trim3',
+      op: 'announceProject',
+      args: {
+        actor: 'operator',
+        title: '  Trimmed Title  ',
+        description: '  a real description  ',
+      },
+    });
+    expect(res.ok).toBe(true);
+    expect((res.result as { project: { title: string } }).project.title).toBe(
+      'Trimmed Title',
+    );
+  });
+});
+
 describe('createBridge — request round-trip + MAX(seq) delta poll + dispose', () => {
   it('round-trips a request over the channel and pushes a delta when a new event lands', async () => {
     await seedBoard(da!);

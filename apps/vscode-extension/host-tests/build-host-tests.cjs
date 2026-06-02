@@ -35,6 +35,10 @@ const ENTRY_POINTS = [
   // reply-to-activate over the panel bridge). Imports the RoomPanelManager (which imports `vscode`
   // — externalized below) + core/data-access.
   'room-panel.in-host.ts',
+  // Story 10.7 — the compose-panel probe (the 4 INITIATE writes land + a posted announcement is a
+  // navigable proto-room + native single-panel exclusivity). Imports the ComposePanelManager
+  // (which imports `vscode` — externalized) + buildTreeModel + core/data-access.
+  'compose-panel.in-host.ts',
 ];
 
 async function main() {

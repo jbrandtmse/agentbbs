@@ -133,6 +133,94 @@ export function buildRoomWebviewHtml(options: WebviewHtmlOptions): string {
 </html>`;
 }
 
+/** The pieces the host resolves for a COMPOSE webview shell (Story 10.7). */
+export interface ComposeWebviewHtmlOptions {
+  /** The `webview.cspSource` — the allowed origin for the webview's own assets. */
+  cspSource: string;
+  /** A fresh per-load nonce gating the script + style tags. */
+  nonce: string;
+  /** The `asWebviewUri` of the built COMPOSE bundle (dist/webview/compose.js). */
+  scriptUri: string;
+  /** The `asWebviewUri`s of the stylesheets to link, IN ORDER (vscode-tokens.css must be LAST). */
+  styleUris: string[];
+  /**
+   * Which of the 4 INITIATE compose surfaces to mount (`create-project` / `post-announcement` /
+   * `join-project` / `focus`). Rides in on the mount root's `data-compose-kind` attribute (no
+   * inline script — keeps the strict nonce CSP clean), exactly as the room shell passes the room id.
+   */
+  composeKind: string;
+  /**
+   * The resolved operator handle, or `''` (watching-only). HOST-SURFACE/display-only (Rule 13 —
+   * core/MCP untouched) — it is the INITIATE actor + drives the watching-only gate the compose
+   * surface renders. Passed via a data attribute (no inline script).
+   */
+  operatorHandle: string;
+  /**
+   * The PROJECT-SCOPE for a project-scoped compose surface (`post-announcement` targets THIS
+   * project). `''` for the unscoped surfaces (create-project / join-project / focus). Passed via a
+   * data attribute.
+   */
+  projectId?: string;
+  /** The INITIAL webview theme-kind token (see {@link WebviewHtmlOptions.themeKind}). */
+  themeKind?: string;
+}
+
+/**
+ * Build the COMPOSE webview HTML with the SAME strict Story-10.5 CSP as the room shell (every
+ * directive pinned to the minimum; no wildcard beyond `webview.cspSource`, no `data:`, NO
+ * `unsafe-inline`/`unsafe-eval`). The only deltas from {@link buildRoomWebviewHtml} are the bundle
+ * it references (the compose bundle) and the mount-root data attributes (`data-compose-kind` +
+ * an optional `data-project-id` instead of `data-room-id`). The strict CSP is identical — the
+ * compose components are pure React + the SAME ui-shared CSS, no inline script/style/eval/network.
+ *
+ * @param options The resolved URIs + cspSource + nonce + the compose kind/scope/handle/theme.
+ */
+export function buildComposeWebviewHtml(
+  options: ComposeWebviewHtmlOptions,
+): string {
+  const {
+    cspSource,
+    nonce,
+    scriptUri,
+    styleUris,
+    composeKind,
+    operatorHandle,
+    projectId = '',
+    themeKind = 'dark',
+  } = options;
+
+  const csp = [
+    `default-src 'none'`,
+    `img-src ${cspSource}`,
+    `font-src ${cspSource}`,
+    `style-src ${cspSource} 'nonce-${nonce}'`,
+    `script-src 'nonce-${nonce}'`,
+    `connect-src 'none'`,
+  ].join('; ');
+
+  const styleLinks = styleUris
+    .map(
+      (href) =>
+        `<link rel="stylesheet" nonce="${nonce}" href="${escapeAttr(href)}" />`,
+    )
+    .join('\n    ');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="${escapeAttr(csp)}" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    ${styleLinks}
+    <title>AgentBBS compose</title>
+  </head>
+  <body>
+    <div id="root" data-compose-kind="${escapeAttr(composeKind)}" data-project-id="${escapeAttr(projectId)}" data-operator-handle="${escapeAttr(operatorHandle)}" data-theme-kind="${escapeAttr(themeKind)}"></div>
+    <script type="module" nonce="${nonce}" src="${escapeAttr(scriptUri)}"></script>
+  </body>
+</html>`;
+}
+
 /** Minimal attribute-value escaping for the URIs/CSP/room id placed into the HTML attributes. */
 function escapeAttr(value: string): string {
   return value

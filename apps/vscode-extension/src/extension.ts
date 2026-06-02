@@ -15,6 +15,7 @@
 
 import * as vscode from 'vscode';
 
+import { ComposePanelManager } from './compose-panel.js';
 import { openLedger } from './db.js';
 import { RoomPanelManager, ROOM_PANEL_VIEW_TYPE } from './room-panel.js';
 import { createRoomPanelSerializer } from './serializer.js';
@@ -23,11 +24,15 @@ import {
   BOARD_TREE_VIEW_ID,
   OPEN_ROOM_COMMAND,
   JOIN_PROJECT_COMMAND,
+  CREATE_PROJECT_COMMAND,
+  POST_ANNOUNCEMENT_COMMAND,
+  SET_FOCUS_COMMAND,
 } from './tree/BoardTreeProvider.js';
 import { BoardDecorationProvider } from './tree/decorations.js';
 import { resolveOperatorHandle } from './tree/operator-handle.js';
 import { webviewThemeKind } from './webview/theme-kind.js';
 
+import type { BoardTreeNode } from './tree/BoardTreeProvider.js';
 import type { PanelLike } from './room-panel.js';
 import type { OpenedLedger } from './db.js';
 
@@ -47,6 +52,8 @@ let ledger: OpenedLedger | undefined;
 let treeProvider: BoardTreeProvider | undefined;
 /** The room WebviewPanel manager (Story 10.4) — held so deactivate can dispose the bridges. */
 let roomPanels: RoomPanelManager | undefined;
+/** The compose WebviewPanel manager (Story 10.7) — held so deactivate can dispose the bridge. */
+let composePanels: ComposePanelManager | undefined;
 /** The refresh poll timer (held so deactivate can clear it). */
 let refreshTimer: NodeJS.Timeout | undefined;
 
@@ -171,6 +178,55 @@ function registerBoardTree(
   roomPanels = manager;
   context.subscriptions.push({ dispose: () => manager.dispose() });
 
+  // Story 10.7 — the operator INITIATE compose surfaces as a SINGLE reused WebviewPanel (native
+  // panel-exclusivity: one initiate surface at a time, reveal+swap; distinct from rooms-as-tabs).
+  // Each surface mounts the byte-shared ui-shared compose component (the compose bundle) fed by a
+  // per-panel bridge → the SAME core ops an agent uses (Rule 13). On a successful write the manager
+  // refreshes the tree so a posted announcement appears as a NAVIGABLE proto-room (the AC3
+  // initiate→respond loop).
+  const composeScriptRef = vscode.Uri.joinPath(
+    distRoot,
+    'webview',
+    'compose.js',
+  );
+  const composeCssRef = vscode.Uri.joinPath(distRoot, 'webview', 'compose.css');
+  const composeManager = new ComposePanelManager({
+    dataAccess: openedLedger.dataAccess,
+    assetUris: { script: composeScriptRef, styles: [composeCssRef] },
+    iconPath: new vscode.ThemeIcon('edit'),
+    resolveOperatorHandle: () => readOperatorHandle(),
+    resolveThemeKind: () =>
+      webviewThemeKind(vscode.window.activeColorTheme.kind),
+    onSuccess: () => {
+      // The initiate→respond loop (Rule 15): re-read the model so a created project / posted
+      // announcement (a navigable proto-room) appears live in the tree the operator can then open.
+      void refreshBoard(provider, decorations);
+    },
+    createPanel: (title): PanelLike => {
+      const panel = vscode.window.createWebviewPanel(
+        'agentbbs.compose',
+        title,
+        vscode.ViewColumn.Active,
+        {
+          enableScripts: true,
+          retainContextWhenHidden: true,
+          localResourceRoots: [distRoot],
+        },
+      );
+      return panel as unknown as PanelLike;
+    },
+  });
+  composePanels = composeManager;
+  context.subscriptions.push({ dispose: () => composeManager.dispose() });
+
+  // Live re-theme the open compose panel too (alongside the room panels), so the HC overrides flip
+  // without a reload (host→its-own-webview only; NFR5 preserved).
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveColorTheme((theme) => {
+      composeManager.postThemeKind(webviewThemeKind(theme.kind));
+    }),
+  );
+
   // Story 10.6 (AC2) — re-theme OPEN room panels LIVE when the operator switches color theme
   // (light↔dark↔high-contrast). VS Code re-injects its `--vscode-*` variables automatically, but the
   // HIGH-CONTRAST overrides in vscode-tokens.css key off the `data-theme-kind` attribute the webview
@@ -194,15 +250,36 @@ function registerBoardTree(
   );
 
   // The open-room command (Story 10.4) — open the room as a WebviewPanel (reveal-not-duplicate).
+  // The Story-10.7 INITIATE commands open the single reused compose panel (reveal+swap per kind):
+  //   - JOIN_PROJECT fills the tree's `＋ join a project…` seam (the picker computes joinable
+  //     host-side via the bridge reads, then joinBoard on choose).
+  //   - POST_ANNOUNCEMENT is project-scoped: fired from the `announcements (N)` indicator inline
+  //     action, it receives that node so the post targets THAT project (operator↔agent parity — an
+  //     agent can post into a room-less board it belongs to, so the operator must be able to too).
   context.subscriptions.push(
     vscode.commands.registerCommand(OPEN_ROOM_COMMAND, (roomId: string) => {
       manager.openRoom(roomId);
     }),
     vscode.commands.registerCommand(JOIN_PROJECT_COMMAND, () => {
-      void vscode.window.showInformationMessage(
-        'AgentBBS: join a project — the project-join flow lands in a later story.',
-      );
+      composeManager.open('join-project');
     }),
+    vscode.commands.registerCommand(CREATE_PROJECT_COMMAND, () => {
+      composeManager.open('create-project');
+    }),
+    vscode.commands.registerCommand(SET_FOCUS_COMMAND, () => {
+      composeManager.open('focus');
+    }),
+    vscode.commands.registerCommand(
+      POST_ANNOUNCEMENT_COMMAND,
+      (node?: BoardTreeNode) => {
+        // The inline action passes the announcements-indicator node (project-scoped). A
+        // command-palette invocation (no node) opens unscoped — the surface gates on a missing
+        // project at submit (the operator picks via the indicator action in practice).
+        const projectId =
+          node !== undefined && 'projectId' in node ? node.projectId : null;
+        composeManager.open('post-announcement', projectId);
+      },
+    ),
     vscode.commands.registerCommand(REFRESH_COMMAND, () => {
       void refreshBoard(provider, decorations);
     }),
@@ -241,6 +318,10 @@ export function deactivate(): void {
   if (roomPanels !== undefined) {
     roomPanels.dispose();
     roomPanels = undefined;
+  }
+  if (composePanels !== undefined) {
+    composePanels.dispose();
+    composePanels = undefined;
   }
   if (treeProvider !== undefined) {
     treeProvider.dispose();

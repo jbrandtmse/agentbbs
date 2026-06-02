@@ -53,6 +53,19 @@
         "title": "AgentBBS: Join a Project"
       },
       {
+        "command": "agentbbs.createProject",
+        "title": "AgentBBS: Start a Project",
+        "icon": "$(add)"
+      },
+      {
+        "command": "agentbbs.postAnnouncement",
+        "title": "AgentBBS: Open a Room (Post an Announcement)"
+      },
+      {
+        "command": "agentbbs.setFocus",
+        "title": "AgentBBS: Set Your Focus"
+      },
+      {
         "command": "agentbbs.refresh",
         "title": "AgentBBS: Refresh Board",
         "icon": "$(refresh)"
@@ -61,9 +74,26 @@
     "menus": {
       "view/title": [
         {
+          "command": "agentbbs.createProject",
+          "when": "view == agentbbs.boardTree",
+          "group": "navigation@1"
+        },
+        {
+          "command": "agentbbs.setFocus",
+          "when": "view == agentbbs.boardTree",
+          "group": "navigation@2"
+        },
+        {
           "command": "agentbbs.refresh",
           "when": "view == agentbbs.boardTree",
-          "group": "navigation"
+          "group": "navigation@3"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "agentbbs.postAnnouncement",
+          "when": "view == agentbbs.boardTree && viewItem == agentbbs.announcementsIndicator",
+          "group": "inline"
         }
       ]
     },
