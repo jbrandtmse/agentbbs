@@ -162,7 +162,9 @@ async function main() {
         throw new Error('node:sqlite did NOT resolve in the Electron host.');
       }
       if (!r.memoryOpenOk || typeof r.sqliteVersion !== 'string') {
-        throw new Error('node:sqlite resolved but could not open :memory: / query.');
+        throw new Error(
+          'node:sqlite resolved but could not open :memory: / query.',
+        );
       }
     },
   );
@@ -170,10 +172,16 @@ async function main() {
   // AC1 / AC3 (Task 3): the host opens the REAL ledger via the data-access node:sqlite
   // adapter and reads back seeded state. This module is bundled (it imports
   // @agentbbs/data-access) — see host-tests/build-host-tests.cjs.
-  const ledgerProbePath = path.join(__dirname, 'dist', 'open-ledger.in-host.cjs');
+  const ledgerProbePath = path.join(
+    __dirname,
+    'dist',
+    'open-ledger.in-host.cjs',
+  );
   if (fs.existsSync(ledgerProbePath)) {
     // Isolated temp ledger so the in-host probe never touches a real `.agentbbs/` board.
-    const ledgerDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentbbs-host-ledger-'));
+    const ledgerDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'agentbbs-host-ledger-'),
+    );
     const ledgerDb = path.join(ledgerDir, '.agentbbs', 'agentbbs.db');
     await runInHost(
       ledgerProbePath,
@@ -188,7 +196,9 @@ async function main() {
           throw new Error('host read did not return a projects array.');
         }
         if (r.seededProjectFound !== true) {
-          throw new Error('host read did not find the seeded project in the ledger.');
+          throw new Error(
+            'host read did not find the seeded project in the ledger.',
+          );
         }
       },
       { AGENTBBS_DB: ledgerDb },
@@ -196,6 +206,56 @@ async function main() {
   } else {
     console.log(
       '\n[AC1 host-opens-ledger] SKIPPED — bundle not built. Run ' +
+        '`node host-tests/build-host-tests.cjs` first (the test:host script does this).',
+    );
+  }
+
+  // Story 10.3 (AC1/AC2/AC3): the native tree MODEL — built host-side via data-access + core
+  // ops DIRECTLY — produces the correct node tree against a seeded ledger in the real host,
+  // INCLUDING a NAVIGABLE proto-room row (Rule 15) + the NEEDS-YOU decoration source state.
+  const treeProbePath = path.join(__dirname, 'dist', 'tree-model.in-host.cjs');
+  if (fs.existsSync(treeProbePath)) {
+    const treeDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'agentbbs-host-tree-'),
+    );
+    const treeDb = path.join(treeDir, '.agentbbs', 'agentbbs.db');
+    await runInHost(
+      treeProbePath,
+      'AC2 tree-proto-room-navigable',
+      (r) => {
+        if (!r.opened || !r.projectFound) {
+          throw new Error(
+            `host did not build the tree model: opened=${r.opened} projectFound=${r.projectFound} ${r.error || ''}`,
+          );
+        }
+        if (!r.activeRoomIsRow || r.activeRoomNotPending !== true) {
+          throw new Error(
+            'the active room is not a non-pending row in the host tree.',
+          );
+        }
+        // RULE 15 — the load-bearing real-host assertion: the proto-room is a NAVIGABLE ROW.
+        if (r.protoRoomIsNavigableRow !== true || r.protoRoomPending !== true) {
+          throw new Error(
+            'the proto-room is NOT a navigable pending row in the host tree (Rule-15 regression).',
+          );
+        }
+        if (r.activeBeforePending !== true) {
+          throw new Error(
+            'active rooms do not render before pending proto-rooms.',
+          );
+        }
+        // AC3 decoration source: the escalated room is NEEDS-YOU flagged + bucketed.
+        if (r.needsYouFlagged !== true || r.needsYouBucketHasRoom !== true) {
+          throw new Error(
+            'the NEEDS-YOU escalation state is wrong in the host tree.',
+          );
+        }
+      },
+      { AGENTBBS_DB: treeDb },
+    );
+  } else {
+    console.log(
+      '\n[AC2 tree-proto-room-navigable] SKIPPED — bundle not built. Run ' +
         '`node host-tests/build-host-tests.cjs` first (the test:host script does this).',
     );
   }

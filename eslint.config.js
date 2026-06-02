@@ -152,9 +152,17 @@ export default tseslint.config(
     },
     rules: {
       // Naming: source files kebab-case (.ts) — .tsx handled in override below.
+      // `BoardTreeProvider.ts` is the architecture.md-committed name for the native VS Code
+      // `TreeDataProvider` class module (architecture.md l.558–560; Story 10.3) — a
+      // class-per-file convention like a React component, so it is ignored by the kebab rule
+      // (mirrors how `.config.js` / `main.tsx` are ignored). The vscode-free logic
+      // (tree-model / decoration-model / room-uri / operator-handle) stays kebab-case.
       'unicorn/filename-case': [
         'error',
-        { case: 'kebabCase', ignore: [/\.config\.js$/u] },
+        {
+          case: 'kebabCase',
+          ignore: [/\.config\.js$/u, /^BoardTreeProvider\.ts$/u],
+        },
       ],
       // No default exports (barrels re-export named; React .tsx overridden below).
       'import-x/no-default-export': 'error',

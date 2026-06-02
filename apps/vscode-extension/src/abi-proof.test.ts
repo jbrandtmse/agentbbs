@@ -29,17 +29,63 @@ import { describe, expect, it, vi } from 'vitest';
 // an installed npm package — mock it so `activate()` is loadable/exercisable in the
 // node test env. The mock records the registered command for the activation assertion.
 const registeredCommands: string[] = [];
-vi.mock('vscode', () => ({
-  commands: {
-    registerCommand: (id: string) => {
-      registeredCommands.push(id);
-      return { dispose: () => {} };
+vi.mock('vscode', () => {
+  // Story 10.3 added the native tree to activate() (a TreeView + FileDecorationProvider +
+  // configuration read + extra commands), so the mock stubs those surfaces minimally so
+  // `activate()` is exercisable in the node test env. The REAL tree behavior is proven by the
+  // vscode-free unit tests + the @vscode/test-electron host harness (Rule 12).
+  class EventEmitter {
+    fire(): void {}
+    get event() {
+      return () => ({ dispose: () => {} });
+    }
+    dispose(): void {}
+  }
+  class TreeItem {
+    constructor(
+      public label: string,
+      public collapsibleState?: number,
+    ) {}
+  }
+  class ThemeIcon {
+    constructor(public id: string) {}
+  }
+  class ThemeColor {
+    constructor(public id: string) {}
+  }
+  class FileDecoration {
+    constructor(
+      public badge?: string,
+      public tooltip?: string,
+      public color?: unknown,
+    ) {}
+  }
+  return {
+    commands: {
+      registerCommand: (id: string) => {
+        registeredCommands.push(id);
+        return { dispose: () => {} };
+      },
     },
-  },
-  window: {
-    showInformationMessage: () => Promise.resolve(undefined),
-  },
-}));
+    window: {
+      showInformationMessage: () => Promise.resolve(undefined),
+      createTreeView: () => ({ dispose: () => {} }),
+      registerFileDecorationProvider: () => ({ dispose: () => {} }),
+    },
+    workspace: {
+      getConfiguration: () => ({ get: () => undefined }),
+    },
+    Uri: {
+      parse: (s: string) => ({ toString: () => s, scheme: s.split(':')[0] }),
+    },
+    EventEmitter,
+    TreeItem,
+    ThemeIcon,
+    ThemeColor,
+    FileDecoration,
+    TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
+  };
+});
 
 describe('AC2/AC3 — node:sqlite fallback loads in a real process', () => {
   it('require("node:sqlite") resolves, opens :memory:, and returns a sqlite_version() string', async () => {
@@ -131,7 +177,10 @@ describe('AC1 — extension activates without throwing', () => {
 
       expect(() => activate(fakeContext)).not.toThrow();
       expect(registeredCommands).toContain('agentbbs.helloAbiProof');
-      expect(subscriptions.length).toBe(1);
+      // Story 10.3 added the native tree, so activate() now registers several disposables
+      // (the hello command + the TreeView/FileDecorationProvider/board commands); assert at
+      // least the proof command's disposable landed rather than a brittle exact count.
+      expect(subscriptions.length).toBeGreaterThanOrEqual(1);
       expect(ACTIVATION_LOG).toContain('agentbbs');
 
       // deactivate closes the ledger handle opened above — must not throw.

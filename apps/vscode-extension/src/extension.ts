@@ -16,14 +16,33 @@
 import * as vscode from 'vscode';
 
 import { openLedger } from './db.js';
+import {
+  BoardTreeProvider,
+  BOARD_TREE_VIEW_ID,
+  OPEN_ROOM_COMMAND,
+  JOIN_PROJECT_COMMAND,
+} from './tree/BoardTreeProvider.js';
+import { BoardDecorationProvider } from './tree/decorations.js';
+import { resolveOperatorHandle } from './tree/operator-handle.js';
 
 import type { OpenedLedger } from './db.js';
 
 /** Activation log marker — asserted by the host smoke / surfaced in the host log. */
 export const ACTIVATION_LOG = '[agentbbs] extension activated';
 
+/** Command id: re-read the board model + refresh the tree/decorations. */
+export const REFRESH_COMMAND = 'agentbbs.refresh';
+
+/** The default refresh poll interval (ms) — re-reads the model so live escalations/unread show. */
+export const DEFAULT_REFRESH_INTERVAL_MS = 2000;
+
 /** The host's single opened ledger handle, held for the lifetime of the activation. */
 let ledger: OpenedLedger | undefined;
+
+/** The board tree provider (held so deactivate can dispose it). */
+let treeProvider: BoardTreeProvider | undefined;
+/** The refresh poll timer (held so deactivate can clear it). */
+let refreshTimer: NodeJS.Timeout | undefined;
 
 /**
  * Extension activation entry point. Invoked by the VS Code extension host on the first
@@ -58,8 +77,96 @@ export function activate(context: vscode.ExtensionContext): void {
       );
     },
   );
-
   context.subscriptions.push(disposable);
+
+  // The native board tree (Story 10.3) — only wired when the ledger opened. The tree reads via
+  // the data-access handle + core ops DIRECTLY (host-side; the bridge is for the room webviews).
+  if (ledger !== undefined) {
+    registerBoardTree(context, ledger);
+  }
+}
+
+/**
+ * Resolve the operator handle from the `agentbbs.operatorHandle` setting (then `AGENTBBS_OPERATOR`
+ * env), canonicalized to the ledger form so the NEEDS YOU `add_participant` match lands. `null`
+ * → watching-only (empty NEEDS YOU; global read still works).
+ */
+function readOperatorHandle(): string | null {
+  const setting = vscode.workspace
+    .getConfiguration('agentbbs')
+    .get<string>('operatorHandle');
+  return resolveOperatorHandle(setting);
+}
+
+/**
+ * Register the native TreeView + FileDecorationProvider + the open-room/join/refresh commands,
+ * and start a light refresh poll. The open-room command is a thin SEAM (Story 10.4 fills it
+ * with the room WebviewPanel); the rows already carry it + are selectable, so proto-room
+ * navigability is structurally present now (Rule 15).
+ */
+function registerBoardTree(
+  context: vscode.ExtensionContext,
+  openedLedger: OpenedLedger,
+): void {
+  const provider = new BoardTreeProvider(
+    openedLedger.dataAccess,
+    readOperatorHandle(),
+  );
+  treeProvider = provider;
+
+  const decorations = new BoardDecorationProvider(provider);
+
+  const treeView = vscode.window.createTreeView(BOARD_TREE_VIEW_ID, {
+    treeDataProvider: provider,
+    showCollapseAll: true,
+  });
+
+  context.subscriptions.push(
+    treeView,
+    provider,
+    decorations,
+    vscode.window.registerFileDecorationProvider(decorations),
+  );
+
+  // The open-room SEAM — Story 10.4 replaces this body with the room WebviewPanel. Registered
+  // now so every row's `command` resolves (the row is navigable now, not a dead no-op).
+  context.subscriptions.push(
+    vscode.commands.registerCommand(OPEN_ROOM_COMMAND, (roomId: string) => {
+      console.log(
+        `[agentbbs] openRoom (seam — Story 10.4 fills this): ${roomId}`,
+      );
+      void vscode.window.showInformationMessage(
+        `AgentBBS: open room "${roomId}" — the room view lands in Story 10.4.`,
+      );
+    }),
+    vscode.commands.registerCommand(JOIN_PROJECT_COMMAND, () => {
+      void vscode.window.showInformationMessage(
+        'AgentBBS: join a project — the project-join flow lands in a later story.',
+      );
+    }),
+    vscode.commands.registerCommand(REFRESH_COMMAND, () => {
+      void refreshBoard(provider, decorations);
+    }),
+  );
+
+  // Initial load + a light poll so live escalations / unread surface (the rich live-fold UX is
+  // Story 10.6; refresh-on-demand + a poll is enough here). The interval is unref'd so it never
+  // keeps the host alive on its own.
+  void refreshBoard(provider, decorations);
+  refreshTimer = setInterval(() => {
+    void refreshBoard(provider, decorations);
+  }, DEFAULT_REFRESH_INTERVAL_MS);
+  refreshTimer.unref?.();
+}
+
+/** Re-read the model (re-resolving the operator handle) + signal both providers. */
+async function refreshBoard(
+  provider: BoardTreeProvider,
+  decorations: BoardDecorationProvider,
+): Promise<void> {
+  provider.setOperatorHandle(readOperatorHandle());
+  await provider.refresh();
+  decorations.refresh();
 }
 
 /**
@@ -68,6 +175,14 @@ export function activate(context: vscode.ExtensionContext): void {
  * context.subscriptions and torn down by the host.
  */
 export function deactivate(): void {
+  if (refreshTimer !== undefined) {
+    clearInterval(refreshTimer);
+    refreshTimer = undefined;
+  }
+  if (treeProvider !== undefined) {
+    treeProvider.dispose();
+    treeProvider = undefined;
+  }
   if (ledger !== undefined) {
     try {
       ledger.dataAccess.close();

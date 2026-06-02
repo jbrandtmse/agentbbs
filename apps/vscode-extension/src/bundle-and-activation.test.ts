@@ -30,19 +30,65 @@ import esbuild from 'esbuild';
 import { describe, expect, it, vi } from 'vitest';
 
 // Mirror abi-proof.test.ts's vscode mock so importing ./extension.js is loadable in
-// the node test env (vscode is host-provided, not an installed npm package).
+// the node test env (vscode is host-provided, not an installed npm package). Story 10.3
+// added the native tree: activate() now also reads configuration and registers a TreeView +
+// a FileDecorationProvider + the open-room/join/refresh commands, so the mock stubs those
+// surfaces too (a minimal in-memory double — the REAL tree behavior is proven by the
+// vscode-free unit tests + the @vscode/test-electron host harness, Rule 12).
 const registeredCommands: string[] = [];
-vi.mock('vscode', () => ({
-  commands: {
-    registerCommand: (id: string) => {
-      registeredCommands.push(id);
-      return { dispose: () => {} };
+vi.mock('vscode', () => {
+  class EventEmitter {
+    fire(): void {}
+    get event() {
+      return () => ({ dispose: () => {} });
+    }
+    dispose(): void {}
+  }
+  class TreeItem {
+    constructor(
+      public label: string,
+      public collapsibleState?: number,
+    ) {}
+  }
+  class ThemeIcon {
+    constructor(public id: string) {}
+  }
+  class ThemeColor {
+    constructor(public id: string) {}
+  }
+  class FileDecoration {
+    constructor(
+      public badge?: string,
+      public tooltip?: string,
+      public color?: unknown,
+    ) {}
+  }
+  return {
+    commands: {
+      registerCommand: (id: string) => {
+        registeredCommands.push(id);
+        return { dispose: () => {} };
+      },
     },
-  },
-  window: {
-    showInformationMessage: () => Promise.resolve(undefined),
-  },
-}));
+    window: {
+      showInformationMessage: () => Promise.resolve(undefined),
+      createTreeView: () => ({ dispose: () => {} }),
+      registerFileDecorationProvider: () => ({ dispose: () => {} }),
+    },
+    workspace: {
+      getConfiguration: () => ({ get: () => undefined }),
+    },
+    Uri: {
+      parse: (s: string) => ({ toString: () => s, scheme: s.split(':')[0] }),
+    },
+    EventEmitter,
+    TreeItem,
+    ThemeIcon,
+    ThemeColor,
+    FileDecoration,
+    TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
+  };
+});
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const pkgDir = path.resolve(here, '..');
@@ -131,15 +177,23 @@ describe('AC1 — activate() registers a real disposable cleanup contract', () =
         typeof activate
       >[0];
 
+      registeredCommands.length = 0;
       activate(fakeContext);
 
-      // The activation-cleanup contract: a single registered disposable, and it is a
-      // REAL disposable (callable .dispose) the host will tear down — not just a count.
-      expect(subscriptions).toHaveLength(1);
-      const [disposable] = subscriptions;
-      expect(typeof disposable.dispose).toBe('function');
-      expect(() => disposable.dispose()).not.toThrow();
-      expect(registeredCommands).toEqual(['agentbbs.helloAbiProof']);
+      // The activation-cleanup contract: every registered subscription is a REAL disposable
+      // (callable .dispose) the host will tear down — not just a count. Story 10.3 adds the
+      // native tree (the TreeView + FileDecorationProvider + open-room/join/refresh commands),
+      // so activate() now registers several disposables (the hello command + the tree surface);
+      // we assert they are ALL callable, not a brittle exact count.
+      expect(subscriptions.length).toBeGreaterThanOrEqual(1);
+      for (const disposable of subscriptions) {
+        expect(typeof disposable.dispose).toBe('function');
+        expect(() => disposable.dispose()).not.toThrow();
+      }
+      // The hello-ABI command still registers; the Story-10.3 board commands join it.
+      expect(registeredCommands).toContain('agentbbs.helloAbiProof');
+      expect(registeredCommands).toContain('agentbbs.openRoom');
+      expect(registeredCommands).toContain('agentbbs.refresh');
 
       expect(() => deactivate()).not.toThrow();
     } finally {

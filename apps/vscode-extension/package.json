@@ -16,12 +16,84 @@
   "files": [
     "dist"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onView:agentbbs.boardTree"
+  ],
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "agentbbs",
+          "title": "AgentBBS",
+          "icon": "$(comment-discussion)"
+        }
+      ]
+    },
+    "views": {
+      "agentbbs": [
+        {
+          "id": "agentbbs.boardTree",
+          "name": "Board",
+          "contextualTitle": "AgentBBS"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "agentbbs.helloAbiProof",
         "title": "AgentBBS: Hello (ABI Proof)"
+      },
+      {
+        "command": "agentbbs.openRoom",
+        "title": "AgentBBS: Open Room"
+      },
+      {
+        "command": "agentbbs.joinProject",
+        "title": "AgentBBS: Join a Project"
+      },
+      {
+        "command": "agentbbs.refresh",
+        "title": "AgentBBS: Refresh Board",
+        "icon": "$(refresh)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "agentbbs.refresh",
+          "when": "view == agentbbs.boardTree",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "AgentBBS",
+      "properties": {
+        "agentbbs.operatorHandle": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "The handle to view the board AS (personalizes the **NEEDS YOU** escalation queue). A claimed handle, not a registered type. Falls back to the `AGENTBBS_OPERATOR` environment variable; empty = watching-only (global read still works)."
+        }
+      }
+    },
+    "colors": [
+      {
+        "id": "agentbbs.needsYouForeground",
+        "description": "Foreground tint for a room that needs the operator (a Mode-B escalation).",
+        "defaults": {
+          "dark": "charts.orange",
+          "light": "charts.orange",
+          "highContrast": "charts.orange"
+        }
+      },
+      {
+        "id": "agentbbs.unreadForeground",
+        "description": "Foreground tint for a room with unread activity.",
+        "defaults": {
+          "dark": "charts.blue",
+          "light": "charts.blue",
+          "highContrast": "charts.blue"
+        }
       }
     ]
   },

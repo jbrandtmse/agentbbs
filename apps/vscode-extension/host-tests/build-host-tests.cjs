@@ -26,19 +26,31 @@ const esbuild = require('esbuild');
 
 const HERE = __dirname;
 
+const ENTRY_POINTS = [
+  // Story 10.2 — the host-opens-ledger probe.
+  'open-ledger.in-host.ts',
+  // Story 10.3 — the native tree-model probe (proto-room navigable row + decoration source).
+  'tree-model.in-host.ts',
+];
+
 async function main() {
-  await esbuild.build({
-    entryPoints: [path.join(HERE, 'open-ledger.in-host.ts')],
-    outfile: path.join(HERE, 'dist', 'open-ledger.in-host.cjs'),
-    bundle: true,
-    platform: 'node',
-    format: 'cjs',
-    target: 'node18',
-    sourcemap: true,
-    external: ['vscode', 'node:sqlite', 'better-sqlite3', '*.node'],
-    logLevel: 'info',
-  });
-  console.log('[build-host-tests] built host-tests/dist/open-ledger.in-host.cjs');
+  for (const entry of ENTRY_POINTS) {
+    const outfile = path.join(HERE, 'dist', entry.replace(/\.ts$/, '.cjs'));
+    await esbuild.build({
+      entryPoints: [path.join(HERE, entry)],
+      outfile,
+      bundle: true,
+      platform: 'node',
+      format: 'cjs',
+      target: 'node18',
+      sourcemap: true,
+      external: ['vscode', 'node:sqlite', 'better-sqlite3', '*.node'],
+      logLevel: 'info',
+    });
+    console.log(
+      `[build-host-tests] built host-tests/dist/${entry.replace(/\.ts$/, '.cjs')}`,
+    );
+  }
 }
 
 main().catch((err) => {
