@@ -17,6 +17,7 @@ import * as vscode from 'vscode';
 
 import { openLedger } from './db.js';
 import { RoomPanelManager, ROOM_PANEL_VIEW_TYPE } from './room-panel.js';
+import { createRoomPanelSerializer } from './serializer.js';
 import {
   BoardTreeProvider,
   BOARD_TREE_VIEW_ID,
@@ -144,14 +145,17 @@ function registerBoardTree(
     assetUris: { script: scriptRef, styles: [cssRef] },
     iconPath: new vscode.ThemeIcon('comment-discussion'),
     resolveOperatorHandle: () => readOperatorHandle(),
-    createPanel: (roomId, title): PanelLike => {
+    createPanel: (roomId, title, retain): PanelLike => {
       const panel = vscode.window.createWebviewPanel(
         ROOM_PANEL_VIEW_TYPE,
         title,
         vscode.ViewColumn.Active,
         {
           enableScripts: true,
-          // Retain context across tab-hide is Story 10.5; here a basic panel is enough.
+          // Story 10.5 (AC2): the manager bounds how many panels are created retained (the LRU
+          // cap) so live-DOM memory stays bounded; a panel beyond the cap is created non-retained
+          // and re-renders on focus.
+          retainContextWhenHidden: retain,
           localResourceRoots: [distRoot],
         },
       );
@@ -161,6 +165,18 @@ function registerBoardTree(
   });
   roomPanels = manager;
   context.subscriptions.push({ dispose: () => manager.dispose() });
+
+  // Story 10.5 (AC2) — the WebviewPanelSerializer. On a window reload, VS Code calls
+  // deserializeWebviewPanel for each persisted room panel; the serializer re-attaches it to its
+  // room via the manager (adoptPanel: re-set HTML + fresh bridge + re-read + map adoption so
+  // reveal-not-duplicate survives the reload). Registered during activate (the matching
+  // `onWebviewPanel:agentbbs.room` activation event is declared in package.json).
+  context.subscriptions.push(
+    vscode.window.registerWebviewPanelSerializer(
+      ROOM_PANEL_VIEW_TYPE,
+      createRoomPanelSerializer(manager),
+    ),
+  );
 
   // The open-room command (Story 10.4) — open the room as a WebviewPanel (reveal-not-duplicate).
   context.subscriptions.push(

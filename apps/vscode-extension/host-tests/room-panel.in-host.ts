@@ -25,6 +25,7 @@ import * as vscode from 'vscode';
 
 import { dispatchRequest } from '../src/bridge.js';
 import { RoomPanelManager, type PanelLike } from '../src/room-panel.js';
+import { createRoomPanelSerializer } from '../src/serializer.js';
 
 export async function run(): Promise<void> {
   const out = process.env.AGENTBBS_PROBE_OUT;
@@ -37,10 +38,16 @@ export async function run(): Promise<void> {
     htmlHasNonceCsp: boolean;
     htmlHasRoomId: boolean;
     htmlNoUnsafe: boolean;
+    // Story 10.5 — the STRICT CSP holds in a real webview.
+    cspStrict: boolean;
+    cspString: string | null;
     revealNotDuplicate: boolean;
     protoInactiveBefore: boolean;
     activeAfterReply: boolean;
     activatedByOperator: boolean;
+    // Story 10.5 — the serializer is registered + a deserialize round-trip re-attaches a panel.
+    serializerRegistered: boolean;
+    deserializeReattached: boolean;
     error: string | null;
   } = {
     opened: false,
@@ -51,10 +58,14 @@ export async function run(): Promise<void> {
     htmlHasNonceCsp: false,
     htmlHasRoomId: false,
     htmlNoUnsafe: false,
+    cspStrict: false,
+    cspString: null,
     revealNotDuplicate: false,
     protoInactiveBefore: false,
     activeAfterReply: false,
     activatedByOperator: false,
+    serializerRegistered: false,
+    deserializeReattached: false,
     error: null,
   };
 
@@ -122,6 +133,45 @@ export async function run(): Promise<void> {
     result.htmlNoUnsafe =
       !html.includes('unsafe-inline') && !html.includes('unsafe-eval');
 
+    // Story 10.5 AC1 — the STRICT CSP holds in a REAL webview. The REAL `webview.cspSource` on a
+    // modern VS Code build is NOT a single `vscode-webview://` origin — it is the host's own-asset
+    // allowlist, e.g. `'self' https://*.vscode-cdn.net` (asWebviewUri rewrites local resources onto
+    // the vscode-cdn.net CDN). So we assert each source directive is pinned to EXACTLY `cspSource`
+    // (img/font) or `cspSource` + the nonce (style) — i.e. NO token BEYOND what VS Code itself
+    // requires for the webview's own assets (no `data:`, no extra wildcard the extension added).
+    // (The fixture tests in webview-html.csp.test.ts pin the literal-string shape with a synthetic
+    // single-origin cspSource; THIS proves it against the real host's actual cspSource value.)
+    const cspMatch = html.match(
+      /content="(default-src[^"]*)"\s*\/>\s*<meta name="viewport"/,
+    );
+    const cspRaw = (cspMatch?.[1] ?? '').replace(/&#39;|&apos;|&#x27;/giu, "'");
+    result.cspString = cspRaw;
+    const cspSrc = panel.webview.cspSource;
+    const dirMap = new Map<string, string>();
+    for (const part of cspRaw.split(';')) {
+      const t = part.trim();
+      if (t.length === 0) continue;
+      const sp = t.indexOf(' ');
+      dirMap.set(sp === -1 ? t : t.slice(0, sp), t);
+    }
+    result.cspStrict =
+      dirMap.get('default-src') === `default-src 'none'` &&
+      // script-src: ONLY the per-load nonce (no host, no unsafe-*).
+      /^script-src 'nonce-[0-9a-f]+'$/u.test(dirMap.get('script-src') ?? '') &&
+      // img-src / font-src: EXACTLY the host's own-asset cspSource — nothing more.
+      dirMap.get('img-src') === `img-src ${cspSrc}` &&
+      dirMap.get('font-src') === `font-src ${cspSrc}` &&
+      // style-src: the cspSource + the per-load nonce, nothing more.
+      new RegExp(
+        `^style-src ${cspSrc.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')} 'nonce-[0-9a-f]+'$`,
+        'u',
+      ).test(dirMap.get('style-src') ?? '') &&
+      dirMap.get('connect-src') === `connect-src 'none'` &&
+      // No unsafe-* and no data: anywhere (own-origin only; the inert markdown emits no images).
+      !cspRaw.includes('unsafe-inline') &&
+      !cspRaw.includes('unsafe-eval') &&
+      !cspRaw.includes('data:');
+
     // AC1 — re-open the SAME room: REVEAL, not a duplicate (still ONE created panel).
     manager.openRoom(proto.roomId);
     result.revealNotDuplicate =
@@ -167,6 +217,53 @@ export async function run(): Promise<void> {
     result.activeAfterReply = room.active === true;
     result.activatedByOperator = room.activatedBy === 'operator';
 
+    // Story 10.5 AC2 — register the WebviewPanelSerializer in the real host (proves the API is
+    // accepted + returns a Disposable). Registering a SECOND serializer for the same viewType would
+    // throw ("Only a single serializer may be registered"), so we register once here.
+    const serializer = createRoomPanelSerializer(manager);
+    const serializerReg = vscode.window.registerWebviewPanelSerializer(
+      'agentbbs.room',
+      serializer,
+    );
+    result.serializerRegistered = typeof serializerReg.dispose === 'function';
+
+    // Story 10.5 AC2 — a serialize→deserialize ROUND-TRIP: simulate a reload by handing the
+    // serializer a FRESH real WebviewPanel + the persisted state ({ roomId }). The serializer must
+    // re-attach it (adoptPanel) so the manager maps the panel to the room. We assert the manager
+    // now holds the room AND a subsequent openRoom REVEALS the restored panel (no duplicate). NOTE:
+    // a TRUE window-reload restore (VS Code persisting + reviving across an actual reload) cannot be
+    // triggered headlessly in @vscode/test-electron; that half is a manual lead-reload smoke step.
+    // This proves the deserialize→re-attach logic on a REAL panel + the real registration API.
+    const restoredPanel = vscode.window.createWebviewPanel(
+      'agentbbs.room',
+      `#${proto.roomId}`,
+      vscode.ViewColumn.Active,
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        localResourceRoots: [distRoot],
+      },
+    );
+    createdPanels.push(restoredPanel);
+    // The manager currently holds the original panel for this room; the manager.dispose() below
+    // tears everything down, but adoptPanel replaces the held entry with the restored one.
+    await serializer.deserializeWebviewPanel(
+      restoredPanel as unknown as vscode.WebviewPanel,
+      { roomId: proto.roomId },
+    );
+    const restoredHtml = restoredPanel.webview.html;
+    const reattachedHasRoom = restoredHtml.includes(
+      `data-room-id="${proto.roomId}"`,
+    );
+    const revealedAfterRestore = manager.openRoom(proto.roomId);
+    result.deserializeReattached =
+      manager.has(proto.roomId) &&
+      reattachedHasRoom &&
+      // reveal-not-duplicate post-restore: opening the room returns the SAME restored panel.
+      (revealedAfterRestore as unknown as vscode.WebviewPanel) ===
+        restoredPanel;
+
+    serializerReg.dispose();
     manager.dispose();
   } catch (err) {
     result.error = err instanceof Error ? err.message : String(err);
@@ -196,10 +293,13 @@ export async function run(): Promise<void> {
     !result.htmlHasNonceCsp ||
     !result.htmlHasRoomId ||
     !result.htmlNoUnsafe ||
+    !result.cspStrict ||
     !result.revealNotDuplicate ||
     !result.protoInactiveBefore ||
     !result.activeAfterReply ||
-    !result.activatedByOperator
+    !result.activatedByOperator ||
+    !result.serializerRegistered ||
+    !result.deserializeReattached
   ) {
     throw new Error(
       `ROOM-PANEL PROBE FAILED in the Electron host — ${JSON.stringify(result)}`,

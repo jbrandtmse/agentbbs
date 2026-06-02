@@ -283,6 +283,12 @@ async function main() {
             `the panel HTML shell is wrong (nonce CSP / room id / no-unsafe): ${JSON.stringify(r)}`,
           );
         }
+        // Story 10.5 AC1 — the STRICT CSP holds in a real webview (every directive pinned).
+        if (!r.cspStrict) {
+          throw new Error(
+            `the real-webview CSP is not strict (default-src none / nonce / pinned img/font / connect none / no unsafe/wildcard/data:): ${JSON.stringify(r.cspString)}`,
+          );
+        }
         if (!r.revealNotDuplicate) {
           throw new Error(
             're-opening the same room did NOT reveal the existing panel (duplicate created).',
@@ -295,6 +301,20 @@ async function main() {
         if (!r.activeAfterReply || !r.activatedByOperator) {
           throw new Error(
             'the reply did NOT activate the proto-room in the host (Rule-15 respond-parity regression).',
+          );
+        }
+        // Story 10.5 AC2 — the serializer registers + a deserialize round-trip re-attaches the
+        // restored panel to its room (reveal-not-duplicate post-restore). The TRUE window-reload
+        // restore is a manual lead-reload step (see the in-host probe note); this proves the
+        // registration API + the deserialize→adopt logic on a REAL panel in the host.
+        if (!r.serializerRegistered) {
+          throw new Error(
+            'registerWebviewPanelSerializer did not return a Disposable in the host.',
+          );
+        }
+        if (!r.deserializeReattached) {
+          throw new Error(
+            'the serializer deserialize round-trip did NOT re-attach the restored panel to its room.',
           );
         }
       },

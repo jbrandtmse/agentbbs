@@ -25,26 +25,39 @@ let dir: string;
 let da: DataAccessHandle | undefined;
 
 /** A fake WebviewPanel that records html/title/reveal calls + lets a test fire dispose/inbound. */
-function fakePanel(): PanelLike & {
+type FakePanel = PanelLike & {
   revealCount: number;
+  htmlSetCount: number;
+  retain: boolean;
+  visible: boolean;
   fireDispose(): void;
+  fireViewState(visible: boolean): void;
   inbound(msg: unknown): void;
   sent: unknown[];
-} {
+};
+
+function fakePanel(retain = false): FakePanel {
   const messageHandlers: Array<(m: unknown) => void> = [];
   const disposeHandlers: Array<() => void> = [];
+  const viewStateHandlers: Array<() => void> = [];
   const sent: unknown[] = [];
   let revealCount = 0;
-  const panel: PanelLike & {
-    revealCount: number;
-    fireDispose(): void;
-    inbound(msg: unknown): void;
-    sent: unknown[];
-  } = {
+  let htmlSetCount = 0;
+  let htmlValue = '';
+  const panel: FakePanel = {
     title: '',
     iconPath: undefined,
+    retain,
+    visible: true,
     webview: {
-      html: '',
+      get html() {
+        return htmlValue;
+      },
+      set html(v: string) {
+        htmlValue = v;
+        htmlSetCount += 1;
+        panel.htmlSetCount = htmlSetCount;
+      },
       options: {},
       cspSource: 'vscode-webview://fake',
       asWebviewUri: (r: unknown) => ({
@@ -77,9 +90,23 @@ function fakePanel(): PanelLike & {
         },
       };
     },
+    onDidChangeViewState: (handler: () => void) => {
+      viewStateHandlers.push(handler);
+      return {
+        dispose: () => {
+          const i = viewStateHandlers.indexOf(handler);
+          if (i >= 0) viewStateHandlers.splice(i, 1);
+        },
+      };
+    },
     revealCount: 0,
+    htmlSetCount: 0,
     fireDispose: () => {
       for (const h of [...disposeHandlers]) h();
+    },
+    fireViewState: (visible: boolean) => {
+      panel.visible = visible;
+      for (const h of [...viewStateHandlers]) h();
     },
     inbound: (msg: unknown) => {
       for (const h of [...messageHandlers]) h(msg);
@@ -107,15 +134,18 @@ afterEach(() => {
 });
 
 /** Build a manager over a fake factory that hands out fresh fake panels (recording them). */
-function makeManager(): {
+function makeManager(retainCap?: number): {
   manager: RoomPanelManager;
-  created: Map<string, ReturnType<typeof fakePanel>>;
+  created: Map<string, FakePanel>;
+  retainArgs: Map<string, boolean>;
 } {
-  const created = new Map<string, ReturnType<typeof fakePanel>>();
+  const created = new Map<string, FakePanel>();
+  const retainArgs = new Map<string, boolean>();
   const manager = new RoomPanelManager({
     dataAccess: da!,
-    createPanel: (roomId) => {
-      const p = fakePanel();
+    createPanel: (roomId, _title, retain) => {
+      retainArgs.set(roomId, retain);
+      const p = fakePanel(retain);
       created.set(roomId, p);
       return p;
     },
@@ -130,8 +160,9 @@ function makeManager(): {
       ],
     },
     iconPath: { id: 'comment-discussion' },
+    ...(retainCap !== undefined ? { retainCap } : {}),
   });
-  return { manager, created };
+  return { manager, created, retainArgs };
 }
 
 describe('RoomPanelManager — one panel per room, reveal-not-duplicate, dispose-cleanup (AC1/AC5)', () => {
@@ -152,7 +183,7 @@ describe('RoomPanelManager — one panel per room, reveal-not-duplicate, dispose
     expect(again).toBe(first); // same panel instance
     expect(manager.openCount).toBe(1); // still one panel
     expect(created.size).toBe(1); // the factory was called ONCE
-    expect((first as ReturnType<typeof fakePanel>).revealCount).toBe(1); // revealed once
+    expect((first as FakePanel).revealCount).toBe(1); // revealed once
   });
 
   it('different rooms get SEPARATE panels (rooms-as-tabs — multiple open tabs allowed)', () => {
@@ -206,6 +237,140 @@ describe('RoomPanelManager — one panel per room, reveal-not-duplicate, dispose
       panel.sent.some((m) => (m as { type?: string; id?: string }).id === 'q1'),
     );
     const response = panel.sent.find(
+      (m) => (m as { id?: string }).id === 'q1',
+    ) as { ok: boolean; result: { room: { roomId: string } } };
+    expect(response.ok).toBe(true);
+    expect(response.result.room.roomId).toBe(room.roomId);
+    manager.dispose();
+  });
+});
+
+describe('RoomPanelManager — retainContextWhenHidden + LRU (Story 10.5 AC2)', () => {
+  it('the first N panels are created RETAINED; beyond N a fresh open is NON-retained (bounded live DOM)', () => {
+    const { manager, retainArgs } = makeManager(2); // cap = 2 live-DOM panels
+    manager.openRoom('a'); // retainedCount 0 < 2 → retained
+    manager.openRoom('b'); // retainedCount 1 < 2 → retained
+    manager.openRoom('c'); // retainedCount 2, NOT < 2 → NON-retained
+    expect(retainArgs.get('a')).toBe(true);
+    expect(retainArgs.get('b')).toBe(true);
+    expect(retainArgs.get('c')).toBe(false); // beyond the cap → not retained
+    expect(manager.isRetained('a')).toBe(true);
+    expect(manager.isRetained('c')).toBe(false);
+    // At most `cap` panels hold their DOM alive — the bounded-memory guarantee.
+    expect(manager.retainedCount).toBe(2);
+  });
+
+  it('closing a retained panel frees a warm slot for the NEXT opened room', () => {
+    const { manager, created, retainArgs } = makeManager(2);
+    manager.openRoom('a'); // retained
+    manager.openRoom('b'); // retained (cap reached)
+    manager.openRoom('c'); // NON-retained
+    expect(retainArgs.get('c')).toBe(false);
+    created.get('a')!.fireDispose(); // a closes → retainedCount drops to 1
+    expect(manager.retainedCount).toBe(1);
+    manager.openRoom('d'); // now 1 < 2 → retained again
+    expect(retainArgs.get('d')).toBe(true);
+    expect(manager.retainedCount).toBe(2);
+  });
+
+  it('a NON-retained panel re-renders (re-sets its HTML) on a hidden→visible focus transition', () => {
+    const { manager, created } = makeManager(1); // cap = 1 → second+ rooms are NON-retained
+    manager.openRoom('a'); // retained (first, within cap)
+    manager.openRoom('b'); // NON-retained (cap reached)
+    const b = created.get('b')!;
+    expect(manager.isRetained('b')).toBe(false);
+    const htmlSetsBefore = b.htmlSetCount; // set once at open
+    // Hide b, then focus it again → non-retained must re-mount (re-set HTML).
+    b.fireViewState(false);
+    b.fireViewState(true);
+    expect(b.htmlSetCount).toBe(htmlSetsBefore + 1);
+  });
+
+  it('a RETAINED panel does NOT re-render on focus (its DOM is kept alive)', () => {
+    const { manager, created } = makeManager(2);
+    manager.openRoom('a'); // retained
+    const a = created.get('a')!;
+    const htmlSetsBefore = a.htmlSetCount;
+    a.fireViewState(false);
+    a.fireViewState(true);
+    // Retained → no re-mount; the HTML was set only once (at open).
+    expect(a.htmlSetCount).toBe(htmlSetsBefore);
+    expect(manager.isRetained('a')).toBe(true);
+  });
+
+  it('a repeated visible→visible view-state change does NOT spuriously re-render a non-retained panel', () => {
+    const { manager, created } = makeManager(1);
+    manager.openRoom('a');
+    manager.openRoom('b'); // non-retained
+    const b = created.get('b')!;
+    const before = b.htmlSetCount;
+    // Already-visible → a no-op view-state fire must not re-mount (only hidden→visible does).
+    b.fireViewState(true);
+    expect(b.htmlSetCount).toBe(before);
+  });
+});
+
+describe('RoomPanelManager — adoptPanel (serializer restore, Story 10.5 AC2)', () => {
+  it('adopts an externally-created panel into the map so reveal-not-duplicate holds post-reload', () => {
+    const { manager } = makeManager();
+    // Simulate VS Code handing the serializer a fresh panel after a reload.
+    const restored = fakePanel(true);
+    manager.adoptPanel('room-x', restored);
+    expect(manager.has('room-x')).toBe(true);
+    expect(manager.openCount).toBe(1);
+    expect(restored.title).toBe('#room-x');
+    expect(restored.iconPath).toEqual({ id: 'comment-discussion' });
+    // The HTML shell was (re)set with the nonce CSP + the room id.
+    expect(restored.webview.html).toContain('data-room-id="room-x"');
+    expect(restored.htmlSetCount).toBe(1);
+  });
+
+  it('a subsequent openRoom for an adopted room REVEALS it (no duplicate)', () => {
+    const { manager, created } = makeManager();
+    const restored = fakePanel(true);
+    manager.adoptPanel('room-x', restored);
+    const again = manager.openRoom('room-x');
+    expect(again).toBe(restored);
+    expect(manager.openCount).toBe(1);
+    expect(created.has('room-x')).toBe(false); // the factory was NOT called for the adopted room
+    expect((restored as FakePanel).revealCount).toBe(1);
+  });
+
+  it('adopting a room that is already held replaces the held panel (never duplicates the map)', () => {
+    const { manager } = makeManager();
+    manager.openRoom('room-x');
+    expect(manager.openCount).toBe(1);
+    const restored = fakePanel(true);
+    manager.adoptPanel('room-x', restored);
+    expect(manager.openCount).toBe(1); // still one entry — the incoming panel replaced the held one
+    // A reveal now targets the adopted panel.
+    const revealed = manager.openRoom('room-x');
+    expect(revealed).toBe(restored);
+  });
+
+  it("the adopted panel's bridge round-trips a readRoom request (the restored data path works)", async () => {
+    await register(da!, { handle: 'alice', currentFocus: 'seeding' });
+    const project = await announceProject(da!, 'alice', {
+      title: 'Proj',
+      description: 'd',
+    });
+    const room = await postAnnouncement(da!, 'alice', {
+      projectId: project.projectId,
+      subject: 'Subj',
+      body: 'Body',
+    });
+    const { manager } = makeManager();
+    const restored = fakePanel(true);
+    manager.adoptPanel(room.roomId, restored);
+    restored.inbound({
+      id: 'q1',
+      op: 'readRoom',
+      args: { roomId: room.roomId },
+    });
+    await waitFor(() =>
+      restored.sent.some((m) => (m as { id?: string }).id === 'q1'),
+    );
+    const response = restored.sent.find(
       (m) => (m as { id?: string }).id === 'q1',
     ) as { ok: boolean; result: { room: { roomId: string } } };
     expect(response.ok).toBe(true);

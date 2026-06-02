@@ -88,6 +88,55 @@ describe('buildRoomWebviewHtml — CSP directive content-guard (AC2, Rule 10 har
     expect(styleSrc).not.toContain('unsafe-inline');
   });
 
+  // ---- Story 10.5 strict-CSP hardening: img-src/font-src/connect-src pinned to the minimum. ----
+
+  it('img-src is pinned to the cspSource ONLY — no data:, no https: wildcard (10.5: inert markdown renders no images)', () => {
+    const csp = cspOf(build());
+    const imgSrc = csp
+      .split(';')
+      .map((d) => d.trim())
+      .find((d) => d.startsWith('img-src'));
+    expect(imgSrc).toBeDefined();
+    // Own-origin only. The 10.4 `https: data:` grant is GONE (the markdown stack emits no images).
+    expect(imgSrc).toBe('img-src vscode-webview://abc123');
+    expect(imgSrc).not.toContain('data:');
+    expect(imgSrc).not.toContain('https:');
+    expect(imgSrc).not.toContain('*');
+  });
+
+  it('font-src is pinned to the cspSource ONLY — no wildcard (10.5: CSS bundles no @font-face)', () => {
+    const csp = cspOf(build());
+    const fontSrc = csp
+      .split(';')
+      .map((d) => d.trim())
+      .find((d) => d.startsWith('font-src'));
+    expect(fontSrc).toBeDefined();
+    expect(fontSrc).toBe('font-src vscode-webview://abc123');
+    expect(fontSrc).not.toContain('data:');
+    expect(fontSrc).not.toContain('*');
+  });
+
+  it("connect-src is 'none' — the webview is postMessage-only, ZERO network (NFR12 inert)", () => {
+    const csp = cspOf(build());
+    const connectSrc = csp
+      .split(';')
+      .map((d) => d.trim())
+      .find((d) => d.startsWith('connect-src'));
+    expect(connectSrc).toBeDefined();
+    expect(connectSrc).toBe(`connect-src 'none'`);
+    expect(connectSrc).not.toContain('*');
+    expect(connectSrc).not.toContain('https:');
+  });
+
+  it('the WHOLE CSP carries no wildcard, no unsafe-*, and no data:/https: scheme (strict floor)', () => {
+    const csp = cspOf(build());
+    expect(csp).not.toContain('unsafe-inline');
+    expect(csp).not.toContain('unsafe-eval');
+    expect(csp).not.toContain('*');
+    expect(csp).not.toContain('data:');
+    expect(csp).not.toContain('https:');
+  });
+
   it('the document carries NO inline <script> body and NO inline style= attribute (strict-CSP precondition)', () => {
     const html = build();
     // The only <script> is the nonce'd module with a src — never an inline body.

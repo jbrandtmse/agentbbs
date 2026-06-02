@@ -85,8 +85,12 @@ vi.mock('vscode', () => {
         },
         reveal: () => {},
         onDidDispose: () => ({ dispose: () => {} }),
+        onDidChangeViewState: () => ({ dispose: () => {} }),
+        visible: true,
         dispose: () => {},
       }),
+      // Story 10.5 — activate() registers the room WebviewPanelSerializer.
+      registerWebviewPanelSerializer: () => ({ dispose: () => {} }),
     },
     workspace: {
       getConfiguration: () => ({ get: () => undefined }),

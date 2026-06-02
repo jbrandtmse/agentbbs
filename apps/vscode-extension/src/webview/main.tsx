@@ -22,8 +22,17 @@ import './vscode-tokens.css';
 import { createPostMessageBridge } from './bridge-client.js';
 import { RoomApp } from './RoomApp.js';
 
-/** The `acquireVsCodeApi` global the VS Code webview host injects (typed minimally). */
-declare function acquireVsCodeApi(): { postMessage(message: unknown): void };
+/**
+ * The `acquireVsCodeApi` global the VS Code webview host injects (typed minimally). `setState`
+ * persists a JSON-serializable object VS Code hands back to the extension's WebviewPanelSerializer
+ * on a window reload (Story 10.5, AC2) — we persist `{ roomId }` so the panel re-attaches to its
+ * room after a reload.
+ */
+declare function acquireVsCodeApi(): {
+  postMessage(message: unknown): void;
+  setState(state: unknown): void;
+  getState(): unknown;
+};
 
 /** Read the mount root's data attributes (room id + operator handle) and mount the RoomApp. */
 function mount(): void {
@@ -35,7 +44,12 @@ function mount(): void {
   const handleAttr = rootElement.dataset['operatorHandle'] ?? '';
   const operatorHandle = handleAttr.length > 0 ? handleAttr : null;
 
-  const bridge = createPostMessageBridge(acquireVsCodeApi());
+  const api = acquireVsCodeApi();
+  // Persist the room id so a window reload restores this panel to the right room (AC2). The
+  // extension's WebviewPanelSerializer reads this `{ roomId }` back in deserializeWebviewPanel.
+  api.setState({ roomId });
+
+  const bridge = createPostMessageBridge(api);
 
   createRoot(rootElement).render(
     <StrictMode>

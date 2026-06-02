@@ -5,12 +5,15 @@
 // CSS (tokens.css/markdown.css/room.css/chrome.css) PLUS the VS Code `--vscode-*` theme layer
 // (vscode-tokens.css, loaded LAST so its `:root` overrides win — AC3), all via `asWebviewUri`.
 //
-// CSP (baseline for 10.4 — the FULL `default-src 'none'` hardening + retain/LRU/serializer is
-// Story 10.5): a per-load NONCE gates the script + styles, and `webview.cspSource` allows the
-// webview's own asset origin. NO `unsafe-inline` / `unsafe-eval` — the inert-markdown stack
-// (markdown-it HTML-off → DOMPurify → Shiki class spans) needs no inline script/eval, which is
-// exactly what makes the strict 10.5 CSP possible. The room id is passed to the bundle via a
-// `data-room-id` attribute on the mount root (NOT an inline script — keeps the CSP clean).
+// CSP (STRICT — Story 10.5): `default-src 'none'`; scripts ONLY via a per-load NONCE; styles ONLY
+// via the nonce + `webview.cspSource`; `img-src`/`font-src` pinned to `cspSource` (own-origin only,
+// no `data:`/`https:` wildcard — the inert markdown renders NO images and the CSS bundles no font);
+// `connect-src 'none'` (the webview talks to the host via `acquireVsCodeApi().postMessage` ONLY —
+// ZERO network). NO `unsafe-inline` / `unsafe-eval` — the inert-markdown stack (markdown-it HTML-off
+// → DOMPurify → Shiki class spans) needs no inline script/eval, which is exactly what makes the
+// strict CSP possible. The room id is passed to the bundle via a `data-room-id` attribute on the
+// mount root (NOT an inline script — keeps the CSP clean). See buildRoomWebviewHtml for the
+// per-directive justification.
 //
 // PURE (testable): no `vscode` import. The caller supplies the already-resolved webview URIs +
 // the cspSource + a fresh nonce; this only assembles the string. A content-guard test asserts the
@@ -55,10 +58,27 @@ export function generateNonce(
 }
 
 /**
- * Build the room webview HTML. The CSP: scripts only the nonce'd bundle; styles only the nonce'd
- * <link>s + `webview.cspSource`; `img-src` allows the cspSource + data: (inert markdown may carry
- * data-uri-free images — code-as-text); everything else `'none'`. Inert markdown needs no inline
- * script/style, so NO `unsafe-inline` / `unsafe-eval` (the 10.5 strict-CSP precondition).
+ * Build the room webview HTML with the STRICT Story-10.5 CSP. Every directive is pinned to the
+ * minimum the room webview actually needs — no wildcard beyond `webview.cspSource`, no `data:`,
+ * NO `unsafe-inline` / `unsafe-eval`:
+ *
+ *   - `default-src 'none'`     — locked-down base; everything must be allow-listed below.
+ *   - `script-src 'nonce-<n>'` — ONLY the per-load-nonce'd bundle module (no host, no unsafe-*).
+ *   - `style-src <cspSource> 'nonce-<n>'` — the nonce'd <link>s + the webview's own asset origin.
+ *   - `img-src <cspSource>`    — own-origin ONLY. The inert-markdown stack renders NO images
+ *                                 (`img` is not in ui-shared's DOMPurify ALLOWED_TAGS, and
+ *                                 `src`/`srcset` are FORBID_ATTR), so the 10.4 `https: data:`
+ *                                 grant is DROPPED — code-as-text never emits an image.
+ *   - `font-src <cspSource>`   — own-origin ONLY. The ui-shared CSS declares no `@font-face`/
+ *                                 `url()` (VS Code supplies fonts via `--vscode-font-family`),
+ *                                 so this is the floor that admits a future bundled font without
+ *                                 a wildcard.
+ *   - `connect-src 'none'`     — the webview talks to the host via `acquireVsCodeApi().postMessage`
+ *                                 ONLY; the bundle issues ZERO network requests (no fetch/
+ *                                 EventSource/XMLHttpRequest/WebSocket — NFR12 inert).
+ *
+ * This strict shape is POSSIBLE precisely because the inert-markdown stack uses no inline
+ * script/style/eval and no in-webview highlighter (Shiki tokenizes to class spans host-side).
  *
  * @param options The resolved URIs + cspSource + nonce + room id.
  */
@@ -68,10 +88,11 @@ export function buildRoomWebviewHtml(options: WebviewHtmlOptions): string {
 
   const csp = [
     `default-src 'none'`,
-    `img-src ${cspSource} https: data:`,
+    `img-src ${cspSource}`,
     `font-src ${cspSource}`,
     `style-src ${cspSource} 'nonce-${nonce}'`,
     `script-src 'nonce-${nonce}'`,
+    `connect-src 'none'`,
   ].join('; ');
 
   const styleLinks = styleUris
