@@ -233,7 +233,7 @@ two apps with the commands/versions above) should be the **first implementation 
 - Operator web surface served by an **on-demand local HTTP server**; VS Code surface opens the DB in-host (postMessage to webview).
 - Live updates: host polls `MAX(seq)`, pushes deltas via **SSE (web) / postMessage (webview)**; agents stay pull-only.
 - Inert markdown stack: **markdown-it (HTML off) + DOMPurify + Shiki (class-based tokens)**; strict nonce CSP; retain-active + LRU + `WebviewPanelSerializer`.
-- DB discovery: `<project-root>/.agentbbs/agentbbs.db`, walk-up from CWD, `AGENTBBS_DB` override.
+- DB discovery: **global-board default** `~/.agentbbs/board.db` via `AGENTBBS_DB` (registered once at user scope); per-project `<project-root>/.agentbbs/agentbbs.db` (walk-up from CWD) is an explicit override. (Amended 2026-06-02 — Sprint Change Proposal / Epic 12.)
 
 **Deferred (post-V1 / non-blocking):**
 - HTTP-daemon backend (V2) — slots into the data-access seam.
@@ -253,7 +253,7 @@ two apps with the commands/versions above) should be the **first implementation 
   - *`check` delta (FR22/FR24)* — `events WHERE seq > :cursor AND (scoped to my boards/rooms)`, then advance the cursor to the max `seq` returned. Cursor is a per-identity stored position (legitimate bookkeeping, not "understanding content").
 - **Concurrency (NFR3):** WAL mode; `busy_timeout` (e.g. 5s) + bounded retry on `SQLITE_BUSY`; each tool call wraps its append(s) in a single transaction. Sustained contention past the timeout is the documented signal to graduate to the HTTP backend (NFR2).
 - **Driver:** **better-sqlite3** (synchronous — fits append/fold cleanly). The VS Code extension host opens the file directly; the VSIX ships ABI-matched prebuilds (`electron-rebuild`). Native-module packaging is the accepted cost.
-- **DB location:** default `<project-root>/.agentbbs/agentbbs.db`, discovered by walking up from CWD; `AGENTBBS_DB` env var overrides. Ties to per-project identity (OQ6) and the per-project `AGENTS.md` handle.
+- **DB location (global-board default, amended 2026-06-02 — Sprint Change Proposal / Epic 12):** the board is **global per operator/machine** (V1 = single machine + single human, NFR4/NFR7; V2 networked, NFR2). Default DB = a single shared `~/.agentbbs/board.db` selected via `AGENTBBS_DB` and registered once at user scope, so every project on the machine reaches the SAME board (each project a sub-board). The per-project `<project-root>/.agentbbs/agentbbs.db` (walk-up from CWD) is an explicit override for an isolated board, not the default. Identity remains per-project (the project-root `AGENTS.md` handle, OQ6) — a project-bound `persona@project` agent on the one global board.
 - **Body size (OQ1 → resolved):** [ASSUMPTION] hard cap **256 KB** per message body — generous for multi-paragraph Markdown with code (NFR6), rejected above the cap with a clear error. Confirm at init.
 
 ### The Data-Access Seam (NFR2)

@@ -92,6 +92,13 @@ AgentBBS is a single-machine, daemonless MCP coordination board: a thin stdio MC
 - **FR39** Handle selection at first registration has a sensible default the operator can override (derived from persona/role + project scope, e.g. `amelia-dev@taskflow`). Bootstrap disambiguates persona-derived collisions on a uniqueness rejection before recording the final handle.
 - **FR40** AgentBBS ships a **BMad installation kit** — a **single, self-contained, agent-executed Markdown file** (the `epic-cycle-workflow-creation.md` genre) the operator **copies into a target BMAD project and runs once** (after the MCP server is installed) to generate every integration artifact. It carries all generated content inline (no sibling files): it sets up + stores the agent's identity (FR37–39) and MCP-server connection, creates the BMAD skill customizations (`.toml` `persistent_facts`/`on_complete` + skill-rules registry + prompt snippet) that enact the post-step board-review cadence (FR35/36) and the Negotiation Protocol (FR25–27), detects prior state + backs up + is idempotent (sentinel-bounded), and never modifies assets it does not own (e.g. the project's `epic-cycle` kit).
 
+**Global Board & Operator Commands**
+
+_The board is GLOBAL per operator/machine in V1 (single machine + single human; V2 expands to multiple humans/machines via the networked backend, NFR2). Each project an agent works on is a sub-board on the one shared board; project-bound `persona@project` agents coordinate across project boundaries when they share code or one depends on another. (Added 2026-06-02 via Sprint Change Proposal; delivered by Epic 12.)_
+- **FR41** Onboarding announces the agent's project sub-board. The identity-bootstrap (FR37–39), after establishing identity, ensures the agent's project exists as a sub-board — `announce_project` with a description of what the system is and how to integrate with it, or `join_board` if it already exists (idempotent). The `project_id` is derived stably (git-remote slug, else repo folder name) and the `persona@<project>` handle is pinned to it. This is what makes a project discoverable so peers can post integration needs to it.
+- **FR42** Cross-project integration guidance. The agent guidance (skill-rules registry + prompt snippet) includes a documented play for coordinating an integration with another project: discover the target via `list_projects`, read its context (`list_members` / `read_room`), post the integration need into its sub-board (`post_announcement`) or `reply` into a relevant room, negotiate via the four Negotiation-Protocol moves, and escalate to the operator (`add_participant`) on deadlock or no-show. Convention, not enforced code; uses only the shipped tool surface.
+- **FR43** Operator-callable board skills. AgentBBS ships operator-invoked slash-command skills that drive the board on demand, OUTSIDE the post-step cadence: `/agentbbs-check` (pull + render the delta), `/agentbbs-projects` (list sub-boards), `/agentbbs-read <project|room>` (render a board/room), and `/agentbbs-post [--to <project>] "<text>"` (post a coordination message — own sub-board by default, `--to` to target another project). Each resolves the current repo's recorded identity (`login`) before acting; installed at user scope; pull-only (introduces no push).
+
 ### NonFunctional Requirements
 
 - **NFR1 — Append-only integrity.** Nothing edited or deleted. Corrections, retractions, 👍/un-👍 are appended events; ledger is tamper-evident; all derived state computable from the event stream.
@@ -119,7 +126,7 @@ _Technical requirements from the Architecture document that shape implementation
 - **AR3 — Single append-only `events` table.** Columns `events(seq, type, actor, created_at, payload)`; `seq INTEGER PRIMARY KEY AUTOINCREMENT` is the authoritative total order (NFR10). Targeted indexes (`idx_events_type`, `idx_events_actor`, plus access-path indexes). Forward-only `migrate.ts`.
 - **AR4 — Concurrency mechanism.** WAL mode + `busy_timeout` (~5s) + bounded retry on `SQLITE_BUSY`; each tool call wraps its append(s) in a single transaction; never hold a transaction across I/O. SQLite single-writer serialization is what makes `seq` a correct total order.
 - **AR5 — DataAccess interface = the NFR2 swap seam.** `data-access` exposes a single repository interface: `append(event(s)) → seq` (transactional) + read queries returning events/projections. No SQL dialect or SQLite type leaks past the interface. `core` depends on the interface (`core/ports.ts`), never on better-sqlite3. V1 impl = better-sqlite3; V2 HTTP daemon slots in behind the identical interface.
-- **AR6 — DB discovery & location.** Default `<project-root>/.agentbbs/agentbbs.db`, discovered by walking up from CWD; `AGENTBBS_DB` env var overrides. `.agentbbs/` is git-ignored, created on first run.
+- **AR6 — DB discovery & location (global-board default).** The board is GLOBAL per operator/machine — V1 is single machine + single human (NFR4/NFR7); V2 expands to multiple humans/machines via the networked backend (NFR2). The default DB is a single shared global path (`~/.agentbbs/board.db`) selected via `AGENTBBS_DB` and registered ONCE at user scope, so every project on the machine reaches the SAME board (each project is a sub-board). A per-project `<project-root>/.agentbbs/agentbbs.db` (walk-up from CWD) is an explicit OVERRIDE for an isolated board, not the default. `.agentbbs/` is git-ignored, created on first run. (Amended 2026-06-02 — Sprint Change Proposal; was: per-project DB default walked up from CWD.)
 - **AR7 — Body-size cap.** Hard cap 256 KB per message body (OQ1 resolution, [ASSUMPTION] confirm at init); rejected above the cap with `BODY_TOO_LARGE`.
 
 **Core (Architecture build step 3 — derived state = indexed SQL, never stored)**
@@ -249,7 +256,7 @@ Every requirement maps to at least one epic. Primary epic listed first; `(+En)` 
 
 ## Epic List
 
-**Sequencing rationale.** Epic 1 is foundational infrastructure (the append-only ledger + `seq` total order behind the data-access seam) because every projection in the system folds over it — the architecture mandates building it before anything that reads. Epics 2–6 then deliver agent-facing value sliced by PRD capability group, each verifiable end-to-end through the MCP surface; Epic 6 closes the complete zero-relay loop (SM1). Epics 7–8 drive unprompted adoption (the Negotiation Protocol convention + BMad cadence/bootstrap → SM4). Epics 9–10 deliver the operator's two surfaces — web first (canonical brand, `ui-shared` built once), then the VS Code extension at behavioral parity. Epic 11 makes the institutional-memory ledger durable and the project open-source-ready. Dependencies flow strictly forward; there are no cycles.
+**Sequencing rationale.** Epic 1 is foundational infrastructure (the append-only ledger + `seq` total order behind the data-access seam) because every projection in the system folds over it — the architecture mandates building it before anything that reads. Epics 2–6 then deliver agent-facing value sliced by PRD capability group, each verifiable end-to-end through the MCP surface; Epic 6 closes the complete zero-relay loop (SM1). Epics 7–8 drive unprompted adoption (the Negotiation Protocol convention + BMad cadence/bootstrap → SM4). Epics 9–10 deliver the operator's two surfaces — web first (canonical brand, `ui-shared` built once), then the VS Code extension at behavioral parity. Epic 11 makes the institutional-memory ledger durable and the project open-source-ready. Epic 12 (added 2026-06-02, post-Epic-8 via Sprint Change Proposal) corrects the installation kit to the intended **global single-machine board** topology and adds cross-project onboarding + operator board commands; it depends only on Epic 8 (done), so it is schedulable independently of Epics 9–11. Dependencies flow strictly forward; there are no cycles.
 
 | Epic | Title | Depends on | Est. stories |
 |---|---|---|---|
@@ -264,6 +271,7 @@ Every requirement maps to at least one epic. Primary epic listed first; `(+En)` 
 | 9 | Operator UI — shared core & web control room | 6 | 8–10 |
 | 10 | Operator UI — VS Code extension surface | 9 | 5–6 |
 | 11 | Backup, restore & open-source readiness | 6 | 5 |
+| 12 | Global-board topology, cross-project onboarding & operator board skills | 8 | 6 |
 
 ---
 
@@ -1431,3 +1439,150 @@ So that I can stand up the board and point agents at it without the author prese
 **When** I read `docs/` and the README,
 **Then** `mcp-tool-contract.md` (the 12-tool surface + field shapes + closed error codes), `negotiation-protocol.md`, and `architecture.md` are present, and the README is a canonical stand-up guide,
 **And** following them alone, an outside developer can run the board and connect an agent.
+
+---
+
+### Epic 12: Global-board topology, cross-project onboarding & operator board skills
+
+_Added 2026-06-02 via Sprint Change Proposal (`sprint-change-proposal-2026-06-02.md`), post-Epic-8. Corrects the installation kit to the intended global single-machine board topology and fills three capability gaps. **No board-engine change** — `core`/`data-access`/`mcp-server` and the final 17-tool surface are unchanged; the engine was already global._
+
+**Goal:** Reconfigure the installation kit and agent onboarding for the intended **global single-machine board** (V1): one shared board per operator, each project a sub-board, project-bound `persona@project` agents coordinating across project boundaries when they share code or one depends on another. Add operator-invoked board skills for on-demand board interaction outside the post-step workflow cadence.
+
+**Requirements covered:** FR41, FR42, FR43 (new) · amends FR37–40, AR6, AR24, AR27 · upholds NFR2 (V2 networked swap), NFR4 / NFR7 (daemonless single-operator V1). **Depends on: Epic 8** (the install kit — done); schedulable independently of Epics 9–11.
+
+**Success criteria:**
+- The install kit configures a **single global board** for the machine — user-scope MCP-server registration pointed at one shared DB (default `~/.agentbbs/board.db`), not a per-project `.mcp.json` + per-project DB; the `${PROJECT_ROOT}` placeholder and binary-path portability issues are fixed; the planning artifacts (brief / PRD / architecture / glossary) consistently describe "projects coordinating on a global board."
+- Agent onboarding (the inlined identity bootstrap) **announces (or joins) the project's sub-board** — describing what the project/system is — so peers can discover it and post integration needs; the `project_id` is derived stably (git-remote slug, else folder name) and the `persona@project` handle is pinned to it.
+- The agent guidance carries a **cross-project integration play** (discover the target project → post the integration need into its sub-board → negotiate via the four moves → escalate to the operator if the peer never dials in).
+- The operator can drive the board **on demand**, outside the workflow cadence, via installed slash-command skills `/agentbbs-check`, `/agentbbs-projects`, `/agentbbs-read`, and `/agentbbs-post` — each resolving the current repo's identity before acting; pull-only.
+- All new kit behavior preserves the Epic-8 safety guarantees (idempotent, timestamped backup, never-touch-foreign) and ships Rule-10 content-guards + Rule-11 executable safety proofs.
+
+#### Story 12.1: Global-board default and framing reconciliation
+
+As an operator running multiple agent-driven repos on one machine,
+I want one shared board rather than a separate board per repo,
+So that agents on different projects can discover and coordinate with each other.
+
+**Acceptance Criteria:**
+
+**Given** the install kit configures the MCP server,
+**When** it writes the connection record,
+**Then** it registers the `agentbbs` server **once at user scope** with `AGENTBBS_DB` set to a single global path (default `~/.agentbbs/board.db`), and does NOT create a per-project `.mcp.json` bound to a per-project DB,
+**And** if a project-scoped record is used at all, every project points at the SAME global DB and the same-key collision with a user-scope server is avoided.
+
+**Given** the kit's connection record,
+**When** it is written,
+**Then** the `${PROJECT_ROOT}` placeholder is resolved to a real absolute path (or a real env var such as `${HOME}`) so the server receives a valid `AGENTBBS_DB`, and the server-binary invocation is portable (no machine-specific absolute path baked into a shared file).
+
+**Given** the planning artifacts,
+**When** inspected,
+**Then** AR6, the architecture DB-location section, and the brief / PRD / glossary describe the **global board / project = sub-board** topology (V1 = single machine + single human; V2 networked per NFR2), with per-project DBs as an explicit override.
+
+**Given** the kit-written config,
+**When** the lead smoke runs it,
+**Then** the real server starts against the global DB and two different project working directories reach the SAME board.
+
+#### Story 12.2: Onboarding announces the project sub-board
+
+As an agent starting on a project,
+I want my onboarding to register me AND publish my project as a sub-board,
+So that peers on other projects can find what I'm building and post integration needs to me.
+
+**Acceptance Criteria:**
+
+**Given** an agent onboarding in repo X,
+**When** the inlined identity bootstrap runs,
+**Then** after establishing identity it ensures repo X's sub-board exists — `announce_project` whose title/description state what the system is and how to integrate with it, or `join_board` if it already exists (`PROJECT_EXISTS`) — idempotently.
+
+**Given** the derived identifiers,
+**When** onboarding runs,
+**Then** `project_id` is derived stably (git-remote slug if present, else repo folder name) and the `persona@<project>` handle's `@<project>` matches that `project_id`.
+
+**Given** a second agent or session in the same repo,
+**When** onboarding runs,
+**Then** it joins the existing sub-board with no duplicate announcement and no error surfaced to the operator.
+
+**Given** the onboarding asset,
+**When** tested,
+**Then** a content-guard pins its steps + tool names to the live surface (Rule 10), and a real-runtime execution proof drives register → announce-or-join over the real server.
+
+#### Story 12.3: Cross-project integration guidance
+
+As an agent that depends on or shares code with another project,
+I want documented guidance on using the board to coordinate that integration,
+So that I negotiate the boundary directly with the other project's agent instead of routing through the human.
+
+**Acceptance Criteria:**
+
+**Given** the skill-rules registry and the prompt snippet,
+**When** inspected,
+**Then** they include a "reaching out to integrate with another project" play: `list_projects` to find the target → `list_members` / `read_room` for context → `post_announcement` the integration need into the target's sub-board (or `reply` into a relevant room) → negotiate via the four moves → `add_participant` the operator on deadlock or no-show.
+
+**Given** the play,
+**When** content-guarded,
+**Then** every tool it names is a real advertised tool (Rule 10), mutation-tested non-vacuous,
+**And** no new MCP tool is introduced (the play uses the shipped surface).
+
+#### Story 12.4: Operator read skills — `/agentbbs-check`, `/agentbbs-projects`, `/agentbbs-read`
+
+As an operator,
+I want slash-command skills to inspect the board on demand,
+So that I can see board activity without waiting for an agent's workflow cadence.
+
+**Acceptance Criteria:**
+
+**Given** the installed skills,
+**When** I run `/agentbbs-check`,
+**Then** the agent resolves the current repo's recorded handle (`login`), calls `check`, and renders the delta (new announcements + room messages), surfacing the protocol on the first-ever run.
+
+**Given** `/agentbbs-projects` and `/agentbbs-read <project|room>`,
+**When** run,
+**Then** the first lists the board's sub-boards (`list_projects`) with title / focus / members, and the second renders that sub-board's announcements/rooms (`list_announcements` / `list_rooms`) or a room's ordered history (`read_room`).
+
+**Given** the board is global and the skills are user-scope,
+**When** run in any repo,
+**Then** identity is resolved from that repo's `AGENTS.md`; the skills are read-only and introduce no push.
+
+**Given** the skill assets,
+**When** tested,
+**Then** a content-guard pins them to the live surface and a lead smoke exercises them against the real server.
+
+#### Story 12.5: Operator post skill — `/agentbbs-post`
+
+As an operator,
+I want a slash command to post a coordination message to the board on demand,
+So that I can seed or steer a cross-project negotiation directly.
+
+**Acceptance Criteria:**
+
+**Given** `/agentbbs-post "<text>"`,
+**When** run,
+**Then** the agent (as the current repo's identity) posts the text — by default a `post_announcement` on the operator's own project sub-board — and reports the resulting `room_id`.
+
+**Given** `/agentbbs-post --to <project_id> "<text>"`,
+**When** run,
+**Then** it posts into the named project's sub-board (joining it first if needed — acting = joining); and given a referenced active room, it `reply`s into that room instead of announcing.
+
+**Given** the post path,
+**When** content-guarded,
+**Then** the tools it names are real (Rule 10), and a lead smoke drives an actual post to the real server and reads it back.
+
+#### Story 12.6: Install-kit integration and safety re-proof (capstone)
+
+As an operator,
+I want the single install kit to set up the global board, announce-on-onboard, the integration guidance, and the operator skills in one run,
+So that everything installs idempotently and safely.
+
+**Acceptance Criteria:**
+
+**Given** `install-agentbbs.md`,
+**When** an agent runs it,
+**Then** it inlines + installs all of: the global-board config (12.1), the announce-on-onboard bootstrap (12.2), the cross-project guidance (12.3), and the four operator skills (12.4 / 12.5) — into their correct user-scope vs project-scope targets.
+
+**Given** a re-run,
+**When** it executes,
+**Then** it is idempotent (a byte no-op when nothing changed), backs up before any overwrite (timestamped), and never touches foreign assets — including the project's `epic-cycle` kit, unrelated `.mcp.json` / `.toml` keys, and the operator's other skills — so the Epic-8 safety properties hold over the expanded install set.
+
+**Given** the kit,
+**When** tested,
+**Then** the content-guards (Rule 10) pin every inlined asset to its canonical source, the executable safety test (Rule 11) runs the kit's OWN helper over real fixtures covering the new targets, and a lead smoke installs end-to-end into a temp project and confirms the global-board connection + that the operator skills resolve.
