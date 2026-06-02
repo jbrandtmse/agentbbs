@@ -1,0 +1,197 @@
+/*
+ * AgentBBS semantic design-token core — WEB CANONICAL surface.
+ *
+ * SOURCE OF TRUTH: _bmad-output/planning-artifacts/ux-designs/
+ *   ux-AgentBBS-2026-05-30/DESIGN.md  (colors / typography / rounded / spacing).
+ * Story 9.1 authors this file; every value below is lifted verbatim from
+ * DESIGN.md's front-matter blocks. The spines win on conflict with any mock.
+ *
+ * ONE TOKEN CORE, PER-SURFACE THEMING:
+ *   - Consumer-facing custom properties are named after their SEMANTIC ROLE
+ *     (--surface-base, --text-body, --accent-on-dark, …), never after raw hex.
+ *   - The LIGHT ramp REDEFINES the SAME property names under the light selector,
+ *     so a consumer that reads `var(--text-body)` automatically gets the right
+ *     value for the active theme. There are NO `*-light`-suffixed consumer tokens;
+ *     the `-light` suffix in DESIGN.md exists only to disambiguate the two hex
+ *     values in prose (and is preserved in src/tokens.ts as the test source of
+ *     truth, not here).
+ *
+ * LIGHT-MODE MECHANISM (decided + documented, Story 9.1):
+ *   Dark is the default on `:root`. Light is activated by the attribute
+ *   `:root[data-theme="light"]` (i.e. <html data-theme="light">). This explicit
+ *   attribute is surface-agnostic and testable (toggle the attribute in a DOM
+ *   test); it is trivially drivable by the web shell and maps cleanly to a future
+ *   VS Code `body.vscode-light` mapping. A `prefers-color-scheme` media query MAY
+ *   be layered on later; the attribute is the testable primitive for AC3.
+ *
+ * VS CODE SURFACE (per-surface delta, NOT this story's hex): the VS Code webview
+ *   maps these SAME semantic roles to `--vscode-*` theme variables (Epic 10). This
+ *   file ships the web-canonical hex only.
+ */
+
+/* ============================== DARK (default) ============================== */
+:root {
+  /* Surfaces */
+  --surface-base: #1e1e1e;
+  --surface-panel: #252526;
+  --surface-input: #3c3c3c;
+  --code-panel: #1b1b1b;
+
+  /* Borders */
+  --border: #333333;
+  --border-soft: #2d2d2d;
+
+  /* Text ramp */
+  --text: #cccccc;
+  --text-body: #d4d4d4;
+  --text-strong: #ffffff;
+  --text-muted: #858585;
+  --text-dim: #9d9d9d;
+  --text-faint: #6f6f6f;
+
+  /* Accent */
+  --accent: #007acc;
+  --accent-hover: #1177bb;
+  --accent-on-dark: #3794d6;
+  --accent-fg: #ffffff;
+  --selection: #094771;
+
+  /* Agreed (✓ ratified / 👍-has) */
+  --agreed-green: #4ec07a;
+  --agreed-line: #3b8f63;
+
+  /* Flag-warm (NEEDS YOU) */
+  --flag-warm: #d6a44a;
+  --flag-warm-text: #e2c184;
+
+  /* Badge / chip / inline-code */
+  --badge-bg: #37373d;
+  --badge-fg: #cccccc;
+  --chip-bg: #2b2b2e;
+  --code-inline-bg: #2a2a2d;
+
+  /* Code syntax tints (inside code-panel only) */
+  --code-keyword: #569cd6;
+  --code-type: #4ec9b0;
+  --code-fn: #dcdcaa;
+  --code-comment: #7a7a7a;
+
+  /* Radii (rounded:) */
+  --radius-sm: 4px;
+  --radius-default: 5px;
+  --radius-md: 6px;
+  --radius-full: 9999px;
+
+  /* Spacing scale (spacing:) */
+  --space-1: 4px;
+  --space-2: 6px;
+  --space-3: 8px;
+  --space-4: 11px;
+  --space-5: 13px;
+  --space-6: 16px;
+  --space-7: 18px;
+  --space-tree-row-y: 3px;
+  --measure: 760px;
+  --sidebar-w: 232px;
+
+  /* ---- Typography: two families only (UI/system + monospace) ---- */
+  --font-ui:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Segoe UI Variable', Roboto,
+    Helvetica, Arial, sans-serif;
+  --font-mono:
+    Consolas, 'Cascadia Code', 'Cascadia Mono', 'SF Mono', ui-monospace, Menlo,
+    'Liberation Mono', monospace;
+
+  /* message-body: long-form post prose — UI font, 13px / 1.62 in a ~72ch measure */
+  --message-body-font: var(--font-ui);
+  --message-body-size: 13px;
+  --message-body-weight: 400;
+  --message-body-line-height: 1.62;
+
+  /* handle: @handles — mono, tinted accent */
+  --handle-font: var(--font-mono);
+  --handle-size: 12.5px;
+  --handle-weight: 600;
+
+  /* identifier: room ids / inline code / IDs — mono */
+  --identifier-font: var(--font-mono);
+  --identifier-size: 12px;
+  --identifier-weight: 400;
+
+  /* timestamp: right-aligned meta — mono */
+  --timestamp-font: var(--font-mono);
+  --timestamp-size: 10.5px;
+  --timestamp-weight: 400;
+  --timestamp-letter-spacing: 0.2px;
+
+  /* code: fenced code blocks — mono */
+  --code-font: var(--font-mono);
+  --code-size: 12px;
+  --code-line-height: 1.55;
+
+  /* tree-item: sidebar nav rows — mono */
+  --tree-item-font: var(--font-mono);
+  --tree-item-size: 12px;
+  --tree-item-weight: 400;
+
+  /* section-label: UPPERCASE tree section headers — UI */
+  --section-label-font: var(--font-ui);
+  --section-label-size: 10.5px;
+  --section-label-weight: 600;
+  --section-label-letter-spacing: 0.9px;
+
+  /* ui-label: general chrome prose — UI */
+  --ui-label-font: var(--font-ui);
+  --ui-label-size: 12.5px;
+  --ui-label-weight: 400;
+}
+
+/* =============================== LIGHT (first-class) ========================= */
+/* Redefines the SAME color property names; non-color tokens (radii, spacing,
+ * typography) are theme-invariant and inherited from :root. */
+:root[data-theme='light'] {
+  /* Surfaces */
+  --surface-base: #ffffff;
+  --surface-panel: #f3f3f3;
+  --surface-input: #ffffff;
+  --code-panel: #f6f6f6;
+
+  /* Borders */
+  --border: #e0e0e0;
+  --border-soft: #ededed;
+
+  /* Text ramp */
+  --text: #1e1e1e;
+  --text-body: #1e1e1e;
+  --text-strong: #0a0a0a;
+  --text-muted: #6e6e6e;
+  --text-dim: #6b6b6b;
+  --text-faint: #9b9b9b;
+
+  /* Accent */
+  --accent: #0066b8;
+  --accent-hover: #1177bb;
+  --accent-on-dark: #0066b8;
+  --accent-fg: #ffffff;
+  --selection: #cfe3f7;
+
+  /* Agreed */
+  --agreed-green: #2f9e63;
+  --agreed-line: #2f9e63;
+
+  /* Flag-warm */
+  --flag-warm: #b07d18;
+  --flag-warm-text: #7a560f;
+
+  /* Badge / chip / inline-code */
+  --badge-bg: #dadada;
+  --badge-fg: #333333;
+  --chip-bg: #f1f1f1;
+  --code-inline-bg: #eeeeee;
+
+  /* Code syntax tints */
+  --code-keyword: #0000c0;
+  --code-type: #267f99;
+  --code-fn: #795e26;
+  --code-comment: #6a8f5a;
+}

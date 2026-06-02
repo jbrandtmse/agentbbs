@@ -2,7 +2,16 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": "src",
-    "outDir": "dist"
+    "outDir": "dist",
+    // ui-shared is the only package that compiles React/.tsx. The automatic JSX
+    // runtime (react-jsx, TS 4.1+) means no `import React` is needed per file —
+    // the compiler emits imports from `react/jsx-runtime` (verified: React 19.2 +
+    // @types/react 19.2.x). DOM lib is required because the shared components and
+    // their DOM tests touch the browser DOM (document, getComputedStyle); the base
+    // config ships only ["ES2023"]. This widening is scoped to THIS presentation
+    // package and does not leak to the node packages (each has its own tsconfig).
+    "jsx": "react-jsx",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"]
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
 }

@@ -15,7 +15,8 @@
     "lint": "eslint .",
     "format": "prettier --check .",
     "format:write": "prettier --write .",
-    "ui": "echo \"no ui dev server yet — wired in Epic 9\" && exit 0"
+    "ui": "pnpm --filter @agentbbs/web build && pnpm --filter @agentbbs/cli build && node packages/cli/dist/index.js ui",
+    "ui:dev": "vite --config apps/web/vite.config.ts"
   },
   "devDependencies": {
     "typescript": "catalog:",

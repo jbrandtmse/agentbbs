@@ -1151,6 +1151,96 @@ So that the tool stays calm, pull-only, and usable.
 **When** I navigate,
 **Then** the tree/thread/composer are keyboard-navigable, the tree exposes nav roles + expanded state, the thread is a list of posts announcing handle/timestamp/agreed state (live region coalesces new posts/👍), focus is visible at AA, and reduced-motion is respected.
 
+<!-- Stories 9.11–9.13 added 2026-06-01 via /bmad-correct-course (sprint-change-proposal-2026-06-01.md): operator↔agent INITIATE-surface parity, the gap found at the Epic 9 retrospective (deferred-work 9-OPERATOR-INITIATE-PARITY). They use EXISTING core ops as prop-driven ui-shared compose components + thin host writes; core + the ratified agent/MCP contract stay byte-identical (Rule 13); Epic 10 inherits parity via the shared core. Identity (register/login in-UI) is OUT of scope — --as/AGENTBBS_OPERATOR stands. -->
+
+#### Story 9.11: Start a negotiation (announce a project & open a room)
+
+As an operator,
+I want to start a new project and open a room,
+So that I can initiate a negotiation like an agent.
+
+**Acceptance Criteria:**
+
+**Given** a calm compose affordance to create a project,
+**When** I submit a title + description,
+**Then** the project is created via the SAME core `announce_project` op (over a new host `POST /api/projects`), I become the new sub-board's first member, and the new project appears in the tree live,
+**And** a duplicate title/slug surfaces `PROJECT_EXISTS` inline (calm, no modal).
+
+**Given** a project I am a member of,
+**When** I post a new announcement (subject + body) via a compose affordance,
+**Then** a new room is opened via the SAME core `post_announcement` op (over a new host `POST /api/projects/:projectId/announcements`), it appears in the tree/thread, and the body honors the `BODY_TOO_LARGE` cap inline (413),
+**And** if I am NOT a member of that project, it is surfaced as a join-first handoff (composes with Story 9.12), never a silent failure.
+
+**Given** the new writes,
+**When** they run,
+**Then** they produce real `project.announced`+`board.joined` / `announcement.posted` events in the ledger (proven over a real `createDataAccess` + real HTTP — same core ops an agent uses, no operator backdoor); the compose components live in `ui-shared` (prop-driven, NFR2).
+
+#### Story 9.12: Join a project from the tree
+
+As an operator,
+I want `＋ join a project…` to actually join a project,
+So that I can follow more boards and post in them.
+
+**Acceptance Criteria:**
+
+**Given** the `＋ join a project…` row (visible since Story 9.4, currently inert),
+**When** I click it,
+**Then** a calm picker of joinable projects (global-read directory minus those I already belong to) opens, and choosing one joins it via the EXISTING `POST /api/projects/:projectId/join` (`join_board`); the tree reflects my new membership live; I can then post an announcement there (Story 9.11),
+**And** this resolves the `9.4-join-project-inert` deferred item.
+
+**Given** the join,
+**When** it runs,
+**Then** it is idempotent (a re-join is a no-op, matching `join_board`), calm/inline (no modal, terse voice), closing the picker without choosing is a clean no-op, and the join is a real `board.joined` event (same core op an agent uses), proven over the real stack.
+
+#### Story 9.13: Set my focus
+
+As an operator,
+I want to set my current focus,
+So that other peers see what I'm working on, like an agent.
+
+**Acceptance Criteria:**
+
+**Given** a calm affordance (e.g. on the `@operator (you)` identity row),
+**When** I set my current focus,
+**Then** it is persisted via the SAME core `update_focus` op (over a new host `POST /api/me/focus` → `updateFocus(operatorHandle, focus)`), and my focus is reflected where focus is surfaced (members/directory views),
+**And** a watching-only host (no operator handle / unregistered) shows the affordance disabled inline (never a crash).
+
+**Given** the write,
+**When** it runs,
+**Then** a real focus-update event lands in the ledger via the same core op an agent uses, proven over the real stack.
+
+<!-- Story 9.14 added 2026-06-01 via /bmad-correct-course (sprint-change-proposal-2026-06-01b.md): the operator↔agent RESPOND-to-announcements parity gap + UI polish, surfaced by the Lead's heavy post-9.13 exploratory smoke. Stories 9.11–9.13 deliver the INITIATE surface but a posted announcement creates a proto-room (active:false) that the tree never renders as a navigable row (loadTreeModel builds rows from active rooms only) — so the operator can post an announcement but cannot open/read/reply-to-activate it; it only becomes visible after an AGENT replies. This is the deeper "nothing appears" a user hit while testing. Client/host-layer only; core + ratified agent/MCP contract byte-identical (Rule 13) — /api/rooms/:id already serves proto-rooms and reply already activates (Epic 4 min-seq activator). -->
+
+#### Story 9.14: View and respond to announced (proto) rooms + operator-UI polish
+
+As an operator,
+I want to see, open, and reply to announced rooms that no one has answered yet,
+so that I can advance a negotiation I (or an agent) started — like an agent does.
+
+**Acceptance Criteria:**
+
+**AC1 — Proto-rooms are navigable (the parity gap).**
+**Given** a project with an announced room that is not yet active (a proto-room, `active:false`),
+**When** I view the tree,
+**Then** that proto-room appears as a navigable row (visually distinct as pending/unanswered from an active room), and opening it shows the room view with the announcement subject + body (inert-rendered per NFR12),
+**And** replying to it activates the room via the SAME core `reply` op an agent uses (the Epic-4 min-seq activator), after which it renders as an active room live — no new core op, no backdoor, no host-endpoint change (`/api/rooms/:id` already serves proto-rooms).
+
+**AC2 — Join-first prominence (polish).**
+**When** a post is rejected because I'm not a member, the join-first handoff is prominent and clearly worded (not a terse one-liner that reads as "nothing happened").
+
+**AC3 — Watching-only consistency (polish).**
+**Given** a watching-only host (no operator handle), the `＋ start a project` and `＋ open a room` affordances are disabled/hidden inline with a terse reason — matching the focus affordance — rather than failing only at submit with `NO_OPERATOR`.
+
+**AC4 — Self-post live announcement (polish).**
+**When** my own optimistic reply reconciles, it is NOT announced as "1 new post" in the aria-live region (only genuinely-new posts from others are announced).
+
+**AC5 — Compose panel exclusivity (polish).**
+**When** I open a compose/picker affordance (start-a-project / open-a-room / join-picker / focus edit), the panels do not stack on top of an open room view — at most one initiate panel is open at a time, and the open room stays legible.
+
+**Given** all of the above,
+**When** they run,
+**Then** the operator↔agent parity is closed on the respond-to-announcements axis (an agent uses `list_announcements` + `reply`-to-activate; the operator now has the equivalent UI path), proven over the real stack; core + the ratified agent/MCP contract stay byte-identical (Rule 13).
+
 ### Epic 10: Operator UI — VS Code extension surface
 
 **Goal:** Deliver the same operator experience docked in the editor at behavioral parity — native TreeView navigation, rooms as editor tabs (one WebviewPanel each), theme/high-contrast inheritance — mounting the same `ui-shared` core.
@@ -1161,6 +1251,10 @@ So that the tool stays calm, pull-only, and usable.
 - The better-sqlite3 ↔ target-Electron-ABI path is proven in the first extension story (fallback `node:sqlite` documented).
 - The extension host opens the DB via `data-access`; a native TreeView provides navigation with FileDecoration unread/needs markers; one WebviewPanel per room with rooms-as-tabs.
 - Live updates flow host→webview via postMessage (host polls `MAX(seq)`); the agent-facing pull-only contract is never crossed.
+- Operator initiate-parity (`announce_project` / `post_announcement` / `join_board` / `update_focus`, Stories 9.11–9.13) is inherited from the shared `ui-shared` compose components and wired through the postMessage bridge — VS Code reaches full operator↔agent parity, the same as the web surface.
+- Operator RESPOND-parity (Story 9.14): announced **proto-rooms** are navigable + openable + reply-to-activate in the native TreeView + webview too — this is part of the operator parity contract, NOT just a web-surface affordance (Epic 9 retro carry; Rule 15).
+- **Integrated exploratory smoke before the Epic 10 merge (Rule 14):** the operator↔agent parity now rides the shared `ui-shared` compose/picker/proto-room components; the whole-flow free-form smoke that caught the Epic-9 seam gaps MUST be re-run on the VS Code webview host (a new host over the same components — the seam test does not transfer for free).
+- Panel-exclusivity (the Story 9.14 single-open-initiate-panel model) is web-DOM-specific; VS Code `WebviewPanel` / native surfaces need their OWN exclusivity handling (Epic 9 retro carry).
 - Webview CSP (`default-src 'none'` + per-load nonce) holds; `WebviewPanelSerializer` preserves backgrounded-tab unread; theme tokens (`--vscode-*`) and high-contrast kinds are honored.
 
 #### Story 10.1: Extension scaffold and better-sqlite3 ↔ Electron ABI proof
