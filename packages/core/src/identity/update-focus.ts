@@ -16,7 +16,7 @@
 // established identity) — is NOT decided here: the mcp-server tool checks the
 // session holder and supplies the acting handle; core just appends + reads back.
 
-import { findIdentity } from './projection.js';
+import { appendIdentityEventOrThrow } from './append-identity-event.js';
 
 import type { DataAccess } from '../ports.js';
 import type { Identity } from './projection.js';
@@ -24,17 +24,23 @@ import type { Identity } from './projection.js';
 /**
  * Update an identity's current focus (AC #1).
  *
- * Appends one `identity.focus_updated` event (`actor: handle`, payload
+ * GUARDS EXISTENCE BEFORE APPENDING (Story 3.0): confirms a prior
+ * `identity.registered` for `handle` FIRST, then appends one
+ * `identity.focus_updated` event (`actor: handle`, payload
  * `{ handle, currentFocus }`) via plain {@link DataAccess.append} — no uniqueness
- * guard — then reads the identity back through the projection (`eventsByActor`
- * folded by {@link findIdentity}) so the returned record reflects the append:
- * `currentFocus` is the new value and `lastSeen` is the new event's `createdAt`
- * (advanced). The prior events are retained (append-only); `createdAt` stays
- * pinned to the identity's `identity.registered`.
+ * guard — and reads the identity back through the projection so the returned record
+ * reflects the append: `currentFocus` is the new value and `lastSeen` is the new
+ * event's `createdAt` (advanced). The prior events are retained (append-only);
+ * `createdAt` stays pinned to the identity's `identity.registered`.
+ *
+ * For an UNREGISTERED handle it throws WITHOUT appending — no orphan
+ * `identity.focus_updated` is written (the ledger is unchanged on that path). The
+ * shared helper also retains the broken-seam fail-loud guard (append succeeded but
+ * the read-back still misses).
  *
  * The caller (the `update_focus` MCP tool) guarantees an established identity and
  * passes its canonical handle; this op does not re-check the session (that is a
- * server concern) and assumes a prior registration exists for `handle`.
+ * server concern).
  *
  * @param dataAccess The persistence port (the only dependency).
  * @param handle The (canonical) handle whose focus is being updated — the actor.
@@ -47,28 +53,12 @@ export async function updateFocus(
   handle: string,
   currentFocus: string,
 ): Promise<Identity> {
-  // Append ONE focus_updated event for this actor. Plain append: focus updates are
-  // not unique-constrained, so no guard is needed (contrast register's claim).
-  await dataAccess.append([
-    {
-      type: 'identity.focus_updated',
-      actor: handle,
-      payload: { handle, currentFocus },
-    },
-  ]);
-
-  // Read the identity back so currentFocus/lastSeen come from the folded ledger
-  // (data-access assigned the new event's createdAt). eventsByActor(handle) returns
-  // exactly this identity's events, seq-ordered; folding yields the updated record.
-  const own = await dataAccess.eventsByActor(handle);
-  const identity = findIdentity(own, handle);
-  if (!identity) {
-    // Unreachable: the caller guarantees an established (registered) identity, and
-    // we just appended a focus event for it. A miss would mean the append did not
-    // persist or the read seam is broken — fail loudly rather than fabricate.
-    throw new Error(
-      `updateFocus: identity "${handle}" not found in its own event stream after append.`,
-    );
-  }
-  return identity;
+  // Guard-before-append + read-back is the shared identity-event shape. This op
+  // supplies its event: a plain identity.focus_updated (focus updates are not
+  // unique-constrained, so no guard — contrast register's claim).
+  return appendIdentityEventOrThrow(dataAccess, handle, 'updateFocus', () => ({
+    type: 'identity.focus_updated',
+    actor: handle,
+    payload: { handle, currentFocus },
+  }));
 }

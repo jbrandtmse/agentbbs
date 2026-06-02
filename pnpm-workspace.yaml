@@ -41,6 +41,11 @@ catalog:
 
   # Testing (Story 1.2+)
   vitest: ^4.1.7
+  # DOM test environment for the UI test tier (Story 9.1) — happy-dom is the
+  # lighter builtin Vitest env (vs jsdom) and is a supported BuiltinEnvironment in
+  # vitest 4 ("node" | "jsdom" | "happy-dom" | "edge-runtime"). Scoped to the
+  # ui-shared *.test.tsx project in the single root vitest.config.ts.
+  happy-dom: ^20.9.0
 
   # Lint / format toolchain (Story 1.2) — verified against the npm registry 2026-05-30.
   # ESLint 10 flat config + typescript-eslint 8 (peer eslint ^10) + import/naming

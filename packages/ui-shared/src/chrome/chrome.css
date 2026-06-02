@@ -1,0 +1,69 @@
+/*
+ * Accessibility-floor + calm-chrome stylesheet (Story 9.10 — the Epic 9 capstone).
+ *
+ * The keyboard/screen-reader/motion floor that cannot be expressed as a per-component inline
+ * style: the AA-visible focus ring (`:focus-visible`), the `prefers-reduced-motion` gate, and
+ * the visually-hidden helper for the screen-reader-only live region. Consumers import it as a
+ * side-effecting stylesheet alongside tokens.css / markdown.css / room.css.
+ *
+ * No inline-style escape of the strict style-src CSP (NFR12): the focus ring is a class rule
+ * here, referencing the --accent design token.
+ *
+ * SOURCE OF TRUTH: EXPERIENCE.md §Accessibility floor (keyboard-first, semantic structure,
+ * live region coalesces, focus visible at AA, reduced-motion) + DESIGN.md (focus ring = accent;
+ * WCAG 2.1 SC 1.4.11 non-text contrast ≥3:1 for the focus indicator).
+ */
+
+/* ----- AA-visible focus ring (WCAG 2.1 SC 1.4.11 — ≥3:1 non-text contrast) -----
+ * `:focus-visible` (the modern keyboard-focus selector — APG/Research-First) so a MOUSE click
+ * does not paint the ring, but KEYBOARD focus always does. The ring is the --accent token
+ * (verified ≥3:1 against the surfaces by the chrome.contrast test). outline (not box-shadow) so
+ * it is honored under forced-colors / high-contrast OS modes. */
+.nav-tree :focus-visible,
+.message-thread :focus-visible,
+.composer :focus-visible,
+.connection-footer :focus-visible,
+.room-view :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: var(--radius-sm);
+}
+
+/* The tree rows + composer controls share the ring; keep it crisp on the dense tree rows. */
+.nav-row:focus-visible,
+.nav-project:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* ----- Screen-reader-only (visually hidden but announced) -----
+ * The coalescing aria-live region is OFF-SCREEN but readable by assistive tech. The standard
+ * clip pattern (not display:none, which would suppress the announcement). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ----- Reduced-motion (EXPERIENCE.md — "respects reduced-motion") -----
+ * Pattern B (disable under reduce): the surface ships almost no essential motion, so under a
+ * reduced-motion preference we hard-disable any transition/animation + smooth scroll. Content
+ * still updates (the live thread fold, the connection LED swap) — just without movement. */
+@media (prefers-reduced-motion: reduce) {
+  .nav-tree *,
+  .room-view *,
+  .message-thread *,
+  .composer *,
+  .connection-footer * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

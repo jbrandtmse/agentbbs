@@ -32,6 +32,7 @@ import type { DataAccess } from '../ports.js';
 function memoryDataAccess(opts?: { clock?: () => string }): DataAccess {
   let seq = 0;
   const store: Event[] = [];
+  const cursors = new Map<string, number>();
   // Default clock: a fresh monotonically-increasing instant per append call.
   let tick = 0;
   const defaultClock = (): string => {
@@ -61,6 +62,11 @@ function memoryDataAccess(opts?: { clock?: () => string }): DataAccess {
         store.filter((e) => e.actor === actor).sort((a, b) => a.seq - b.seq),
       ),
     maxSeq: () => Promise.resolve(seq),
+    getCursor: (handle) => Promise.resolve(cursors.get(handle) ?? 0),
+    setCursor: (handle, value) => {
+      cursors.set(handle, value);
+      return Promise.resolve();
+    },
   };
 }
 
@@ -237,43 +243,70 @@ describe('recordSeen — success (AC #1)', () => {
   });
 });
 
-describe('recordSeen — no phantom identity / fail-loud guard (QA, AC #1)', () => {
-  it('FAILS LOUD (throws) for an unregistered handle and mints NO phantom identity — the fold ignores the orphan seen', async () => {
-    // The "no phantom identity" priority at the PRIMITIVE level (the projection
-    // test pins the fold; this pins recordSeen's own contract). recordSeen for a
-    // handle with no prior identity.registered appends an orphan identity.seen, but
-    // the projection mints NO record for a seen-without-registration (IGNORE stance),
-    // so findIdentity returns undefined — and recordSeen DELIBERATELY throws rather
-    // than fabricate an Identity. This exercises the otherwise-untested guard branch
-    // ("not found in its own event stream after append"): the op fabricates nothing.
+describe('recordSeen — no phantom identity / guard-before-append (QA, AC #1, #3)', () => {
+  it('FAILS LOUD (throws) for an unregistered handle and mints NO phantom identity', async () => {
+    // Story 3.0 (AC #3): recordSeen now GUARDS existence BEFORE appending. For a
+    // handle with no prior identity.registered the pre-append guard fires, so the op
+    // throws a clear "not registered" error rather than fabricate an Identity. The
+    // directory still has NO entry for the unregistered handle (no phantom minted).
     const da = memoryDataAccess();
 
-    await expect(recordSeen(da, 'ghost')).rejects.toThrow(
-      /not found in its own event stream/u,
-    );
+    await expect(recordSeen(da, 'ghost')).rejects.toThrow(/not registered/u);
 
-    // The directory still has NO entry for the unregistered handle (no phantom minted).
     expect(foldIdentities(await da.eventsByActor('ghost')).get('ghost')).toBe(
       undefined,
     );
   });
 
-  it('still APPENDS exactly one orphan identity.seen before failing — append-only holds even on the defensive path', async () => {
-    // Even when recordSeen ends up throwing (unregistered handle), the append is an
-    // APPEND: the identity.seen row is written (append-only — nothing is rolled back
-    // by core; the guard is a post-append read assertion). Confirms exactly ONE
-    // orphan seen lands with the verbatim actor + { handle } payload, and the throw
-    // does not double-append or delete it.
+  it('writes NO orphan identity.seen on the unregistered path — the ledger is UNCHANGED after the throw (AC #3/#4)', async () => {
+    // Story 3.0 INVERTS the old "still APPENDS one orphan before failing" contract:
+    // guard-before-append means the throw happens BEFORE any append, so NOTHING is
+    // written for an unregistered handle. No orphan identity.seen, no rows at all.
     const da = memoryDataAccess();
 
     await recordSeen(da, 'ghost').catch(() => undefined);
 
-    const seens = await da.eventsByType('identity.seen');
-    expect(seens).toHaveLength(1);
-    expect(seens[0]?.actor).toBe('ghost');
-    expect(seens[0]?.payload).toEqual({ handle: 'ghost' });
-    // No registration exists, so the whole ledger is just that one orphan ping.
-    expect(await da.eventsSince(0)).toHaveLength(1);
+    // ZERO identity.seen written (was 1 under the old append-then-throw contract).
+    expect(await da.eventsByType('identity.seen')).toHaveLength(0);
+    // The whole ledger is empty — the unregistered path appends nothing.
+    expect(await da.eventsSince(0)).toHaveLength(0);
     expect(await da.eventsByType('identity.registered')).toHaveLength(0);
+  });
+
+  it('STILL FAILS LOUD on a genuinely broken read/append seam (append succeeds but read-back misses) — the defensive branch is retained (AC #3/#4)', async () => {
+    // The retained broken-seam guard: if a prior registration IS confirmed (so the
+    // pre-append guard passes and the append runs) but the post-append read-back
+    // still yields no identity, the seam is genuinely broken — recordSeen throws
+    // rather than fabricate. Modeled with a DataAccess whose eventsByActor returns
+    // the registration on the FIRST (pre-append) read but nothing on the SECOND
+    // (post-append) read, and whose append is a no-op.
+    let reads = 0;
+    const registered: Event = {
+      seq: 1,
+      type: 'identity.registered',
+      actor: 'ada',
+      createdAt: '2026-05-31T00:00:00.000Z',
+      payload: { handle: 'ada', currentFocus: 'focus' },
+    };
+    const brokenSeam: DataAccess = {
+      append: () => Promise.resolve([2]), // append "succeeds" but persists nothing
+      appendGuarded: () => Promise.resolve([2]),
+      eventsSince: () => Promise.resolve([]),
+      eventsByType: () => Promise.resolve([]),
+      eventsByActor: () => {
+        reads += 1;
+        // First read (pre-append guard) sees the registration → guard passes.
+        // Second read (post-append read-back) sees nothing → broken seam.
+        return Promise.resolve(reads === 1 ? [registered] : []);
+      },
+      maxSeq: () => Promise.resolve(2),
+      getCursor: () => Promise.resolve(0),
+      setCursor: () => Promise.resolve(),
+    };
+
+    await expect(recordSeen(brokenSeam, 'ada')).rejects.toThrow(
+      /not found in its own event stream after a successful append/u,
+    );
+    expect(reads).toBe(2); // proves the append path ran (both reads happened)
   });
 });

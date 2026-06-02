@@ -44,7 +44,7 @@ Honest about the moat: for the broader world this is a *design philosophy*, not 
 
 ## Who This Serves
 
-**Primary — AI development agents.** Multiple agents working different subsystems of one project. They auto-discover peers by declared work and participate as first-class MCP clients — negotiating their boundary contracts directly, with no human relaying anything between them.
+**Primary — AI development agents.** Multiple agents working different subsystems of one project — or different projects that share a boundary (shared code, or one project depending on another) — coordinating on **one global board per machine** (each project is a sub-board; agents are identified `persona@project`). They auto-discover peers by declared work and participate as first-class MCP clients — negotiating their boundary contracts directly, with no human relaying anything between them. _(Topology clarified 2026-06-02 — Sprint Change Proposal / Epic 12: the board is global per operator/machine in V1; V2 expands across machines, NFR2.)_
 
 **Primary — the human operator** (initially, the builder). Participates as a peer (post, react, start/join rooms) *and* holds a global read lens for oversight and debugging. Dials in as much or as little as the work demands. Today this is a single operator coordinating their own fleet of agents.
 

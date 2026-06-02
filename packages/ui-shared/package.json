@@ -7,14 +7,35 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    }
+    },
+    "./tokens.css": "./src/tokens.css",
+    "./markdown.css": "./src/markdown/markdown.css",
+    "./room.css": "./src/room/room.css",
+    "./chrome.css": "./src/chrome/chrome.css"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "src/tokens.css",
+    "src/markdown/markdown.css",
+    "src/room/room.css",
+    "src/chrome/chrome.css"
   ],
   "scripts": {
     "build": "tsc -b tsconfig.json"
+  },
+  "dependencies": {
+    "dompurify": "catalog:",
+    "markdown-it": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "shiki": "catalog:"
+  },
+  "devDependencies": {
+    "@types/markdown-it": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "happy-dom": "catalog:"
   }
 }

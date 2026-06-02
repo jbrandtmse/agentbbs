@@ -55,6 +55,25 @@ describe('event payloads (AC1)', () => {
     expect(payload.messageSeq).toBe(42);
   });
 
+  it('announcement.posted carries the board scope projectId alongside roomId/subject/body (Story 4.1)', () => {
+    // Story 4.1 ADDED projectId (the sub-board the announcement was posted to) to the
+    // previously board-less payload. Constructing the value pins all four field names
+    // (would fail to compile if projectId were dropped or renamed).
+    const payload: PayloadOf<'announcement.posted'> = {
+      projectId: 'calling-interface',
+      roomId: 'calling-interface-2',
+      subject: 'Calling Interface',
+      body: 'need a hand on the calling interface',
+    };
+    expect(Object.keys(payload).sort()).toEqual([
+      'body',
+      'projectId',
+      'roomId',
+      'subject',
+    ]);
+    expect(payload.projectId).toBe('calling-interface');
+  });
+
   it('the runtime vocabulary covers every payload-map key (cross-check)', () => {
     // Every event type has a payload entry: build a fully-populated map and
     // assert its keys equal EVENT_TYPES. This catches a runtime/type drift where

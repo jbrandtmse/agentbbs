@@ -42,6 +42,8 @@ function fakeDataAccess(): DataAccess {
     eventsByType: unused('eventsByType'),
     eventsByActor: unused('eventsByActor'),
     maxSeq: unused('maxSeq'),
+    getCursor: unused('getCursor'),
+    setCursor: unused('setCursor'),
   };
 }
 
@@ -205,13 +207,47 @@ describe('createBoardServer bootstrap over a real in-memory transport', () => {
     const client = await connect(server);
 
     const { tools } = await client.listTools();
-    // The two representatives plus the built-in identity tools the factory wires:
-    // `register` (Story 2.2), `login` (Story 2.3), `update_focus` (Story 2.4).
+    // The two representatives plus the built-in tools the factory wires:
+    // `register` (Story 2.2), `login` (Story 2.3), `update_focus` (Story 2.4),
+    // `announce_project` (Story 3.1 — the first board tool), `list_projects`
+    // (Story 3.2 — the first board READ tool), `join_board` (Story 3.3 — the
+    // membership-write tool), `list_members` (Story 3.4 — the sub-board directory
+    // READ tool), `post_announcement` (Story 4.1 — the first room tool),
+    // `list_announcements` + `list_rooms` (Story 4.2 — the two room browse tools:
+    // proto-rooms vs activated rooms), `reply` (Story 4.3 — the keystone room WRITE
+    // tool: a reply activates a proto-room and auto-joins the replier), `read_room`
+    // (Story 4.4 — a room's COMPLETE ordered history: announcement #1 then replies by
+    // seq; an open read, NO membership), `add_participant` (Story 4.5 — the 12th/final
+    // V1 tool: a participant pulls a registered peer into a room; the target joins the
+    // room + its sub-board), and `react` + `unreact` (Story 5.2 — the two MESSAGE tools:
+    // place / retract a 👍 on a message by its seq; gated on participating in the
+    // message's room, MESSAGE_NOT_FOUND for a non-message seq), and `read_contract`
+    // (Story 5.3 — FR21: the room's CURRENT AGREED CONTRACT, the highest-seq message
+    // currently holding a live 👍, computed never stored; an open read, ROOM_NOT_FOUND for
+    // an unknown room, contract: null for a known room with no live 👍 yet), and `check`
+    // (Story 6.1 — the pull-only dial-in: returns the actor's scoped delta since their last
+    // check (new announcements in member sub-boards + new messages in participated rooms),
+    // advances their stored per-identity cursor, marks presence; NO params, NO_IDENTITY if
+    // unset; pushes nothing).
     expect(tools.map((t) => t.name).sort()).toEqual([
+      'add_participant',
       'alpha',
+      'announce_project',
       'beta',
+      'check',
+      'join_board',
+      'list_announcements',
+      'list_members',
+      'list_projects',
+      'list_rooms',
       'login',
+      'post_announcement',
+      'react',
+      'read_contract',
+      'read_room',
       'register',
+      'reply',
+      'unreact',
       'update_focus',
     ]);
   });

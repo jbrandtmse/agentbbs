@@ -40,6 +40,8 @@ function fakeDataAccess(): DataAccess {
     eventsByType: unused('eventsByType'),
     eventsByActor: unused('eventsByActor'),
     maxSeq: unused('maxSeq'),
+    getCursor: unused('getCursor'),
+    setCursor: unused('setCursor'),
   };
 }
 

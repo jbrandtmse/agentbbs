@@ -46,8 +46,8 @@ export {
   UniquenessConflictError,
 } from './errors.js';
 
-// --- Schema + forward-only idempotent migration (Story 1.5, AC1) ---
-export { EVENTS_TABLE, SCHEMA_SQL } from './sqlite/schema.js';
+// --- Schema + forward-only idempotent migration (Story 1.5, AC1; cursors table Story 6.1) ---
+export { CURSORS_TABLE, EVENTS_TABLE, SCHEMA_SQL } from './sqlite/schema.js';
 export { migrate } from './sqlite/migrate.js';
 
 // --- Transactional append: the WRITE half of the seam (Story 1.5, AC2) ---
@@ -59,6 +59,10 @@ export { createAppendGuarded } from './sqlite/append-guarded.js';
 // --- Read queries: the READ half of the seam (Story 1.6, AC1) ---
 export { createReadQueries } from './sqlite/queries.js';
 export type { ReadQueries } from './sqlite/queries.js';
+
+// --- Per-identity check cursor: the ONE mutable bookkeeping store (Story 6.1) ---
+export { createCursorQueries } from './sqlite/cursors.js';
+export type { CursorQueries } from './sqlite/cursors.js';
 
 // --- Wire mapping (Story 1.5 WRITE direction + Story 1.6 READ direction) ---
 export {

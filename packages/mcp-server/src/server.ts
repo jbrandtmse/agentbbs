@@ -16,8 +16,22 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { DataAccess } from '@agentbbs/core';
 
 import { createSessionIdentity } from './session.js';
+import { registerAddParticipantTool } from './tools/add-participant.js';
+import { registerAnnounceProjectTool } from './tools/announce-project.js';
+import { registerCheckTool } from './tools/check.js';
+import { registerJoinBoardTool } from './tools/join-board.js';
+import { registerListAnnouncementsTool } from './tools/list-announcements.js';
+import { registerListMembersTool } from './tools/list-members.js';
+import { registerListProjectsTool } from './tools/list-projects.js';
+import { registerListRoomsTool } from './tools/list-rooms.js';
 import { registerLoginTool } from './tools/login.js';
+import { registerPostAnnouncementTool } from './tools/post-announcement.js';
+import { registerReactTool } from './tools/react.js';
+import { registerReadContractTool } from './tools/read-contract.js';
+import { registerReadRoomTool } from './tools/read-room.js';
 import { registerRegisterTool } from './tools/register.js';
+import { registerReplyTool } from './tools/reply.js';
+import { registerUnreactTool } from './tools/unreact.js';
 import { registerUpdateFocusTool } from './tools/update-focus.js';
 
 import type { SessionIdentity } from './session.js';
@@ -71,19 +85,131 @@ export function createBoardServer(deps: BoardServerDeps): McpServer {
   // one tool (register/login) is the actor read by the others (Stories 2.4/2.5).
   const sessionIdentity = deps.sessionIdentity ?? createSessionIdentity();
 
-  // V1 identity tool surface. Each tool registers through `registerCoreTool` and
-  // closes over `deps.dataAccess` (+ the session holder), delegating to core (no
-  // board logic here).
+  // V1 tool surface. Each tool registers through `registerCoreTool` and closes over
+  // `deps.dataAccess` (+ the session holder), delegating to core (no board logic here).
+  // Identity tools (Epic 2):
   //   - register (Story 2.2): claim a unique handle → durable identity; also
   //     establishes the session (a fresh agent is "established" too — FR2/FR37).
   //   - login (Story 2.3): re-establish an existing identity for the session.
   //   - update_focus (Story 2.4): the first SESSION-REQUIRED tool — its actor is
   //     the session handle (NO handle param); rejects with NO_IDENTITY if none set.
-  // identity.seen lands in Story 2.5 as a sibling registration, reading the session
-  // holder as its acting actor.
+  // Project / sub-board tools (Epic 3):
+  //   - announce_project (Story 3.1): the first BOARD tool — SESSION-REQUIRED (actor
+  //     = session handle, rejects NO_IDENTITY if unset). Creates a project sub-board
+  //     (project.announced + the announcer's board.joined, atomically) with the
+  //     caller as first member; rejects a duplicate title/id with PROJECT_EXISTS.
+  //     Consumed by Stories 3.2–3.4 (list_projects, join_board, sub-board directory).
+  //   - list_projects (Story 3.2): the first BOARD READ tool — SESSION-REQUIRED
+  //     (established identity required, rejects NO_IDENTITY if unset) but NO
+  //     membership: a non-member sees the full main-board directory (FR9 board-wide
+  //     open read). Takes no params; returns the projects directory ordered by seq.
+  //   - join_board (Story 3.3): SESSION-REQUIRED (actor = session handle, rejects
+  //     NO_IDENTITY if unset). Makes the caller a member of an existing sub-board
+  //     (appends board.joined); rejects an unknown project_id with BOARD_NOT_FOUND;
+  //     re-joining is an idempotent no-op. The membership it writes is the foundation
+  //     for Story 3.4 (sub-board directory) and Story 3.5 (NOT_A_MEMBER post gate).
+  //   - list_members (Story 3.4): a BOARD READ tool — SESSION-REQUIRED (established
+  //     identity required, rejects NO_IDENTITY if unset) but NO membership: a
+  //     non-member can read a sub-board's directory (FR9 board-wide open read). Takes a
+  //     project_id; returns each member's handle/current_focus/last_seen in join order
+  //     (the membership ⋈ identity join). Rejects an unknown project_id with
+  //     BOARD_NOT_FOUND.
+  // Announcement / room tools (Epic 4):
+  //   - post_announcement (Story 4.1): the first ROOM tool — SESSION-REQUIRED (actor =
+  //     session handle, rejects NO_IDENTITY if unset). The first consumer of the Story
+  //     3.5 membership write-gate: posting requires membership of the target sub-board,
+  //     so it rejects NOT_A_MEMBER (board exists, not joined) / BOARD_NOT_FOUND (no such
+  //     board). Appends one announcement.posted opening a proto-room with a
+  //     globally-unique room id (subject slug + disambiguator on collision — a
+  //     same-subject post never fails, it gets a distinct id). Consumed by Stories 4.2
+  //     (list) / 4.3 (reply activates) / 4.4 (read history).
+  //   - list_announcements / list_rooms (Story 4.2): the two BOARD READ browse tools —
+  //     SESSION-REQUIRED (established identity required, rejects NO_IDENTITY if unset) but
+  //     NO membership: a non-member can browse (FR9 board-wide open read). Each takes a
+  //     project_id and returns the board's rooms SPLIT by activation — list_announcements
+  //     the still-proto rooms (no reply yet), list_rooms the activated rooms (≥1 reply) —
+  //     both seq-ordered. Reject an unknown project_id with BOARD_NOT_FOUND. Reads only
+  //     (the activation read-model is folded from room.replied; the reply WRITE-op is 4.3).
+  //   - reply (Story 4.3): the keystone room WRITE tool — SESSION-REQUIRED (actor = session
+  //     handle, rejects NO_IDENTITY if unset). Unlike post_announcement it does NOT require
+  //     membership — it GRANTS it: replying appends one room.replied (activating the
+  //     proto-room into a live room) plus a conditional board.joined that auto-joins the
+  //     replier to the room's sub-board if not already a member ("acting = joining", FR10),
+  //     in ONE transaction. Rejects ROOM_NOT_FOUND for an unknown room. Plain append:
+  //     concurrent replies all land; the activator is the read-side min-seq derivation.
+  //   - read_room (Story 4.4): a ROOM READ tool — SESSION-REQUIRED (established identity
+  //     required, rejects NO_IDENTITY if unset) but NO membership: any identity can read any
+  //     room's COMPLETE ordered history on demand, even before joining (FR9 open read). Takes
+  //     a room_id; returns the room metadata + the messages array — the seeding announcement
+  //     as message #1, then every reply in seq order (each with seq/actor/body/kind). Never
+  //     truncated (append-only). Rejects ROOM_NOT_FOUND for an unknown room. Reads only (no
+  //     new event type / error code — the history is folded from announcement.posted +
+  //     room.replied; the message identity is the `seq` Epic 5's react/contract consume).
+  //   - add_participant (Story 4.5 — the 12th/final V1 tool): a ROOM WRITE tool —
+  //     SESSION-REQUIRED (actor = session handle, rejects NO_IDENTITY if unset). Pulls a
+  //     registered peer into a room: the ACTOR must be a participant of the room (replied or
+  //     previously added) else NOT_A_MEMBER; the target handle must be registered else
+  //     HANDLE_NOT_FOUND (added to the closed set in core, additively). On success appends one
+  //     room.participant_added (actor = the adder, payload.handle = the target) PLUS a
+  //     conditional board.joined whose ACTOR is the TARGET (the pulled-in peer joins the
+  //     room's sub-board if not already — "acting = joining" applied to the target), in ONE
+  //     transaction. Re-adding an existing participant is an idempotent no-op. Rejects
+  //     ROOM_NOT_FOUND for an unknown room. Returns { room, participants } — participation is
+  //     DERIVED (room.replied actors ∪ room.participant_added handles), never stored.
+  // Messaging / reaction tools (Epic 5):
+  //   - react / unreact (Story 5.2): the two MESSAGE tools — SESSION-REQUIRED (actor = session
+  //     handle, rejects NO_IDENTITY if unset). Place / retract a 👍 on a specific message (by its
+  //     seq). Both GATE the actor on PARTICIPATING in the message's room (reacting ratifies a
+  //     negotiation you are in — it does NOT join you, unlike reply) → NOT_A_MEMBER otherwise; and
+  //     resolve the message → MESSAGE_NOT_FOUND (added to the closed set in core, additively) for a
+  //     non-message message_seq. react appends one message.reacted; unreact one message.unreacted
+  //     — each PLAIN (reactions are not uniqueness-constrained), idempotent (re-react when already
+  //     live / unreact when not live appends nothing). Cannot-retract-another is INHERENT (unreact
+  //     appends only the actor's own event; liveness is per-actor). The LIVE 👍 state is DERIVED by
+  //     latest-react-wins, never stored — read_room surfaces each message's live reactors. Each
+  //     returns { message_seq, reactions } (the message's live reactors after the op).
+  //   - read_contract (Story 5.3 — FR21, the marquee Epic 5 capability): a ROOM READ tool —
+  //     SESSION-REQUIRED (established identity required, rejects NO_IDENTITY if unset) but NO
+  //     membership: the CURRENT AGREED CONTRACT is "computed by ANY reader" (FR9 open read). Takes
+  //     a room_id; returns { room_id, contract } where contract is the message with the HIGHEST seq
+  //     currently holding a live 👍 (seq/actor/body/kind/reactions) or null ("no contract yet").
+  //     COMPUTED by query every call, NEVER stored (THE APPEND INVARIANT) — so it reverts
+  //     automatically on retraction (a re-read yields the next-highest live-👍'd message, or null).
+  //     The seeding announcement (#1) can itself be the contract. Rejects ROOM_NOT_FOUND for an
+  //     unknown room (DISTINCT from contract: null — a known room with no live 👍 yet). Reads only;
+  //     NO new event type / error code (currentContract folds announcement.posted/room.replied +
+  //     message.reacted/unreacted; ROOM_NOT_FOUND/NO_IDENTITY reused).
+  // Discovery / pull-only tools (Epic 6):
+  //   - check (Story 6.1 — the marquee pull-only dial-in that closes the zero-relay loop, NFR5):
+  //     SESSION-REQUIRED (acts as the session identity, like list_projects — NO params; rejects
+  //     NO_IDENTITY if unset). Returns what is NEW for the actor since their last check — new
+  //     announcements in their MEMBER sub-boards + new messages in their PARTICIPATED rooms,
+  //     scoped + seq-ordered — then ADVANCES their stored per-identity cursor to the max seq
+  //     RETURNED (NOT maxSeq() — a concurrent higher-seq event is not swallowed) and marks
+  //     presence (recordSeen — check is its first consumer; last_seen advances every dial-in).
+  //     Combines the stored cursor with the per-board floor (boardJoinSeq) + per-room floor
+  //     (roomJoinSeq) as seq > max(cursor, joinFloor), so a newly-joined member/participant is
+  //     NOT flooded with pre-join back-history (browse that via list_announcements/read_room).
+  //     The cursor is a STORED table (cursors) — the architecture-sanctioned mutable bookkeeping
+  //     exception (line 253), SEPARATE from the append-only events ledger; check PUSHES nothing
+  //     (pull-only); NO new event type / error code.
   registerRegisterTool(server, deps.dataAccess, sessionIdentity);
   registerLoginTool(server, deps.dataAccess, sessionIdentity);
   registerUpdateFocusTool(server, deps.dataAccess, sessionIdentity);
+  registerAnnounceProjectTool(server, deps.dataAccess, sessionIdentity);
+  registerListProjectsTool(server, deps.dataAccess, sessionIdentity);
+  registerJoinBoardTool(server, deps.dataAccess, sessionIdentity);
+  registerListMembersTool(server, deps.dataAccess, sessionIdentity);
+  registerPostAnnouncementTool(server, deps.dataAccess, sessionIdentity);
+  registerListAnnouncementsTool(server, deps.dataAccess, sessionIdentity);
+  registerListRoomsTool(server, deps.dataAccess, sessionIdentity);
+  registerReplyTool(server, deps.dataAccess, sessionIdentity);
+  registerReadRoomTool(server, deps.dataAccess, sessionIdentity);
+  registerAddParticipantTool(server, deps.dataAccess, sessionIdentity);
+  registerReactTool(server, deps.dataAccess, sessionIdentity);
+  registerUnreactTool(server, deps.dataAccess, sessionIdentity);
+  registerReadContractTool(server, deps.dataAccess, sessionIdentity);
+  registerCheckTool(server, deps.dataAccess, sessionIdentity);
 
   return server;
 }

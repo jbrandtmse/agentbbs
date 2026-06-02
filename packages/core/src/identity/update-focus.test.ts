@@ -31,6 +31,7 @@ import type { DataAccess } from '../ports.js';
 function memoryDataAccess(opts?: { clock?: () => string }): DataAccess {
   let seq = 0;
   const store: Event[] = [];
+  const cursors = new Map<string, number>();
   // Default clock: a fresh monotonically-increasing instant per append call.
   let tick = 0;
   const defaultClock = (): string => {
@@ -60,6 +61,11 @@ function memoryDataAccess(opts?: { clock?: () => string }): DataAccess {
         store.filter((e) => e.actor === actor).sort((a, b) => a.seq - b.seq),
       ),
     maxSeq: () => Promise.resolve(seq),
+    getCursor: (handle) => Promise.resolve(cursors.get(handle) ?? 0),
+    setCursor: (handle, value) => {
+      cursors.set(handle, value);
+      return Promise.resolve();
+    },
   };
 }
 
@@ -197,5 +203,71 @@ describe('updateFocus — success (AC #1)', () => {
     // Re-folding the whole stream from scratch yields the latest-by-seq focus.
     const all = await da.eventsByActor('ada');
     expect(foldIdentities(all).get('ada')?.currentFocus).toBe(`focus-${N}`);
+  });
+});
+
+describe('updateFocus — no phantom identity / guard-before-append (QA, AC #3, #4)', () => {
+  // Story 3.0 fixes the orphan-append wart as a CLASS, so updateFocus gets the SAME
+  // symmetric coverage as recordSeen (this case did not exist before this story).
+  it('FAILS LOUD (throws) for an unregistered handle and mints NO phantom identity', async () => {
+    // Guard-before-append: a focus update for a handle with no prior
+    // identity.registered throws a clear "not registered" error rather than
+    // fabricate an Identity; the directory mints no phantom for it.
+    const da = memoryDataAccess();
+
+    await expect(updateFocus(da, 'ghost', 'a focus')).rejects.toThrow(
+      /not registered/u,
+    );
+
+    expect(foldIdentities(await da.eventsByActor('ghost')).get('ghost')).toBe(
+      undefined,
+    );
+  });
+
+  it('writes NO orphan identity.focus_updated on the unregistered path — the ledger is UNCHANGED after the throw (AC #3/#4)', async () => {
+    // The class-level invariant mirrored for focus: guard-before-append means the
+    // throw precedes any append, so NOTHING is written for an unregistered handle —
+    // no orphan identity.focus_updated, no rows at all.
+    const da = memoryDataAccess();
+
+    await updateFocus(da, 'ghost', 'a focus').catch(() => undefined);
+
+    expect(await da.eventsByType('identity.focus_updated')).toHaveLength(0);
+    expect(await da.eventsSince(0)).toHaveLength(0);
+    expect(await da.eventsByType('identity.registered')).toHaveLength(0);
+  });
+
+  it('STILL FAILS LOUD on a genuinely broken read/append seam (append succeeds but read-back misses) — the defensive branch is retained (AC #3/#4)', async () => {
+    // The retained broken-seam guard, mirrored for updateFocus: a confirmed prior
+    // registration (pre-append guard passes, append runs) but a post-append
+    // read-back that still misses ⇒ throw rather than fabricate. Modeled with a
+    // DataAccess that returns the registration on the first (pre-append) read and
+    // nothing on the second (post-append) read; append is a no-op.
+    let reads = 0;
+    const registered: Event = {
+      seq: 1,
+      type: 'identity.registered',
+      actor: 'ada',
+      createdAt: '2026-05-31T00:00:00.000Z',
+      payload: { handle: 'ada', currentFocus: 'focus' },
+    };
+    const brokenSeam: DataAccess = {
+      append: () => Promise.resolve([2]),
+      appendGuarded: () => Promise.resolve([2]),
+      eventsSince: () => Promise.resolve([]),
+      eventsByType: () => Promise.resolve([]),
+      eventsByActor: () => {
+        reads += 1;
+        return Promise.resolve(reads === 1 ? [registered] : []);
+      },
+      maxSeq: () => Promise.resolve(2),
+      getCursor: () => Promise.resolve(0),
+      setCursor: () => Promise.resolve(),
+    };
+
+    await expect(updateFocus(brokenSeam, 'ada', 'new focus')).rejects.toThrow(
+      /not found in its own event stream after a successful append/u,
+    );
+    expect(reads).toBe(2);
   });
 });
