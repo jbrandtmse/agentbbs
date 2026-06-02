@@ -36,3 +36,6 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
+
+# Claude Code scheduled-task runtime lock (not source)
+.claude/scheduled_tasks.lock
