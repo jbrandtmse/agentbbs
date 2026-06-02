@@ -1,12 +1,24 @@
 {
+  // VS Code extension typecheck config (Story 10.1).
+  //
+  // Build split: esbuild.js produces the runnable bundle (dist/extension.cjs,
+  // format:'cjs' — the extension host loads `main` via CommonJS require()); `tsc
+  // --noEmit` (this config) is the TYPE-CHECK pass only. So `composite`/emit are OFF
+  // — nothing downstream consumes this package's `dist/*.d.ts` (it is a leaf app, not
+  // a library), and the runtime artifact comes from esbuild, not tsc.
+  //
+  // The package is `"type": "module"`, so the .ts source is ESM under the base
+  // NodeNext settings (no module override needed) — consistent with every other
+  // workspace package. The CommonJS host entry is the esbuild `.cjs` output, not a
+  // tsc concern. `@types/vscode` provides the ambient `vscode` module types.
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": "src",
-    "outDir": "dist"
+    "noEmit": true,
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "types": ["node", "vscode"]
   },
-  "include": ["src/**/*.ts"],
-  "references": [
-    { "path": "../../packages/ui-shared" },
-    { "path": "../../packages/data-access" }
-  ]
+  "include": ["src/**/*.ts"]
 }

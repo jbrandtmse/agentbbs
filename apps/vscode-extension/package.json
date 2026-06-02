@@ -1,24 +1,42 @@
 {
   "name": "@agentbbs/vscode-extension",
+  "displayName": "AgentBBS",
+  "description": "Operator surface for the AgentBBS coordination board (VS Code extension).",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
+  "publisher": "agentbbs",
+  "categories": [
+    "Other"
+  ],
+  "engines": {
+    "vscode": "^1.105.0"
   },
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./dist/extension.cjs",
   "files": [
     "dist"
   ],
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      {
+        "command": "agentbbs.helloAbiProof",
+        "title": "AgentBBS: Hello (ABI Proof)"
+      }
+    ]
+  },
   "scripts": {
-    "build": "tsc -b tsconfig.json"
+    "build": "node esbuild.js && tsc --noEmit -p tsconfig.json",
+    "build:bundle": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@agentbbs/ui-shared": "workspace:*",
     "@agentbbs/data-access": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/vscode": "catalog:",
+    "esbuild": "catalog:"
   }
 }

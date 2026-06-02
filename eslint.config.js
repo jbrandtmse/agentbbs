@@ -230,6 +230,19 @@ export default tseslint.config(
     },
   },
 
+  // 7b. Plain-JS build/tool scripts (e.g. apps/vscode-extension/esbuild.js, Story
+  //     10.1) run under Node and use node globals (process, console). They are NOT
+  //     package source and are not covered by the TS block's languageOptions, so the
+  //     base recommended `no-undef` would flag those globals. Provide node globals
+  //     here. Scoped to *.js tool scripts under apps/* / packages/* (not the linted
+  //     TS source, which already has node globals in block 2).
+  {
+    files: ['apps/*/esbuild.js', 'packages/*/esbuild.js'],
+    languageOptions: {
+      globals: { ...globals.node },
+    },
+  },
+
   // 8. Prettier compatibility — MUST be last so it disables conflicting
   //    stylistic rules.
   prettier,
