@@ -20,7 +20,12 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { announceProject, postAnnouncement, register, reply } from '@agentbbs/core';
+import {
+  announceProject,
+  postAnnouncement,
+  register,
+  reply,
+} from '@agentbbs/core';
 import { createDataAccessNodeSqlite } from '@agentbbs/data-access';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -63,7 +68,9 @@ function fakeChannel(): Messaging & {
 }
 
 /** Seed a board: a registered actor, an announced project, a posted announcement (proto-room). */
-async function seedBoard(d: DataAccessHandle): Promise<{ roomId: string; projectId: string }> {
+async function seedBoard(
+  d: DataAccessHandle,
+): Promise<{ roomId: string; projectId: string }> {
   await register(d, { handle: 'alice', currentFocus: 'seeding' });
   const project = await announceProject(d, 'alice', {
     title: 'Test Project',
@@ -112,9 +119,9 @@ describe('bridge dispatch — READ ops mirror core', () => {
     });
     expect(ann.ok).toBe(true);
     expect(
-      (ann.result as { announcements: Array<{ roomId: string }> }).announcements.map(
-        (r) => r.roomId,
-      ),
+      (
+        ann.result as { announcements: Array<{ roomId: string }> }
+      ).announcements.map((r) => r.roomId),
     ).toContain(roomId);
 
     const room = await dispatchRequest(da!, {
@@ -155,9 +162,14 @@ describe('bridge dispatch — WRITE pattern (reply) + trim discipline + errors',
       args: { actor: 'bob', roomId, body: 'a real reply' },
     });
     expect(res.ok).toBe(true);
-    expect((res.result as { room: { roomId: string } }).room.roomId).toBe(roomId);
+    expect((res.result as { room: { roomId: string } }).room.roomId).toBe(
+      roomId,
+    );
     // The reply persisted (the room now has the activating message).
-    const messages = (await reply(da!, 'bob', { roomId, body: 'second' })) as unknown;
+    const messages = (await reply(da!, 'bob', {
+      roomId,
+      body: 'second',
+    })) as unknown;
     expect(messages).toBeDefined();
   });
 
@@ -190,6 +202,122 @@ describe('bridge dispatch — WRITE pattern (reply) + trim discipline + errors',
     });
     expect(res.ok).toBe(false);
     expect(res.error?.code).toBe('ROOM_NOT_FOUND');
+  });
+});
+
+describe('bridge dispatch — PROTO-ROOM reply-to-activate (AC4, Rule 15 respond-parity)', () => {
+  // THE MARQUEE SEMANTIC (Story 10.4 AC4): the operator opens a PROTO-ROOM (active:false) and
+  // replies through the bridge; the EXISTING core `reply` op (the Epic-4 min-seq activator) flips
+  // the room ACTIVE. This proves the bridge maps the operator's RESPOND affordance to the SAME
+  // `reply` an agent uses — no fabricated activate op (Rule 13/15).
+  //
+  // MUTATION-TESTED NON-VACUOUS (Rule 7): temporarily breaking the bridge `reply` op so it does
+  // NOT reach core (e.g. `return { room };` WITHOUT the `await reply(...)`) leaves the room
+  // active:false → this test goes RED. Confirmed during dev; production reverted byte-identical.
+  it('a reply through the bridge ACTIVATES a proto-room (active:false → true) via the existing reply op', async () => {
+    const { roomId } = await seedBoard(da!);
+    await register(da!, { handle: 'bob', currentFocus: 'answering' });
+
+    // BEFORE: the proto-room is INACTIVE (an announcement with no reply yet).
+    const before = await dispatchRequest(da!, {
+      id: 'a1',
+      op: 'readRoom',
+      args: { roomId },
+    });
+    expect((before.result as { room: { active: boolean } }).room.active).toBe(
+      false,
+    );
+
+    // ACT: reply through the bridge (the operator's RESPOND affordance → core `reply`).
+    const res = await dispatchRequest(da!, {
+      id: 'a2',
+      op: 'reply',
+      args: { actor: 'bob', roomId, body: 'I will take this.' },
+    });
+    expect(res.ok).toBe(true);
+
+    // AFTER: the room is now ACTIVE — the min-seq activator fired (asserted OUT-OF-BAND via a
+    // fresh readRoom read, not the write's own return).
+    const after = await dispatchRequest(da!, {
+      id: 'a3',
+      op: 'readRoom',
+      args: { roomId },
+    });
+    const room = (
+      after.result as { room: { active: boolean; activatedBy?: string } }
+    ).room;
+    expect(room.active).toBe(true);
+    expect(room.activatedBy).toBe('bob');
+  });
+});
+
+describe('bridge dispatch — react/unreact (the ReactionChip 👍 toggle, Story 10.4)', () => {
+  /** Activate a room (bob replies), so it has a real message to 👍 + bob is a participant. */
+  async function activeRoomWithMessage(d: DataAccessHandle): Promise<{
+    roomId: string;
+    messageSeq: number;
+  }> {
+    const { roomId } = await seedBoard(d);
+    await register(d, { handle: 'bob', currentFocus: 'answering' });
+    await reply(d, 'bob', { roomId, body: 'the activating reply' });
+    // The activating reply's seq is the room's first reply message seq — read it back.
+    const events = await d.eventsSince(0);
+    const replied = events.find((e) => e.type === 'room.replied');
+    return { roomId, messageSeq: replied!.seq };
+  }
+
+  it('react places a 👍 via the core react op and returns the live reactors', async () => {
+    const { messageSeq } = await activeRoomWithMessage(da!);
+    const res = await dispatchRequest(da!, {
+      id: 'rx1',
+      op: 'react',
+      args: { actor: 'bob', messageSeq },
+    });
+    expect(res.ok).toBe(true);
+    const result = res.result as { messageSeq: number; reactions: string[] };
+    expect(result.messageSeq).toBe(messageSeq);
+    expect(result.reactions).toContain('bob');
+  });
+
+  it('unreact retracts the 👍 and returns the emptied reactor set', async () => {
+    const { messageSeq } = await activeRoomWithMessage(da!);
+    await dispatchRequest(da!, {
+      id: 'rx2',
+      op: 'react',
+      args: { actor: 'bob', messageSeq },
+    });
+    const res = await dispatchRequest(da!, {
+      id: 'rx3',
+      op: 'unreact',
+      args: { actor: 'bob', messageSeq },
+    });
+    expect(res.ok).toBe(true);
+    expect((res.result as { reactions: string[] }).reactions).not.toContain(
+      'bob',
+    );
+  });
+
+  it('react by a NON-participant surfaces the core NOT_A_MEMBER closed code (no backdoor)', async () => {
+    const { messageSeq } = await activeRoomWithMessage(da!);
+    await register(da!, { handle: 'stranger', currentFocus: 'lurking' });
+    const res = await dispatchRequest(da!, {
+      id: 'rx4',
+      op: 'react',
+      args: { actor: 'stranger', messageSeq },
+    });
+    expect(res.ok).toBe(false);
+    expect(res.error?.code).toBe('NOT_A_MEMBER');
+  });
+
+  it('react with a non-numeric messageSeq → host-surface BAD_REQUEST', async () => {
+    await activeRoomWithMessage(da!);
+    const res = await dispatchRequest(da!, {
+      id: 'rx5',
+      op: 'react',
+      args: { actor: 'bob', messageSeq: 'not-a-number' },
+    });
+    expect(res.ok).toBe(false);
+    expect(res.error?.code).toBe('BAD_REQUEST');
   });
 });
 

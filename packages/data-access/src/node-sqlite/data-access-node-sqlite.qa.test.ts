@@ -117,7 +117,10 @@ describe('node:sqlite appendGuarded — MULTI-guard parity (all gate before any 
 
   it('a trip on the FIRST guard inserts NONE of a multi-event batch', async () => {
     da = freshDataAccess();
-    await da.appendGuarded([registered('first-taken')], [handleGuard('first-taken')]);
+    await da.appendGuarded(
+      [registered('first-taken')],
+      [handleGuard('first-taken')],
+    );
 
     await expect(
       da.appendGuarded(

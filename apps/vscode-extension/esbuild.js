@@ -26,12 +26,24 @@
 // `dist/extension.cjs` (format:'cjs') gives the host a CommonJS entry while keeping
 // the source ESM. This file itself is an ES module (package is type:module).
 
+// TWO-BUNDLE SPLIT (Story 10.4 — AC2):
+//   1. THE HOST BUNDLE (dist/extension.cjs) — platform:'node', format:'cjs', the extension-host
+//      entry. React-FREE (the host never renders React; only the webview does). Externals as
+//      above.
+//   2. THE WEBVIEW BUNDLE (dist/webview/main.js) — platform:'browser', format:'esm'. The webview
+//      is a BROWSER context (an iframe the VS Code host renders), DISTINCT from the host CJS
+//      bundle. react / react-dom / @agentbbs/ui-shared are BUNDLED into it (NO externals — there
+//      is no node_modules resolution inside the webview). The side-effecting ui-shared CSS
+//      (tokens/markdown/room/chrome) + the `--vscode-*` theme layer are emitted as a single
+//      `dist/webview/main.css` (the `css` loader bundles the imported stylesheets); the host links
+//      it alongside the script. Verify the webview bundle has NO node built-ins (browser context).
+
 import esbuild from 'esbuild';
 
 const watch = process.argv.includes('--watch');
 
-/** @type {import('esbuild').BuildOptions} */
-const buildOptions = {
+/** @type {import('esbuild').BuildOptions} — the extension HOST bundle (CJS, node, React-free). */
+const hostBuildOptions = {
   entryPoints: ['src/extension.ts'],
   outfile: 'dist/extension.cjs',
   bundle: true,
@@ -44,14 +56,38 @@ const buildOptions = {
   logLevel: 'info',
 };
 
+/** @type {import('esbuild').BuildOptions} — the WEBVIEW bundle (ESM, browser; React + ui-shared bundled). */
+const webviewBuildOptions = {
+  entryPoints: ['src/webview/main.tsx'],
+  outfile: 'dist/webview/main.js',
+  bundle: true,
+  platform: 'browser',
+  format: 'esm',
+  target: 'es2020',
+  sourcemap: true,
+  // React 19 automatic JSX runtime (no `import React` needed in the .tsx).
+  jsx: 'automatic',
+  // The imported `*.css` (ui-shared stylesheets + the vscode-tokens theme layer) bundle into a
+  // single dist/webview/main.css the host links beside the script.
+  loader: { '.css': 'css' },
+  // NO externals — the webview has no module resolver; react/react-dom/ui-shared are bundled in.
+  external: [],
+  logLevel: 'info',
+};
+
 async function main() {
   if (watch) {
-    const ctx = await esbuild.context(buildOptions);
-    await ctx.watch();
-    console.log('[esbuild] watching apps/vscode-extension/src/extension.ts …');
+    const hostCtx = await esbuild.context(hostBuildOptions);
+    const webviewCtx = await esbuild.context(webviewBuildOptions);
+    await Promise.all([hostCtx.watch(), webviewCtx.watch()]);
+    console.log(
+      '[esbuild] watching apps/vscode-extension/src/extension.ts + src/webview/main.tsx …',
+    );
   } else {
-    await esbuild.build(buildOptions);
+    await esbuild.build(hostBuildOptions);
     console.log('[esbuild] built dist/extension.cjs');
+    await esbuild.build(webviewBuildOptions);
+    console.log('[esbuild] built dist/webview/main.js (+ main.css)');
   }
 }
 

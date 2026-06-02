@@ -50,52 +50,54 @@ function forkWorker(
   args: { dbPath: string; workerId: number; handle: string },
   onReady: (child: ChildProcess) => void,
 ): Promise<NodeSqliteRaceWorkerResult> {
-  return new Promise<NodeSqliteRaceWorkerResult>((resolvePromise, rejectPromise) => {
-    const child = fork(
-      WORKER_DIST,
-      [args.dbPath, String(args.workerId), args.handle],
-      { stdio: ['ignore', 'inherit', 'inherit', 'ipc'] },
-    );
-    liveChildren.add(child);
+  return new Promise<NodeSqliteRaceWorkerResult>(
+    (resolvePromise, rejectPromise) => {
+      const child = fork(
+        WORKER_DIST,
+        [args.dbPath, String(args.workerId), args.handle],
+        { stdio: ['ignore', 'inherit', 'inherit', 'ipc'] },
+      );
+      liveChildren.add(child);
 
-    let result: NodeSqliteRaceWorkerResult | undefined;
-    let settled = false;
+      let result: NodeSqliteRaceWorkerResult | undefined;
+      let settled = false;
 
-    child.on('message', (msg: unknown) => {
-      if (typeof msg !== 'object' || msg === null) return;
-      const tag = (msg as { type?: unknown }).type;
-      if (tag === 'ready') {
-        onReady(child);
-      } else if (tag === 'done') {
-        result = msg as NodeSqliteRaceWorkerResult;
-      }
-    });
+      child.on('message', (msg: unknown) => {
+        if (typeof msg !== 'object' || msg === null) return;
+        const tag = (msg as { type?: unknown }).type;
+        if (tag === 'ready') {
+          onReady(child);
+        } else if (tag === 'done') {
+          result = msg as NodeSqliteRaceWorkerResult;
+        }
+      });
 
-    child.once('error', (err) => {
-      liveChildren.delete(child);
-      if (!settled) {
+      child.once('error', (err) => {
+        liveChildren.delete(child);
+        if (!settled) {
+          settled = true;
+          rejectPromise(err);
+        }
+      });
+
+      child.once('exit', (code, signal) => {
+        liveChildren.delete(child);
+        if (settled) return;
         settled = true;
-        rejectPromise(err);
-      }
-    });
-
-    child.once('exit', (code, signal) => {
-      liveChildren.delete(child);
-      if (settled) return;
-      settled = true;
-      if (code === 0 && result) {
-        resolvePromise(result);
-      } else {
-        rejectPromise(
-          new Error(
-            `worker ${args.workerId} exited code=${String(code)} signal=${String(
-              signal,
-            )} resultReceived=${String(Boolean(result))}`,
-          ),
-        );
-      }
-    });
-  });
+        if (code === 0 && result) {
+          resolvePromise(result);
+        } else {
+          rejectPromise(
+            new Error(
+              `worker ${args.workerId} exited code=${String(code)} signal=${String(
+                signal,
+              )} resultReceived=${String(Boolean(result))}`,
+            ),
+          );
+        }
+      });
+    },
+  );
 }
 
 function reapChildren(): void {

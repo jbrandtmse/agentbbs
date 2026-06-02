@@ -71,13 +71,38 @@ vi.mock('vscode', () => {
       showInformationMessage: () => Promise.resolve(undefined),
       createTreeView: () => ({ dispose: () => {} }),
       registerFileDecorationProvider: () => ({ dispose: () => {} }),
+      // Story 10.4 — the room WebviewPanel factory (a minimal panel stub; activate() does not
+      // create a panel until openRoom is invoked).
+      createWebviewPanel: () => ({
+        title: '',
+        webview: {
+          html: '',
+          options: {},
+          cspSource: 'vscode-webview://test',
+          asWebviewUri: (u: unknown) => ({ toString: () => String(u) }),
+          postMessage: () => true,
+          onDidReceiveMessage: () => ({ dispose: () => {} }),
+        },
+        reveal: () => {},
+        onDidDispose: () => ({ dispose: () => {} }),
+        dispose: () => {},
+      }),
     },
     workspace: {
       getConfiguration: () => ({ get: () => undefined }),
     },
     Uri: {
       parse: (s: string) => ({ toString: () => s, scheme: s.split(':')[0] }),
+      // Story 10.4 — extension.ts resolves the webview bundle/css refs via Uri.joinPath.
+      file: (p: string) => ({ toString: () => p, fsPath: p, path: p }),
+      joinPath: (base: { path?: string }, ...segs: string[]) => {
+        const basePath = base.path ?? String(base);
+        const joined = [basePath, ...segs].join('/');
+        return { toString: () => joined, fsPath: joined, path: joined };
+      },
     },
+    // Story 10.4 — the column the room panel opens in.
+    ViewColumn: { Active: -1, Beside: -2, One: 1 },
     EventEmitter,
     TreeItem,
     ThemeIcon,
@@ -170,10 +195,12 @@ describe('AC1 — extension activates without throwing', () => {
     process.env.AGENTBBS_DB = ':memory:';
     try {
       const subscriptions: Array<{ dispose: () => void }> = [];
-      // A minimal ExtensionContext — only the field activate() touches.
-      const fakeContext = { subscriptions } as unknown as Parameters<
-        typeof activate
-      >[0];
+      // A minimal ExtensionContext — only the fields activate() touches (Story 10.4 added
+      // extensionUri, used to resolve the room webview bundle/css refs).
+      const fakeContext = {
+        subscriptions,
+        extensionUri: { path: '/ext', toString: () => '/ext' },
+      } as unknown as Parameters<typeof activate>[0];
 
       expect(() => activate(fakeContext)).not.toThrow();
       expect(registeredCommands).toContain('agentbbs.helloAbiProof');

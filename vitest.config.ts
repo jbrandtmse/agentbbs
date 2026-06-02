@@ -94,6 +94,11 @@ export default defineConfig({
           exclude: [
             'packages/ui-shared/src/**/*.test.tsx',
             'apps/web/src/**/*.test.tsx',
+            // Story 10.4 — the VS Code webview React mount (RoomApp) is a DOM-tier test too;
+            // it runs under the happy-dom project below, never twice (Rule 12 corollary — the
+            // canonical gate is ROOT `pnpm test`, which maps it; a per-package `vitest` run does
+            // NOT and would falsely report `document is not defined`).
+            'apps/vscode-extension/src/**/*.test.tsx',
           ],
           passWithNoTests: true,
         },
@@ -114,12 +119,14 @@ export default defineConfig({
         test: {
           name: 'ui-shared-dom',
           environment: 'happy-dom',
-          // The DOM-env React component tests: ui-shared's own (Story 9.1/9.2) plus
-          // apps/web's shell render test (Story 9.3) — the first CROSS-package DOM
-          // consumer of ui-shared. Both run under happy-dom with the shared act() setup.
+          // The DOM-env React component tests: ui-shared's own (Story 9.1/9.2), apps/web's
+          // shell render test (Story 9.3), and (Story 10.4) the VS Code webview RoomApp mount —
+          // the SECOND cross-package DOM consumer of ui-shared (the webview mounts the same
+          // RoomView). All run under happy-dom with the shared act() setup.
           include: [
             'packages/ui-shared/src/**/*.test.tsx',
             'apps/web/src/**/*.test.tsx',
+            'apps/vscode-extension/src/**/*.test.tsx',
           ],
           // Story 9.2 / 9.1-L1: set IS_REACT_ACT_ENVIRONMENT=true so React act()
           // semantics are correct and the act(...) stderr warning is silenced for

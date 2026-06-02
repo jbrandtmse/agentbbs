@@ -143,7 +143,19 @@ importers:
       '@agentbbs/ui-shared':
         specifier: workspace:*
         version: link:../../packages/ui-shared
+      react:
+        specifier: 'catalog:'
+        version: 19.2.6
+      react-dom:
+        specifier: 'catalog:'
+        version: 19.2.6(react@19.2.6)
     devDependencies:
+      '@types/react':
+        specifier: 'catalog:'
+        version: 19.2.15
+      '@types/react-dom':
+        specifier: 'catalog:'
+        version: 19.2.3(@types/react@19.2.15)
       '@types/vscode':
         specifier: 'catalog:'
         version: 1.120.0

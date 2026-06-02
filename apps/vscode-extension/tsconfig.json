@@ -11,6 +11,12 @@
   // NodeNext settings (no module override needed) — consistent with every other
   // workspace package. The CommonJS host entry is the esbuild `.cjs` output, not a
   // tsc concern. `@types/vscode` provides the ambient `vscode` module types.
+  // Story 10.4 adds the WEBVIEW React bundle (src/webview/*.tsx) — a BROWSER context, distinct
+  // from the host CJS code. The host code (extension.ts/bridge.ts/db.ts/tree/*) is node; the
+  // webview .tsx is browser React. One typecheck config covers both: `jsx: react-jsx` (React 19
+  // automatic runtime — no per-file `import React`), the DOM lib (the webview touches
+  // document/window), and the react/react-dom types alongside node/vscode. esbuild produces the
+  // two runnable bundles; this is the `tsc --noEmit` type-check pass only.
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": "src",
@@ -18,7 +24,9 @@
     "composite": false,
     "declaration": false,
     "declarationMap": false,
-    "types": ["node", "vscode"]
+    "jsx": "react-jsx",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node", "vscode", "react", "react-dom"]
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
 }

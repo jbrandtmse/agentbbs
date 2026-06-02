@@ -1355,6 +1355,24 @@ So that the editor surface matches the web surface's liveness and accessibility.
 **Then** `ColorThemeKind` high-contrast is respected (lean on `contrastBorder`; agreed-green/flag-warm map to charted/decoration tokens; alpha washes become solid borders),
 **And** keyboard navigation and screen-reader semantics match the web floor, deferring to the editor's keybindings where they overlap, with focus visible via `--vscode-focusBorder`.
 
+#### Story 10.7: Operator initiate-parity — compose surfaces wired through the bridge
+
+<!-- Added 2026-06-02 by /epic-cycle (Rule-15 both-directions scoping decision, user-ratified): the Epic-10 success criteria require operator INITIATE-parity, but Stories 10.1–10.6 are room/respond-centric. This dedicated story wires the initiate half, mirroring how Epic 9 handled it as dedicated stories 9.11–9.13. -->
+
+As an operator in VS Code,
+I want to create a project, post an announcement, join a project, and set my focus from the editor surface,
+So that VS Code reaches FULL operator↔agent initiate-parity — not just the respond/browse half (Rule 15).
+
+**Acceptance Criteria:**
+
+**Given** the VS Code surface and the shared `ui-shared` compose components (`CreateProjectCompose` / `PostAnnouncementCompose` / `JoinProjectPicker` / `FocusAffordance`, the SAME ones the web operator UI uses, Stories 9.11–9.13),
+**When** the operator invokes the create-project / post-announcement / join-project / set-focus affordances (e.g. the tree's `＋ join a project…` row from Story 10.3, an activity-bar/command-palette entry, or a compose webview),
+**Then** each surface mounts the corresponding shared compose component (themed `--vscode-*`) and is wired through the Story-10.2 `postMessage` bridge to the EXISTING core write ops (`announceProject` / `postAnnouncement` / `joinBoard` / `updateFocus`) — no fabricated board op, no client backdoor, the ratified agent contract byte-identical (Rule 13),
+**And** the operator posts/creates via the SAME core ops an agent uses (grant-on-act preserved; watching-only/unregistered gates honored as on the web — `NO_OPERATOR`/`OPERATOR_NOT_REGISTERED` host-surface behavior), and a posted announcement immediately appears as a navigable proto-room (the Story 10.3/10.4 respond half — closing the initiate→respond loop in one surface, Rule 15),
+**And** panel-exclusivity for the initiate compose surfaces uses VS Code-native handling (the web single-open-initiate-panel model does not carry — Epic-9 retro carry).
+
+**Success criteria:** VS Code reaches the SAME operator↔agent parity as the web surface (initiate AND respond); the end-of-epic Rule-14 integrated exploratory smoke runs after this story, exercising the WHOLE flow (create → join → post → open proto-room → reply-to-activate → react/agreed → focus) on the real VS Code webview host.
+
 ### Epic 11: Backup, restore & open-source readiness
 
 **Goal:** Make the institutional-memory ledger survive machine moves via a backend-agnostic logical export/import, and make the project something an outside developer can stand up without the author present.

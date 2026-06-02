@@ -74,13 +74,39 @@ vi.mock('vscode', () => {
       showInformationMessage: () => Promise.resolve(undefined),
       createTreeView: () => ({ dispose: () => {} }),
       registerFileDecorationProvider: () => ({ dispose: () => {} }),
+      // Story 10.4 — the room WebviewPanel factory. activate() constructs the RoomPanelManager
+      // (which does NOT create a panel until openRoom is called), so this is here for completeness;
+      // a minimal panel-shaped stub suffices.
+      createWebviewPanel: () => ({
+        title: '',
+        webview: {
+          html: '',
+          options: {},
+          cspSource: 'vscode-webview://test',
+          asWebviewUri: (u: unknown) => ({ toString: () => String(u) }),
+          postMessage: () => true,
+          onDidReceiveMessage: () => ({ dispose: () => {} }),
+        },
+        reveal: () => {},
+        onDidDispose: () => ({ dispose: () => {} }),
+        dispose: () => {},
+      }),
     },
     workspace: {
       getConfiguration: () => ({ get: () => undefined }),
     },
     Uri: {
       parse: (s: string) => ({ toString: () => s, scheme: s.split(':')[0] }),
+      // Story 10.4 — extension.ts resolves the webview bundle/css refs via Uri.joinPath.
+      file: (p: string) => ({ toString: () => p, fsPath: p, path: p }),
+      joinPath: (base: { path?: string }, ...segs: string[]) => {
+        const basePath = base.path ?? String(base);
+        const joined = [basePath, ...segs].join('/');
+        return { toString: () => joined, fsPath: joined, path: joined };
+      },
     },
+    // Story 10.4 — the column the room panel opens in.
+    ViewColumn: { Active: -1, Beside: -2, One: 1 },
     EventEmitter,
     TreeItem,
     ThemeIcon,
@@ -173,9 +199,11 @@ describe('AC1 — activate() registers a real disposable cleanup contract', () =
     process.env.AGENTBBS_DB = ':memory:';
     try {
       const subscriptions: Array<{ dispose: () => void }> = [];
-      const fakeContext = { subscriptions } as unknown as Parameters<
-        typeof activate
-      >[0];
+      // Story 10.4 added extensionUri (the room webview bundle/css ref base).
+      const fakeContext = {
+        subscriptions,
+        extensionUri: { path: '/ext', toString: () => '/ext' },
+      } as unknown as Parameters<typeof activate>[0];
 
       registeredCommands.length = 0;
       activate(fakeContext);

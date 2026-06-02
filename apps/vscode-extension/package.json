@@ -108,9 +108,13 @@
   "dependencies": {
     "@agentbbs/core": "workspace:*",
     "@agentbbs/ui-shared": "workspace:*",
-    "@agentbbs/data-access": "workspace:*"
+    "@agentbbs/data-access": "workspace:*",
+    "react": "catalog:",
+    "react-dom": "catalog:"
   },
   "devDependencies": {
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
     "@types/vscode": "catalog:",
     "@vscode/test-electron": "catalog:",
     "esbuild": "catalog:"

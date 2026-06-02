@@ -179,7 +179,9 @@ describe('bridge delta poll — de-dup + no-flood-on-connect (NFR5 pull-only pos
 
       const deltas = channel.sent.filter((m) => m.type === 'delta');
       expect(deltas).toHaveLength(1); // de-dup: idle ticks pushed nothing more
-      expect((deltas[0] as { events: unknown[] }).events.length).toBeGreaterThan(0);
+      expect(
+        (deltas[0] as { events: unknown[] }).events.length,
+      ).toBeGreaterThan(0);
 
       // A SECOND distinct event → a SECOND delta whose maxSeq strictly advances (the cursor
       // moved; the first event is NOT re-sent — the new delta starts past the first's seq).
@@ -189,7 +191,9 @@ describe('bridge delta poll — de-dup + no-flood-on-connect (NFR5 pull-only pos
         () => channel.sent.filter((m) => m.type === 'delta').length === 2,
       );
       const allDeltas = channel.sent.filter((m) => m.type === 'delta');
-      expect((allDeltas[1] as { maxSeq: number }).maxSeq).toBeGreaterThan(firstMax);
+      expect((allDeltas[1] as { maxSeq: number }).maxSeq).toBeGreaterThan(
+        firstMax,
+      );
     } finally {
       bridge.dispose();
     }

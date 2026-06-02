@@ -21,12 +21,14 @@
 //     never persists a whitespace post a direct caller could send. (A future `updateFocus`
 //     write — deferred to its consuming story — must apply the SAME trim.)
 //
-// WRITE SURFACE SCOPE (named, not silently dropped): this story wires the READ surface + the
-// `reply` write (establishing the request/response write pattern). The remaining writes
-// (react/unreact/joinBoard/updateFocus/announceProject/postAnnouncement/addParticipant) are
-// DEFERRED-TO-CONSUMER — wired by their consuming Epic-10 stories (10.3–10.6) following this
-// same dispatch shape, exactly as the web host added writes incrementally. They are NOT
-// fabricated here.
+// WRITE SURFACE SCOPE (named, not silently dropped): the READ surface + the `reply` write were
+// established in Story 10.2. Story 10.4 (the room webview consumer) wires `react`/`unreact` for
+// the ReactionChip 👍 toggle — the SAME core ops an agent uses (Rule 13; named-deferred-to-
+// consumer in 10.2, consumed here, NOT a dead 👍 click). The remaining writes
+// (joinBoard/updateFocus/announceProject/postAnnouncement/addParticipant) stay
+// DEFERRED-TO-CONSUMER — wired by their consuming Epic-10 stories (the operator INITIATE
+// surfaces are Story 10.7) following this same dispatch shape, exactly as the web host added
+// writes incrementally. They are NOT fabricated here.
 
 import {
   BoardError,
@@ -35,10 +37,12 @@ import {
   listAnnouncements,
   listProjects,
   listRooms,
+  react,
   readContract,
   reply,
   roomMessages,
   roomParticipants,
+  unreact,
 } from '@agentbbs/core';
 
 import type { DataAccess } from '@agentbbs/core';
@@ -140,6 +144,18 @@ function requireString(args: Record<string, unknown>, field: string): string {
   return value;
 }
 
+/** Require a finite-number arg; throw a host-surface BAD_REQUEST (the react/unreact target seq). */
+function requireNumber(args: Record<string, unknown>, field: string): number {
+  const value = args[field];
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new BridgeError(
+      'BAD_REQUEST',
+      `Request arg "${field}" must be a finite number.`,
+    );
+  }
+  return value;
+}
+
 /**
  * The op table — webview op name → composed core call. READ ops mirror the web host's GET
  * routes; the single WRITE (`reply`) establishes the request/response write pattern. Adding a
@@ -204,6 +220,32 @@ const OPS: Record<string, OpHandler> = {
     const room = await reply(dataAccess, actor, { roomId, body });
     return { room };
   },
+
+  // react/unreact — the ReactionChip 👍 toggle (Story 10.4 consumer; named-deferred-to-consumer
+  // in 10.2). The SAME core react/unreact an agent uses (Rule 13 — no fabricated op, no
+  // backdoor; core gates the actor on room participation → NOT_A_MEMBER for a non-participant,
+  // exactly as the web). Returns the message seq + its live reactors after, so the webview can
+  // collapse any optimistic divergence to the authoritative set (mirrors the web's ReactResponse).
+  react: async (dataAccess, args) => {
+    const actor = requireString(args, 'actor');
+    const messageSeq = requireNumber(args, 'messageSeq');
+    const { messageSeq: seq, reactions } = await react(
+      dataAccess,
+      actor,
+      messageSeq,
+    );
+    return { messageSeq: seq, reactions };
+  },
+  unreact: async (dataAccess, args) => {
+    const actor = requireString(args, 'actor');
+    const messageSeq = requireNumber(args, 'messageSeq');
+    const { messageSeq: seq, reactions } = await unreact(
+      dataAccess,
+      actor,
+      messageSeq,
+    );
+    return { messageSeq: seq, reactions };
+  },
 };
 
 /**
@@ -222,7 +264,10 @@ export async function dispatchRequest(
       type: 'response',
       id: request.id,
       ok: false,
-      error: { code: 'BAD_REQUEST', message: `Unknown bridge op: "${request.op}".` },
+      error: {
+        code: 'BAD_REQUEST',
+        message: `Unknown bridge op: "${request.op}".`,
+      },
     };
   }
   try {
@@ -245,7 +290,8 @@ export async function dispatchRequest(
       ok: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: err instanceof Error ? err.message : 'Unexpected bridge error.',
+        message:
+          err instanceof Error ? err.message : 'Unexpected bridge error.',
       },
     };
   }

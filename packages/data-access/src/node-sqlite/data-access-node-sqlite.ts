@@ -14,10 +14,7 @@
 // bookkeeping table). Same json_extract guard, same monotonic AUTOINCREMENT `seq`.
 
 import { migrateNodeSqlite } from './migrate.js';
-import {
-  openNodeSqliteDatabase,
-  runWithRetry,
-} from './connection.js';
+import { openNodeSqliteDatabase, runWithRetry } from './connection.js';
 import { immediateTransaction } from './tx.js';
 import { UniquenessConflictError } from '../errors.js';
 import { newEventToRow, rowToEvent } from '../mapping.js';

@@ -138,9 +138,17 @@ describe('node:sqlite adapter — append (N rows, monotonic seq in input order)'
 
     await expect(
       da.append([
-        { type: 'identity.seen', actor: 'good-1', payload: { handle: 'good-1' } },
+        {
+          type: 'identity.seen',
+          actor: 'good-1',
+          payload: { handle: 'good-1' },
+        },
         bad,
-        { type: 'identity.seen', actor: 'good-2', payload: { handle: 'good-2' } },
+        {
+          type: 'identity.seen',
+          actor: 'good-2',
+          payload: { handle: 'good-2' },
+        },
       ]),
     ).rejects.toThrow();
 
@@ -180,7 +188,10 @@ describe('node:sqlite adapter — appendGuarded (atomic check-then-insert, FR1)'
 
   it('rejects with UniquenessConflictError + inserts NOTHING when the guard trips', async () => {
     da = freshDataAccess();
-    await da.appendGuarded([registeredEvent('alice')], [registeredGuard('alice')]);
+    await da.appendGuarded(
+      [registeredEvent('alice')],
+      [registeredGuard('alice')],
+    );
 
     // A second guarded append for the SAME handle must trip the guard and roll back.
     await expect(

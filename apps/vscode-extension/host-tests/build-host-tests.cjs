@@ -31,6 +31,10 @@ const ENTRY_POINTS = [
   'open-ledger.in-host.ts',
   // Story 10.3 — the native tree-model probe (proto-room navigable row + decoration source).
   'tree-model.in-host.ts',
+  // Story 10.4 — the room-panel probe (real WebviewPanel + nonce-CSP HTML + proto-room
+  // reply-to-activate over the panel bridge). Imports the RoomPanelManager (which imports `vscode`
+  // — externalized below) + core/data-access.
+  'room-panel.in-host.ts',
 ];
 
 async function main() {

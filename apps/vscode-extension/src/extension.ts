@@ -16,6 +16,7 @@
 import * as vscode from 'vscode';
 
 import { openLedger } from './db.js';
+import { RoomPanelManager, ROOM_PANEL_VIEW_TYPE } from './room-panel.js';
 import {
   BoardTreeProvider,
   BOARD_TREE_VIEW_ID,
@@ -25,6 +26,7 @@ import {
 import { BoardDecorationProvider } from './tree/decorations.js';
 import { resolveOperatorHandle } from './tree/operator-handle.js';
 
+import type { PanelLike } from './room-panel.js';
 import type { OpenedLedger } from './db.js';
 
 /** Activation log marker — asserted by the host smoke / surfaced in the host log. */
@@ -41,6 +43,8 @@ let ledger: OpenedLedger | undefined;
 
 /** The board tree provider (held so deactivate can dispose it). */
 let treeProvider: BoardTreeProvider | undefined;
+/** The room WebviewPanel manager (Story 10.4) — held so deactivate can dispose the bridges. */
+let roomPanels: RoomPanelManager | undefined;
 /** The refresh poll timer (held so deactivate can clear it). */
 let refreshTimer: NodeJS.Timeout | undefined;
 
@@ -100,9 +104,9 @@ function readOperatorHandle(): string | null {
 
 /**
  * Register the native TreeView + FileDecorationProvider + the open-room/join/refresh commands,
- * and start a light refresh poll. The open-room command is a thin SEAM (Story 10.4 fills it
- * with the room WebviewPanel); the rows already carry it + are selectable, so proto-room
- * navigability is structurally present now (Rule 15).
+ * and start a light refresh poll. The open-room command (Story 10.4) opens the room as a
+ * WebviewPanel via {@link RoomPanelManager} — one panel per room, reveal-not-duplicate; every row
+ * (active OR a navigable proto-room) is selectable + carries the command (Rule 15).
  */
 function registerBoardTree(
   context: vscode.ExtensionContext,
@@ -128,16 +132,40 @@ function registerBoardTree(
     vscode.window.registerFileDecorationProvider(decorations),
   );
 
-  // The open-room SEAM — Story 10.4 replaces this body with the room WebviewPanel. Registered
-  // now so every row's `command` resolves (the row is navigable now, not a dead no-op).
+  // Story 10.4 — the room WebviewPanel manager. Each room opens as an editor-tab webview mounting
+  // the built ui-shared bundle (dist/webview/main.js + main.css) + the VS Code theme layer, fed by
+  // a per-panel bridge over the shared ledger (Rule 13 — the SAME core ops an agent uses). The
+  // localResourceRoots is the extension's dist/ so the webview can load its own bundle/CSS.
+  const distRoot = vscode.Uri.joinPath(context.extensionUri, 'dist');
+  const scriptRef = vscode.Uri.joinPath(distRoot, 'webview', 'main.js');
+  const cssRef = vscode.Uri.joinPath(distRoot, 'webview', 'main.css');
+  const manager = new RoomPanelManager({
+    dataAccess: openedLedger.dataAccess,
+    assetUris: { script: scriptRef, styles: [cssRef] },
+    iconPath: new vscode.ThemeIcon('comment-discussion'),
+    resolveOperatorHandle: () => readOperatorHandle(),
+    createPanel: (roomId, title): PanelLike => {
+      const panel = vscode.window.createWebviewPanel(
+        ROOM_PANEL_VIEW_TYPE,
+        title,
+        vscode.ViewColumn.Active,
+        {
+          enableScripts: true,
+          // Retain context across tab-hide is Story 10.5; here a basic panel is enough.
+          localResourceRoots: [distRoot],
+        },
+      );
+      // The structural PanelLike the manager drives — the real vscode.WebviewPanel satisfies it.
+      return panel as unknown as PanelLike;
+    },
+  });
+  roomPanels = manager;
+  context.subscriptions.push({ dispose: () => manager.dispose() });
+
+  // The open-room command (Story 10.4) — open the room as a WebviewPanel (reveal-not-duplicate).
   context.subscriptions.push(
     vscode.commands.registerCommand(OPEN_ROOM_COMMAND, (roomId: string) => {
-      console.log(
-        `[agentbbs] openRoom (seam — Story 10.4 fills this): ${roomId}`,
-      );
-      void vscode.window.showInformationMessage(
-        `AgentBBS: open room "${roomId}" — the room view lands in Story 10.4.`,
-      );
+      manager.openRoom(roomId);
     }),
     vscode.commands.registerCommand(JOIN_PROJECT_COMMAND, () => {
       void vscode.window.showInformationMessage(
@@ -178,6 +206,10 @@ export function deactivate(): void {
   if (refreshTimer !== undefined) {
     clearInterval(refreshTimer);
     refreshTimer = undefined;
+  }
+  if (roomPanels !== undefined) {
+    roomPanels.dispose();
+    roomPanels = undefined;
   }
   if (treeProvider !== undefined) {
     treeProvider.dispose();

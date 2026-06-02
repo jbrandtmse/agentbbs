@@ -260,6 +260,53 @@ async function main() {
     );
   }
 
+  // Story 10.4 (AC1/AC2/AC4): the room WebviewPanel — a REAL panel opens (one per room,
+  // reveal-not-duplicate), its HTML shell carries the nonce CSP + the room id + no unsafe-*, and a
+  // real reply through the panel bridge ACTIVATES a proto-room (out-of-band active flip).
+  const panelProbePath = path.join(__dirname, 'dist', 'room-panel.in-host.cjs');
+  if (fs.existsSync(panelProbePath)) {
+    const panelDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'agentbbs-host-panel-'),
+    );
+    const panelDb = path.join(panelDir, '.agentbbs', 'agentbbs.db');
+    await runInHost(
+      panelProbePath,
+      'AC4 room-panel-reply-activates',
+      (r) => {
+        if (!r.opened || !r.panelCreated || !r.panelHasWebview) {
+          throw new Error(
+            `the room WebviewPanel was not created in the host: ${JSON.stringify(r)}`,
+          );
+        }
+        if (!r.htmlHasNonceCsp || !r.htmlHasRoomId || !r.htmlNoUnsafe) {
+          throw new Error(
+            `the panel HTML shell is wrong (nonce CSP / room id / no-unsafe): ${JSON.stringify(r)}`,
+          );
+        }
+        if (!r.revealNotDuplicate) {
+          throw new Error(
+            're-opening the same room did NOT reveal the existing panel (duplicate created).',
+          );
+        }
+        // AC4 — the load-bearing Rule-15 real-host assertion: a reply ACTIVATES the proto-room.
+        if (!r.protoInactiveBefore) {
+          throw new Error('the proto-room was not inactive before the reply.');
+        }
+        if (!r.activeAfterReply || !r.activatedByOperator) {
+          throw new Error(
+            'the reply did NOT activate the proto-room in the host (Rule-15 respond-parity regression).',
+          );
+        }
+      },
+      { AGENTBBS_DB: panelDb },
+    );
+  } else {
+    console.log(
+      '\n[AC4 room-panel-reply-activates] SKIPPED — bundle not built. Run ' +
+        '`node host-tests/build-host-tests.cjs` first (the test:host script does this).',
+    );
+  }
+
   console.log('\nAll in-host probes passed. Electron host:', {
     electron: gate.electron,
     modules: gate.modules,

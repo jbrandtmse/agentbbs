@@ -50,7 +50,10 @@ export async function run(): Promise<void> {
     result.opened = true;
 
     // Seed a project through the real core op (proves write works in-host), then read it back.
-    await register(dataAccess, { handle: 'host-probe', currentFocus: 'in-host' });
+    await register(dataAccess, {
+      handle: 'host-probe',
+      currentFocus: 'in-host',
+    });
     const project = await announceProject(dataAccess, 'host-probe', {
       title: 'In-Host Probe Project',
       description: 'seeded inside the real VS Code Electron host',

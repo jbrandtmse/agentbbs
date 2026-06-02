@@ -38,6 +38,12 @@ import {
 } from './decoration-model.js';
 import { roomUriString } from './room-uri.js';
 
+// Type-only import (erased at compile time — does NOT interfere with the dynamic `await
+// import('vscode')` value the vi.mock supplies below): names the real `Uri` type so the `decorate`
+// helper's provider param matches the real `provideFileDecoration(uri: vscode.Uri)` signature
+// under strictFunctionTypes.
+import type { Uri as VscodeUri } from 'vscode';
+
 import type { BoardTreeModel, TreeRoomRow } from './tree-model.js';
 
 // Minimal `vscode` double: FileDecoration (badge/tooltip/color), ThemeColor, EventEmitter, Uri.
@@ -117,9 +123,15 @@ function source(model: BoardTreeModel | undefined) {
   return { getModel: () => model };
 }
 
-/** Resolve provideFileDecoration to its (possibly async) value. */
+/**
+ * Resolve provideFileDecoration to its (possibly async) value. The param accepts the REAL
+ * provider shape (`provideFileDecoration(uri: vscode.Uri)`); typing it as `(uri: unknown) => …`
+ * is contravariantly INCOMPATIBLE with the real `(uri: Uri) => …` under strictFunctionTypes (a
+ * pre-existing aggregate-typecheck escape surfaced by @types/vscode 1.120.0's Uri — Rule 3:
+ * the installed types are authoritative). Take a `vscode.Uri`-shaped param so it matches.
+ */
 async function decorate(
-  provider: { provideFileDecoration: (uri: unknown) => unknown },
+  provider: { provideFileDecoration: (uri: VscodeUri) => unknown },
   uri: string,
 ) {
   return await provider.provideFileDecoration(vscode.Uri.parse(uri));
