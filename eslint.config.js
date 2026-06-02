@@ -120,6 +120,11 @@ export default tseslint.config(
       '**/node_modules/**',
       '**/*.tsbuildinfo',
       'coverage/**',
+      // Downloaded VS Code builds for the @vscode/test-electron real-host harness
+      // (Story 10.2). These contain VS Code's OWN source + many tsconfig.json files
+      // which otherwise confuse the tseslint parser (multiple candidate TSConfigRootDirs)
+      // and are not project code. Never lint them.
+      '**/.vscode-test/**',
       // Non-code BMad assets and planning artifacts are not linted.
       '_bmad/**',
       '_bmad-output/**',
@@ -235,11 +240,23 @@ export default tseslint.config(
   //     package source and are not covered by the TS block's languageOptions, so the
   //     base recommended `no-undef` would flag those globals. Provide node globals
   //     here. Scoped to *.js tool scripts under apps/* / packages/* (not the linted
-  //     TS source, which already has node globals in block 2).
+  //     TS source, which already has node globals in block 2). Story 10.2 adds the
+  //     `.cjs` real-host test scripts under apps/*/host-tests/ (CommonJS Node scripts
+  //     using __dirname/require/process/console — the @vscode/test-electron harness).
   {
-    files: ['apps/*/esbuild.js', 'packages/*/esbuild.js'],
+    files: [
+      'apps/*/esbuild.js',
+      'packages/*/esbuild.js',
+      'apps/*/host-tests/**/*.cjs',
+    ],
     languageOptions: {
+      sourceType: 'commonjs',
       globals: { ...globals.node },
+    },
+    rules: {
+      // These are genuine CommonJS Node scripts (the .cjs real-host harness) — `require()`
+      // is correct here, not the TS `import`. Relax the TS-recommended no-require-imports.
+      '@typescript-eslint/no-require-imports': 'off',
     },
   },
 

@@ -121,22 +121,31 @@ describe('AC1 — activate() registers a real disposable cleanup contract', () =
     registeredCommands.length = 0;
     const { activate, deactivate } = await import('./extension.js');
 
-    const subscriptions: Array<{ dispose: () => void }> = [];
-    const fakeContext = { subscriptions } as unknown as Parameters<
-      typeof activate
-    >[0];
+    // Story 10.2: activate() opens the ledger via data-access — isolate it to in-memory so this
+    // unit test never touches the repo's real `.agentbbs/`.
+    const prev = process.env.AGENTBBS_DB;
+    process.env.AGENTBBS_DB = ':memory:';
+    try {
+      const subscriptions: Array<{ dispose: () => void }> = [];
+      const fakeContext = { subscriptions } as unknown as Parameters<
+        typeof activate
+      >[0];
 
-    activate(fakeContext);
+      activate(fakeContext);
 
-    // The activation-cleanup contract: a single registered disposable, and it is a
-    // REAL disposable (callable .dispose) the host will tear down — not just a count.
-    expect(subscriptions).toHaveLength(1);
-    const [disposable] = subscriptions;
-    expect(typeof disposable.dispose).toBe('function');
-    expect(() => disposable.dispose()).not.toThrow();
-    expect(registeredCommands).toEqual(['agentbbs.helloAbiProof']);
+      // The activation-cleanup contract: a single registered disposable, and it is a
+      // REAL disposable (callable .dispose) the host will tear down — not just a count.
+      expect(subscriptions).toHaveLength(1);
+      const [disposable] = subscriptions;
+      expect(typeof disposable.dispose).toBe('function');
+      expect(() => disposable.dispose()).not.toThrow();
+      expect(registeredCommands).toEqual(['agentbbs.helloAbiProof']);
 
-    expect(() => deactivate()).not.toThrow();
+      expect(() => deactivate()).not.toThrow();
+    } finally {
+      if (prev === undefined) delete process.env.AGENTBBS_DB;
+      else process.env.AGENTBBS_DB = prev;
+    }
   });
 });
 

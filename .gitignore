@@ -9,6 +9,9 @@ out/
 *.tsbuildinfo
 *.vsix
 
+# Downloaded VS Code builds for the @vscode/test-electron real-host harness (Story 10.2)
+.vscode-test/
+
 # AgentBBS runtime data (per-project ledger)
 .agentbbs/
 

@@ -38,6 +38,13 @@ catalog:
   # rebuild then and verify its CLI surface against the INSTALLED types (Rule 3).
   '@types/vscode': ^1.105.0
   esbuild: ^0.28.0
+  # Real Extension Development Host harness (Story 10.2) — launches a genuine VS Code
+  # Electron host to run in-host tests (the Rule-12 real-runtime evidence: node:sqlite
+  # exposed in the host, host opens the ledger). Verified installable on the npm
+  # registry 2026-06-02 (latest 2.5.2). It can drive an EXISTING local VS Code install
+  # (vscodeExecutablePath) or download a pinned build; we point it at the installed
+  # 1.122.1 at C:\Program Files\Microsoft VS Code\Code.exe.
+  '@vscode/test-electron': ^2.5.2
 
   # UI / web (Epic 9) — apps/web
   vite: ^8.0.14

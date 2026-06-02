@@ -118,18 +118,27 @@ describe('AC1 — extension activates without throwing', () => {
     const { activate, deactivate, ACTIVATION_LOG } =
       await import('./extension.js');
 
-    const subscriptions: Array<{ dispose: () => void }> = [];
-    // A minimal ExtensionContext — only the field activate() touches.
-    const fakeContext = { subscriptions } as unknown as Parameters<
-      typeof activate
-    >[0];
+    // Story 10.2: activate() now OPENS the shared ledger via data-access. Point AGENTBBS_DB at
+    // an isolated in-memory DB so this unit test never touches the repo's real `.agentbbs/`.
+    const prev = process.env.AGENTBBS_DB;
+    process.env.AGENTBBS_DB = ':memory:';
+    try {
+      const subscriptions: Array<{ dispose: () => void }> = [];
+      // A minimal ExtensionContext — only the field activate() touches.
+      const fakeContext = { subscriptions } as unknown as Parameters<
+        typeof activate
+      >[0];
 
-    expect(() => activate(fakeContext)).not.toThrow();
-    expect(registeredCommands).toContain('agentbbs.helloAbiProof');
-    expect(subscriptions.length).toBe(1);
-    expect(ACTIVATION_LOG).toContain('agentbbs');
+      expect(() => activate(fakeContext)).not.toThrow();
+      expect(registeredCommands).toContain('agentbbs.helloAbiProof');
+      expect(subscriptions.length).toBe(1);
+      expect(ACTIVATION_LOG).toContain('agentbbs');
 
-    // deactivate is a no-op in the 10.1 scaffold — must not throw.
-    expect(() => deactivate()).not.toThrow();
+      // deactivate closes the ledger handle opened above — must not throw.
+      expect(() => deactivate()).not.toThrow();
+    } finally {
+      if (prev === undefined) delete process.env.AGENTBBS_DB;
+      else process.env.AGENTBBS_DB = prev;
+    }
   });
 });

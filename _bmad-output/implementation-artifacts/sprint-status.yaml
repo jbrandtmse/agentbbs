@@ -185,7 +185,7 @@ development_status:
   # Epic 10: Operator UI - VS Code extension surface
   epic-10: in-progress
   10-1-extension-scaffold-and-better-sqlite3-electron-abi-proof: done
-  10-2-extension-host-opens-the-db-and-bridges-to-the-webview: backlog
+  10-2-extension-host-opens-the-db-and-bridges-to-the-webview: done
   10-3-native-treeview-navigation-with-decorations: backlog
   10-4-rooms-as-webviewpanels-mounting-ui-shared-with-theme-inheritance: backlog
   10-5-webview-csp-hardening-and-state-serialization: backlog

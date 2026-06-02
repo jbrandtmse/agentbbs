@@ -76,3 +76,18 @@ export type { EventRowInput, StoredEventRow } from './mapping.js';
 // --- Composed DataAccess: the full @agentbbs/core port (Story 1.6, AC1/AC2) ---
 export { createDataAccess, fromConnection } from './data-access.js';
 export type { DataAccessHandle } from './data-access.js';
+
+// --- node:sqlite DataAccess: the SECOND NFR2-seam driver, for the VS Code extension host
+//     (Story 10.2, AC3). Same port, same schema, same atomic-appendGuarded semantics; the
+//     driver ships embedded in Electron's Node so no native rebuild is needed (the
+//     better-sqlite3 path above stays byte-identical, the agent backend). ---
+export {
+  createDataAccessNodeSqlite,
+  fromNodeSqliteConnection,
+} from './node-sqlite/data-access-node-sqlite.js';
+export {
+  getBusyTimeout as getNodeSqliteBusyTimeout,
+  getJournalMode as getNodeSqliteJournalMode,
+  openNodeSqliteDatabase,
+} from './node-sqlite/connection.js';
+export { migrateNodeSqlite } from './node-sqlite/migrate.js';

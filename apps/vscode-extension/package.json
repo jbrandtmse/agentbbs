@@ -28,15 +28,19 @@
   "scripts": {
     "build": "node esbuild.js && tsc --noEmit -p tsconfig.json",
     "build:bundle": "node esbuild.js",
+    "build:host-tests": "node host-tests/build-host-tests.cjs",
     "watch": "node esbuild.js --watch",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test:host": "node host-tests/build-host-tests.cjs && node host-tests/run-host-tests.cjs"
   },
   "dependencies": {
+    "@agentbbs/core": "workspace:*",
     "@agentbbs/ui-shared": "workspace:*",
     "@agentbbs/data-access": "workspace:*"
   },
   "devDependencies": {
     "@types/vscode": "catalog:",
+    "@vscode/test-electron": "catalog:",
     "esbuild": "catalog:"
   }
 }
