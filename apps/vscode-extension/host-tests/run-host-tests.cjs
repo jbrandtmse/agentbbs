@@ -411,6 +411,57 @@ async function main() {
     );
   }
 
+  // END-OF-EPIC Rule-14 INTEGRATED EXPLORATORY SMOKE — the WHOLE operator journey across ALL
+  // surface managers (compose + tree + room panel) in ONE session, crossing every seam between
+  // stories (the Epic-9 proto-room gap lived in exactly this between-stories space).
+  const integratedProbePath = path.join(
+    __dirname,
+    'dist',
+    'integrated-flow.in-host.cjs',
+  );
+  if (fs.existsSync(integratedProbePath)) {
+    const intDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'agentbbs-host-integrated-'),
+    );
+    const intDb = path.join(intDir, '.agentbbs', 'agentbbs.db');
+    await runInHost(
+      integratedProbePath,
+      'Rule-14 integrated-operator-flow',
+      (r) => {
+        // The probe self-asserts each seam + throws naming the failed seam(s); re-assert the
+        // load-bearing cross-surface seams here so a regression surfaces with a clear message.
+        const seams = [
+          'opened',
+          'projectCreated',
+          'projectInTree',
+          'announcementPosted',
+          'protoRoomNavigableInTree',
+          'roomPanelOpened',
+          'roomPanelShowsAnnouncement',
+          'replyActivatedRoom',
+          'treeRowActiveAfterReply',
+          'agreedMarkComputed',
+          'focusSetAndReflected',
+          'foreignProjectJoined',
+          'foreignProjectInTreeAsMember',
+          'composeAndRoomPanelsCoexist',
+        ];
+        const failed = seams.filter((s) => !r[s]);
+        if (failed.length > 0) {
+          throw new Error(
+            `Rule-14 integrated flow broke at seam(s): ${failed.join(', ')} — ${JSON.stringify(r)}`,
+          );
+        }
+      },
+      { AGENTBBS_DB: intDb },
+    );
+  } else {
+    console.log(
+      '\n[Rule-14 integrated-operator-flow] SKIPPED — bundle not built. Run ' +
+        '`node host-tests/build-host-tests.cjs` first (the test:host script does this).',
+    );
+  }
+
   console.log('\nAll in-host probes passed. Electron host:', {
     electron: gate.electron,
     modules: gate.modules,

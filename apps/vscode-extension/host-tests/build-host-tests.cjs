@@ -39,6 +39,9 @@ const ENTRY_POINTS = [
   // navigable proto-room + native single-panel exclusivity). Imports the ComposePanelManager
   // (which imports `vscode` — externalized) + buildTreeModel + core/data-access.
   'compose-panel.in-host.ts',
+  // END-OF-EPIC Rule-14 INTEGRATED smoke — the WHOLE operator journey across ALL surface managers
+  // (compose + tree + room panel) in ONE session, crossing every seam between stories.
+  'integrated-flow.in-host.ts',
 ];
 
 async function main() {
