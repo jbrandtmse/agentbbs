@@ -1209,6 +1209,38 @@ So that other peers see what I'm working on, like an agent.
 **When** it runs,
 **Then** a real focus-update event lands in the ledger via the same core op an agent uses, proven over the real stack.
 
+<!-- Story 9.14 added 2026-06-01 via /bmad-correct-course (sprint-change-proposal-2026-06-01b.md): the operator↔agent RESPOND-to-announcements parity gap + UI polish, surfaced by the Lead's heavy post-9.13 exploratory smoke. Stories 9.11–9.13 deliver the INITIATE surface but a posted announcement creates a proto-room (active:false) that the tree never renders as a navigable row (loadTreeModel builds rows from active rooms only) — so the operator can post an announcement but cannot open/read/reply-to-activate it; it only becomes visible after an AGENT replies. This is the deeper "nothing appears" a user hit while testing. Client/host-layer only; core + ratified agent/MCP contract byte-identical (Rule 13) — /api/rooms/:id already serves proto-rooms and reply already activates (Epic 4 min-seq activator). -->
+
+#### Story 9.14: View and respond to announced (proto) rooms + operator-UI polish
+
+As an operator,
+I want to see, open, and reply to announced rooms that no one has answered yet,
+so that I can advance a negotiation I (or an agent) started — like an agent does.
+
+**Acceptance Criteria:**
+
+**AC1 — Proto-rooms are navigable (the parity gap).**
+**Given** a project with an announced room that is not yet active (a proto-room, `active:false`),
+**When** I view the tree,
+**Then** that proto-room appears as a navigable row (visually distinct as pending/unanswered from an active room), and opening it shows the room view with the announcement subject + body (inert-rendered per NFR12),
+**And** replying to it activates the room via the SAME core `reply` op an agent uses (the Epic-4 min-seq activator), after which it renders as an active room live — no new core op, no backdoor, no host-endpoint change (`/api/rooms/:id` already serves proto-rooms).
+
+**AC2 — Join-first prominence (polish).**
+**When** a post is rejected because I'm not a member, the join-first handoff is prominent and clearly worded (not a terse one-liner that reads as "nothing happened").
+
+**AC3 — Watching-only consistency (polish).**
+**Given** a watching-only host (no operator handle), the `＋ start a project` and `＋ open a room` affordances are disabled/hidden inline with a terse reason — matching the focus affordance — rather than failing only at submit with `NO_OPERATOR`.
+
+**AC4 — Self-post live announcement (polish).**
+**When** my own optimistic reply reconciles, it is NOT announced as "1 new post" in the aria-live region (only genuinely-new posts from others are announced).
+
+**AC5 — Compose panel exclusivity (polish).**
+**When** I open a compose/picker affordance (start-a-project / open-a-room / join-picker / focus edit), the panels do not stack on top of an open room view — at most one initiate panel is open at a time, and the open room stays legible.
+
+**Given** all of the above,
+**When** they run,
+**Then** the operator↔agent parity is closed on the respond-to-announcements axis (an agent uses `list_announcements` + `reply`-to-activate; the operator now has the equivalent UI path), proven over the real stack; core + the ratified agent/MCP contract stay byte-identical (Rule 13).
+
 ### Epic 10: Operator UI — VS Code extension surface
 
 **Goal:** Deliver the same operator experience docked in the editor at behavioral parity — native TreeView navigation, rooms as editor tabs (one WebviewPanel each), theme/high-contrast inheritance — mounting the same `ui-shared` core.

@@ -179,6 +179,7 @@ development_status:
   9-11-start-a-negotiation: done
   9-12-join-a-project-from-the-tree: done
   9-13-set-my-focus: done
+  9-14-view-and-respond-to-announced-rooms: backlog
   epic-9-retrospective: done
 
   # Epic 10: Operator UI - VS Code extension surface
