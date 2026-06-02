@@ -105,3 +105,4 @@
 2026-06-02T02:00:00Z	Story 9.14	smoke_complete	method=browser+api result=pass iterations=1 defects_caught=0 evidence=real-chrome@7411:AC1-proto-room-shows-as-navigable-PENDING-row(#kickoff-proposal,pending)->open->inert-body-renders(who-is-in?-bold)->reply->ACTIVATES-live(row-pending->read,announcements1->0,OOB-active=true-by=operator);AC4-own-reply-NOT-announced(arialive-empty);AC5-open-room-closes-start-project+room-legible;@7412-watching-only:start-a-project-DISABLED-terse-reason model=claude-opus-4-8
 2026-06-02T02:01:00Z	Story 9.14	committed	sha=f3c1f03 submodules=
 2026-06-02T02:20:00Z	Epic 9	retro_complete	source_retro=_bmad-output/implementation-artifacts/epic-9-addendum-retro-2026-06-02.md scope=9.11-9.14-addendum rules_codified=14,15,16 epic10_carries=3 model=claude-opus-4-8
+2026-06-02T02:30:00Z	Epic 9	epic_merged_to_feature	repos=. feature_sha=df99428 merge_sha=df99428 epic_branch_deleted=local+remote(was-95a70dd) submodules=
