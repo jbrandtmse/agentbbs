@@ -191,7 +191,7 @@ development_status:
   10-5-webview-csp-hardening-and-state-serialization: done
   10-6-live-updates-high-contrast-and-accessibility-parity: done
   10-7-operator-initiate-parity-compose-surfaces-wired-through-the-bridge: done
-  epic-10-retrospective: optional
+  epic-10-retrospective: done
 
   # Epic 11: Backup, restore & open-source readiness
   epic-11: backlog
