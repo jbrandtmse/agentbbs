@@ -14,6 +14,20 @@
 // frames — `onDelta` feeds the live RoomView fold (a tiny subscriber registry forwards delta events
 // to RoomApp); `onThemeKind` re-applies the `data-theme-kind` attribute LIVE so the HC overrides flip
 // when the operator switches color theme (AC2); `onStatus` drives the ConnectionFooter LED (AC3).
+//
+// EPIC-10 DEFECT-FIX (StrictMode-safe bridge lifecycle): `acquireVsCodeApi()` can be invoked
+// EXACTLY ONCE per webview (it throws "already acquired" on a second call — confirmed against the
+// installed @types/vscode: "acquireVsCodeApi can only be invoked once"), and the postMessage bridge
+// owns a `window` 'message' listener that correlates host responses. The previous design acquired
+// the api + created the bridge DURING RENDER and disposed it from a `useEffect` cleanup. Under React
+// StrictMode (active in the dev bundle), the simulated mount→unmount→remount disposed the bridge
+// (removing the listener) on the throw-away first mount, and on remount the ref still held the
+// DISPOSED bridge (not null) so it was NOT recreated — and the api could not be re-acquired. Net:
+// the window 'message' listener was gone, host `{type:'response',…}` frames were dropped, and
+// `readRoom`/`readContract` never resolved → the webview hung on "opening room…". The FIX: acquire
+// the api and create the bridge ONCE at MODULE scope inside `mount()` (outside the StrictMode
+// component tree, so it is never disposed by a component remount), and pass the bridge in as a prop.
+// The host frame hooks forward to React via setter refs the root registers on mount.
 
 import { StrictMode, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -45,9 +59,23 @@ declare function acquireVsCodeApi(): {
 };
 
 /**
+ * The host→webview frame sinks the WebviewRoot registers so the MODULE-scope bridge (created in
+ * `mount()`, outside the StrictMode tree) can forward live frames into React state. They are plain
+ * mutable refs (set on mount, cleared on the LAST unmount) so a StrictMode mount/unmount/remount
+ * cycle never tears down the bridge itself — only re-points these sinks.
+ */
+interface FrameSinks {
+  onDelta: ((events: unknown[]) => void) | null;
+  onThemeKind: ((kind: WebviewThemeKind) => void) | null;
+  onStatus: ((status: ConnectionStatus) => void) | null;
+}
+
+/**
  * The stateful webview root — holds the live connection status + the live theme-kind + a
- * delta-subscriber registry so the bridge's `onDelta` frames reach the RoomApp fold. Created once
- * per mount. The theme-kind drives BOTH the `data-theme-kind` attribute on the mount root (the
+ * delta-subscriber registry so the bridge's `onDelta` frames reach the RoomApp fold. The bridge
+ * itself is created ONCE at module scope (in `mount()`) and passed in as a prop; this component only
+ * REGISTERS frame sinks (so a StrictMode remount re-registers rather than recreating the bridge).
+ * The theme-kind drives BOTH the `data-theme-kind` attribute on the mount root (the
  * `vscode-tokens.css` HC overrides key off it) AND the RoomView `highContrast` prop (the agreed-wash
  * → transparent gate) — kept in sync by a single state value updated on each `onThemeKind` frame.
  */
@@ -56,39 +84,42 @@ function WebviewRoot({
   roomId,
   operatorHandle,
   initialThemeKind,
+  bridge,
+  sinks,
 }: {
   rootElement: HTMLElement;
   roomId: string;
   operatorHandle: string | null;
   initialThemeKind: WebviewThemeKind;
+  bridge: Bridge;
+  sinks: FrameSinks;
 }) {
   const [status, setStatus] = useState<ConnectionStatus>('reconnecting');
   const [themeKind, setThemeKind] =
     useState<WebviewThemeKind>(initialThemeKind);
-  // The single registered delta handler (RoomApp subscribes once); a ref so the bridge's onDelta —
-  // created once below — always calls the CURRENT handler.
+  // The single registered delta handler (RoomApp subscribes once); a ref so the bridge's onDelta
+  // always calls the CURRENT handler.
   const deltaHandlerRef = useRef<((events: unknown[]) => void) | null>(null);
-  const bridgeRef = useRef<(Bridge & { dispose(): void }) | null>(null);
 
-  if (bridgeRef.current === null) {
-    const api = acquireVsCodeApi();
-    // Persist the room id so a window reload restores this panel to the right room (Story 10.5).
-    api.setState({ roomId });
-    bridgeRef.current = createPostMessageBridge(api, {
-      onDelta: ({ events }) => deltaHandlerRef.current?.(events),
-      onThemeKind: (kind) => setThemeKind(kind as WebviewThemeKind),
-      onStatus: setStatus,
-    });
-  }
+  // Register the host→webview frame sinks for the life of this mount; clear them on unmount so a
+  // late frame after teardown is a no-op. Because the BRIDGE lives at module scope (not here), a
+  // StrictMode unmount/remount simply re-points these sinks — the window 'message' listener stays
+  // live throughout, so responses are never dropped.
+  useEffect(() => {
+    sinks.onDelta = (events) => deltaHandlerRef.current?.(events);
+    sinks.onThemeKind = (kind) => setThemeKind(kind);
+    sinks.onStatus = setStatus;
+    return () => {
+      sinks.onDelta = null;
+      sinks.onThemeKind = null;
+      sinks.onStatus = null;
+    };
+  }, [sinks]);
 
   // Mirror the live theme-kind onto the mount root's data attribute (the HC CSS overrides key off it).
   useEffect(() => {
     rootElement.dataset['themeKind'] = themeKind;
   }, [rootElement, themeKind]);
-
-  useEffect(() => {
-    return () => bridgeRef.current?.dispose();
-  }, []);
 
   const subscribeToDeltas = (handler: (events: unknown[]) => void) => {
     deltaHandlerRef.current = handler;
@@ -99,7 +130,7 @@ function WebviewRoot({
 
   return (
     <RoomApp
-      bridge={bridgeRef.current}
+      bridge={bridge}
       roomId={roomId}
       operatorHandle={operatorHandle}
       subscribeToDeltas={subscribeToDeltas}
@@ -123,6 +154,26 @@ function mount(): void {
   const initialThemeKind = (rootElement.dataset['themeKind'] ??
     'dark') as WebviewThemeKind;
 
+  // Acquire the api + create the bridge ONCE, at module scope (outside the StrictMode component
+  // tree). The bridge's window 'message' listener stays live for the life of the webview; a
+  // StrictMode mount/unmount/remount only re-registers the frame sinks (below), never disposes it.
+  const api = acquireVsCodeApi();
+  // Persist the room id so a window reload restores this panel to the right room (Story 10.5).
+  api.setState({ roomId });
+  const sinks: FrameSinks = {
+    onDelta: null,
+    onThemeKind: null,
+    onStatus: null,
+  };
+  // The bridge is created ONCE here and never disposed — the webview lives until VS Code tears the
+  // panel's iframe down (which discards the whole context, the window 'message' listener and all).
+  // No React lifecycle should dispose it; that was the StrictMode defect this fix removes.
+  const bridge: Bridge = createPostMessageBridge(api, {
+    onDelta: ({ events }) => sinks.onDelta?.(events),
+    onThemeKind: (kind) => sinks.onThemeKind?.(kind as WebviewThemeKind),
+    onStatus: (status) => sinks.onStatus?.(status),
+  });
+
   createRoot(rootElement).render(
     <StrictMode>
       <WebviewRoot
@@ -130,6 +181,8 @@ function mount(): void {
         roomId={roomId}
         operatorHandle={operatorHandle}
         initialThemeKind={initialThemeKind}
+        bridge={bridge}
+        sinks={sinks}
       />
     </StrictMode>,
   );

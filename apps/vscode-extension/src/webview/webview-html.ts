@@ -11,13 +11,27 @@
 // `connect-src 'none'` (the webview talks to the host via `acquireVsCodeApi().postMessage` ONLY —
 // ZERO network). NO `unsafe-inline` / `unsafe-eval` — the inert-markdown stack (markdown-it HTML-off
 // → DOMPurify → Shiki class spans) needs no inline script/eval, which is exactly what makes the
-// strict CSP possible. The room id is passed to the bundle via a `data-room-id` attribute on the
-// mount root (NOT an inline script — keeps the CSP clean). See buildRoomWebviewHtml for the
-// per-directive justification.
+// strict CSP possible.
+//
+// ONE narrow exception (the ROOM shell only — defect-fix, Epic 10 manual smoke #2): `script-src`
+// also carries `'wasm-unsafe-eval'`. The byte-shared `@agentbbs/ui-shared` inert-markdown renderer
+// highlights fenced code with Shiki, whose oniguruma regex engine is WebAssembly that is COMPILED
+// in the webview (the wasm is inlined in the bundle — there is NO network fetch). Under Chromium
+// (the Electron webview) a strict `script-src` with no wasm token blocks `WebAssembly.instantiate`,
+// so Shiki's `createHighlighter` never resolves → `renderMarkdown` (which awaits the highlighter
+// before producing ANY html) never resolves → EVERY message body renders empty. `'wasm-unsafe-eval'`
+// is the purpose-built, narrow CSP token for WebAssembly; it is NOT `'unsafe-inline'` and NOT
+// `'unsafe-eval'` (it permits WASM ONLY — no JS eval / inline-script surface), so the inert/no-script
+// NFR12 guarantee and the "no unsafe-inline/unsafe-eval" Story-10.5 posture are PRESERVED. The
+// COMPOSE shell renders only plain form inputs (no MarkdownView/Shiki), so its CSP stays wasm-free.
+//
+// The room id is passed to the bundle via a `data-room-id` attribute on the mount root (NOT an
+// inline script — keeps the CSP clean). See buildRoomWebviewHtml for the per-directive justification.
 //
 // PURE (testable): no `vscode` import. The caller supplies the already-resolved webview URIs +
 // the cspSource + a fresh nonce; this only assembles the string. A content-guard test asserts the
-// CSP shape (nonce present; no unsafe-inline/unsafe-eval).
+// CSP shape (nonce present; room `script-src` carries `'wasm-unsafe-eval'`; NO `'unsafe-inline'`/
+// `'unsafe-eval'`; compose stays wasm-free).
 
 /** The pieces the host resolves (via `webview.asWebviewUri`) and passes to the shell builder. */
 export interface WebviewHtmlOptions {
@@ -85,8 +99,15 @@ export function generateNonce(
  *                                 ONLY; the bundle issues ZERO network requests (no fetch/
  *                                 EventSource/XMLHttpRequest/WebSocket — NFR12 inert).
  *
- * This strict shape is POSSIBLE precisely because the inert-markdown stack uses no inline
- * script/style/eval and no in-webview highlighter (Shiki tokenizes to class spans host-side).
+ * `script-src` ALSO carries `'wasm-unsafe-eval'` — the ONE narrow loosening (room shell only). The
+ * byte-shared ui-shared markdown renderer highlights fenced code with Shiki, whose oniguruma engine
+ * is WebAssembly COMPILED in-webview (inlined in the bundle, NO network fetch). Without this token
+ * Chromium blocks the WASM compile → `createHighlighter` never resolves → `renderMarkdown` (which
+ * awaits the highlighter first) never resolves → EVERY message body renders EMPTY (Epic 10 manual
+ * smoke #2). `'wasm-unsafe-eval'` permits WebAssembly ONLY; it is NEITHER `'unsafe-inline'` NOR
+ * `'unsafe-eval'` (no JS-eval / inline-script surface opens), so the inert/no-script NFR12 guarantee
+ * and the strict Story-10.5 posture are preserved. (The compose shell renders no markdown, so its
+ * CSP stays wasm-free — see {@link buildComposeWebviewHtml}.)
  *
  * @param options The resolved URIs + cspSource + nonce + room id.
  */
@@ -106,7 +127,10 @@ export function buildRoomWebviewHtml(options: WebviewHtmlOptions): string {
     `img-src ${cspSource}`,
     `font-src ${cspSource}`,
     `style-src ${cspSource} 'nonce-${nonce}'`,
-    `script-src 'nonce-${nonce}'`,
+    // `'wasm-unsafe-eval'` permits the Shiki oniguruma WASM compile the byte-shared ui-shared
+    // markdown renderer needs (see the builder JSDoc). It is NOT unsafe-inline/unsafe-eval — no
+    // JS-eval surface; NFR12 inert rendering holds. Room shell only; compose stays wasm-free.
+    `script-src 'nonce-${nonce}' 'wasm-unsafe-eval'`,
     `connect-src 'none'`,
   ].join('; ');
 
@@ -166,12 +190,15 @@ export interface ComposeWebviewHtmlOptions {
 }
 
 /**
- * Build the COMPOSE webview HTML with the SAME strict Story-10.5 CSP as the room shell (every
- * directive pinned to the minimum; no wildcard beyond `webview.cspSource`, no `data:`, NO
- * `unsafe-inline`/`unsafe-eval`). The only deltas from {@link buildRoomWebviewHtml} are the bundle
- * it references (the compose bundle) and the mount-root data attributes (`data-compose-kind` +
- * an optional `data-project-id` instead of `data-room-id`). The strict CSP is identical — the
- * compose components are pure React + the SAME ui-shared CSS, no inline script/style/eval/network.
+ * Build the COMPOSE webview HTML with the strict Story-10.5 CSP. The deltas from
+ * {@link buildRoomWebviewHtml} are the bundle it references (the compose bundle), the mount-root
+ * data attributes (`data-compose-kind` + an optional `data-project-id` instead of `data-room-id`),
+ * AND — deliberately — NO `'wasm-unsafe-eval'` on `script-src`. The 4 compose surfaces
+ * (create-project / post-announcement / join-project / focus) render plain form inputs only; NONE
+ * mounts the ui-shared MarkdownView, so no Shiki/oniguruma WASM compile ever runs here. The room
+ * shell's narrow wasm token is therefore NOT carried into compose — keeping its CSP at the tighter
+ * floor (no WASM permitted at all). Otherwise the strict posture is identical: `default-src 'none'`,
+ * nonce'd script/style, own-origin img/font, `connect-src 'none'`, no unsafe-inline/unsafe-eval.
  *
  * @param options The resolved URIs + cspSource + nonce + the compose kind/scope/handle/theme.
  */

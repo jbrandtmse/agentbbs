@@ -74,7 +74,8 @@ export async function run(): Promise<void> {
     await register(dataAccess, { handle: 'peer', currentFocus: 'helping' });
     const foreign = await announceProject(dataAccess, 'peer', {
       title: 'Peer Project',
-      description: 'the peer owns this; the operator will join it from the editor',
+      description:
+        'the peer owns this; the operator will join it from the editor',
     });
 
     const extUri = vscode.Uri.file(process.cwd());
@@ -87,7 +88,8 @@ export async function run(): Promise<void> {
       },
       iconPath: new vscode.ThemeIcon('edit'),
       resolveOperatorHandle: () => OPERATOR,
-      resolveThemeKind: () => webviewThemeKind(vscode.window.activeColorTheme.kind),
+      resolveThemeKind: () =>
+        webviewThemeKind(vscode.window.activeColorTheme.kind),
       createPanel: (title) => {
         const p = vscode.window.createWebviewPanel(
           'agentbbs.compose',
@@ -107,7 +109,8 @@ export async function run(): Promise<void> {
       },
       iconPath: new vscode.ThemeIcon('comment-discussion'),
       resolveOperatorHandle: () => OPERATOR,
-      resolveThemeKind: () => webviewThemeKind(vscode.window.activeColorTheme.kind),
+      resolveThemeKind: () =>
+        webviewThemeKind(vscode.window.activeColorTheme.kind),
       createPanel: (_roomId: string, title: string): PanelLike => {
         const p = vscode.window.createWebviewPanel(
           'agentbbs.room',
@@ -125,10 +128,15 @@ export async function run(): Promise<void> {
     const created = await dispatchRequest(dataAccess, {
       id: 'c1',
       op: 'announceProject',
-      args: { actor: OPERATOR, title: 'Flow Project', description: 'integrated smoke' },
+      args: {
+        actor: OPERATOR,
+        title: 'Flow Project',
+        description: 'integrated smoke',
+      },
     });
-    const projectId = (created.result as { project: { projectId: string } } | undefined)?.project
-      .projectId;
+    const projectId = (
+      created.result as { project: { projectId: string } } | undefined
+    )?.project.projectId;
     r.projectCreated = created.ok === true && typeof projectId === 'string';
     {
       const model = await buildTreeModel(dataAccess, OPERATOR);
@@ -140,9 +148,15 @@ export async function run(): Promise<void> {
     const posted = await dispatchRequest(dataAccess, {
       id: 'c2',
       op: 'postAnnouncement',
-      args: { actor: OPERATOR, projectId, subject: 'Kickoff', body: 'who can pair on this?' },
+      args: {
+        actor: OPERATOR,
+        projectId,
+        subject: 'Kickoff',
+        body: 'who can pair on this?',
+      },
     });
-    const roomId = (posted.result as { room: { roomId: string } } | undefined)?.room.roomId;
+    const roomId = (posted.result as { room: { roomId: string } } | undefined)
+      ?.room.roomId;
     r.announcementPosted = posted.ok === true && typeof roomId === 'string';
     {
       const model = await buildTreeModel(dataAccess, OPERATOR);
@@ -167,17 +181,27 @@ export async function run(): Promise<void> {
         messages: Array<{ body: string }>;
       };
       r.roomPanelShowsAnnouncement =
-        room.room.active === false && room.messages.some((m) => m.body.includes('pair on this'));
+        room.room.active === false &&
+        room.messages.some((m) => m.body.includes('pair on this'));
 
       // ── SEAM 4: reply ACTIVATES the proto-room → the tree row goes pending→active ───────────────
       const reply = await dispatchRequest(dataAccess, {
         id: 'r1',
         op: 'reply',
-        args: { actor: 'peer', roomId, body: 'I can pair — proposing the interface.' },
+        args: {
+          actor: 'peer',
+          roomId,
+          body: 'I can pair — proposing the interface.',
+        },
       });
-      const after = await dispatchRequest(dataAccess, { id: 'r2', op: 'readRoom', args: { roomId } });
+      const after = await dispatchRequest(dataAccess, {
+        id: 'r2',
+        op: 'readRoom',
+        args: { roomId },
+      });
       r.replyActivatedRoom =
-        reply.ok === true && (after.result as { room: { active: boolean } }).room.active === true;
+        reply.ok === true &&
+        (after.result as { room: { active: boolean } }).room.active === true;
       {
         const model = await buildTreeModel(dataAccess, OPERATOR);
         const project = model.projects.find((p) => p.projectId === projectId);
@@ -200,7 +224,11 @@ export async function run(): Promise<void> {
         await dispatchRequest(dataAccess, {
           id: 'r3',
           op: 'reply',
-          args: { actor: OPERATOR, roomId, body: 'agreed — let us go with that.' },
+          args: {
+            actor: OPERATOR,
+            roomId,
+            body: 'agreed — let us go with that.',
+          },
         });
         const reacted = await dispatchRequest(dataAccess, {
           id: 'r4',
@@ -212,11 +240,14 @@ export async function run(): Promise<void> {
           op: 'readContract',
           args: { roomId },
         });
-        const agreed = (contract.result as { contract: { seq: number } | null }).contract;
+        const agreed = (contract.result as { contract: { seq: number } | null })
+          .contract;
         // FR21: the agreed mark is the peer's 👍'd proposal (the highest-seq LIVE-👍'd message),
         // not the operator's higher-seq but un-👍'd reply.
         r.agreedMarkComputed =
-          reacted.ok === true && agreed !== null && agreed.seq === peerProposal.seq;
+          reacted.ok === true &&
+          agreed !== null &&
+          agreed.seq === peerProposal.seq;
       }
     }
 
@@ -234,8 +265,10 @@ export async function run(): Promise<void> {
         op: 'whoami',
         args: { actor: OPERATOR },
       });
-      const focus = (me.result as { focus?: string | null } | undefined)?.focus ?? null;
-      r.focusSetAndReflected = setFocus.ok === true && focus === 'driving the integrated smoke';
+      const focus =
+        (me.result as { focus?: string | null } | undefined)?.focus ?? null;
+      r.focusSetAndReflected =
+        setFocus.ok === true && focus === 'driving the integrated smoke';
     }
 
     // ── SEAM 7: join the peer's foreign project from the editor → the tree shows the membership ───
@@ -257,12 +290,14 @@ export async function run(): Promise<void> {
     // Cross-surface exclusivity: the compose panel is a SINGLE reused panel across all the opens
     // above (create/post/focus/join → 1), while the room open created its OWN distinct panel — the
     // two surface families coexist (compose ≠ rooms-as-tabs), not fighting one slot.
-    r.composeAndRoomPanelsCoexist = composePanels.length === 1 && roomPanels.length === 1;
+    r.composeAndRoomPanelsCoexist =
+      composePanels.length === 1 && roomPanels.length === 1;
 
     composeManager.dispose();
     roomManager.dispose();
   } catch (err) {
-    r.error = err instanceof Error ? `${err.message}\n${err.stack ?? ''}` : String(err);
+    r.error =
+      err instanceof Error ? `${err.message}\n${err.stack ?? ''}` : String(err);
   } finally {
     for (const p of [...composePanels, ...roomPanels]) {
       try {

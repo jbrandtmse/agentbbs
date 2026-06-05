@@ -17,6 +17,10 @@ import * as vscode from 'vscode';
 
 import { ComposePanelManager } from './compose-panel.js';
 import { openLedger } from './db.js';
+import {
+  DATABASE_PATH_SETTING,
+  resolveExtensionDbPath,
+} from './db-path-setting.js';
 import { RoomPanelManager, ROOM_PANEL_VIEW_TYPE } from './room-panel.js';
 import { createRoomPanelSerializer } from './serializer.js';
 import {
@@ -67,10 +71,14 @@ let refreshTimer: NodeJS.Timeout | undefined;
  * (and the 10.3+ views) delegate every op to.
  */
 export function activate(context: vscode.ExtensionContext): void {
-  // Open the shared ledger (AGENTBBS_DB / project-root walk-up, via data-access). A failure to
-  // open must not crash activation — log it; the views/bridge surface the error to the operator.
+  // Open the shared ledger. Path precedence (Epic-10 manual-smoke enhancement): the in-plugin
+  // `agentbbs.databasePath` setting (if set) WINS, else `AGENTBBS_DB` (parity with the MCP server /
+  // web host), else a WORKSPACE-folder walk-up (NOT cwd — in an installed/GUI-launched extension
+  // host cwd is usually the VS Code install dir, so the old cwd walk-up missed the project's
+  // `.agentbbs/`). A failure to open must not crash activation — log it; the views surface it.
   try {
-    ledger = openLedger();
+    const dbPath = resolveHostDbPath();
+    ledger = openLedger(dbPath);
     console.log(`${ACTIVATION_LOG} (ledger: ${ledger.dbPath})`);
   } catch (err) {
     ledger = undefined;
@@ -92,10 +100,51 @@ export function activate(context: vscode.ExtensionContext): void {
   );
   context.subscriptions.push(disposable);
 
+  // Changing `agentbbs.databasePath` requires re-opening the ledger; the simplest safe path is a
+  // window reload (re-runs activate against the new path). Prompt the operator rather than
+  // hot-swapping the live handle (which the tree + open panels + the poll all hold) — host→its-own-
+  // UI only (NFR5 preserved).
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (event.affectsConfiguration(DATABASE_PATH_SETTING)) {
+        void promptReloadForDbPathChange();
+      }
+    }),
+  );
+
   // The native board tree (Story 10.3) — only wired when the ledger opened. The tree reads via
   // the data-access handle + core ops DIRECTLY (host-side; the bridge is for the room webviews).
   if (ledger !== undefined) {
     registerBoardTree(context, ledger);
+  }
+}
+
+/**
+ * Resolve the ledger path for the host from the in-plugin setting / env / workspace-folder
+ * walk-up (the pure {@link resolveExtensionDbPath} seam). Reads `vscode.workspace` here and hands
+ * plain inputs to the testable resolver (Rule 13 — host-layer wiring only; no board logic).
+ */
+function resolveHostDbPath(): string {
+  const settingValue = vscode.workspace
+    .getConfiguration('agentbbs')
+    .get<string>('databasePath');
+  const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  return resolveExtensionDbPath({ settingValue, workspaceFolder });
+}
+
+/**
+ * On a `agentbbs.databasePath` change, offer to reload the window (the deterministic way to
+ * re-open the ledger at the new path). Declining leaves the current ledger open until the next
+ * reload — documented behavior, no live hot-swap.
+ */
+async function promptReloadForDbPathChange(): Promise<void> {
+  const RELOAD = 'Reload Window';
+  const choice = await vscode.window.showInformationMessage(
+    'AgentBBS: the database path changed. Reload the window to open the new ledger.',
+    RELOAD,
+  );
+  if (choice === RELOAD) {
+    await vscode.commands.executeCommand('workbench.action.reloadWindow');
   }
 }
 

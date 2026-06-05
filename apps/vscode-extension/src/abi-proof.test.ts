@@ -97,6 +97,11 @@ vi.mock('vscode', () => {
     },
     workspace: {
       getConfiguration: () => ({ get: () => undefined }),
+      // Epic-10 manual-smoke enhancement — activate() reads workspaceFolders for the
+      // workspace-folder walk-up default and subscribes to config changes (the databasePath
+      // reload prompt). Minimal doubles: no folder open, a disposable subscription.
+      workspaceFolders: undefined,
+      onDidChangeConfiguration: () => ({ dispose: () => {} }),
     },
     Uri: {
       parse: (s: string) => ({ toString: () => s, scheme: s.split(':')[0] }),

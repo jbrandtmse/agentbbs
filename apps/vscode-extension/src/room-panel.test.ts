@@ -389,15 +389,23 @@ describe('buildRoomWebviewHtml — nonce CSP content-guard (AC2)', () => {
     operatorHandle: 'operator',
   });
 
-  it('embeds a Content-Security-Policy with the per-load nonce on the script', () => {
+  it('embeds a Content-Security-Policy with the per-load nonce + the wasm token on the script', () => {
     expect(html).toContain('Content-Security-Policy');
-    expect(html).toContain(`script-src 'nonce-deadbeefcafef00d'`);
+    // The room script-src = the nonce + the narrow 'wasm-unsafe-eval' the ui-shared Shiki markdown
+    // renderer needs (Epic 10 manual smoke #2 — its absence rendered every message body empty).
+    expect(html).toContain(
+      `script-src 'nonce-deadbeefcafef00d' 'wasm-unsafe-eval'`,
+    );
     expect(html).toContain('nonce="deadbeefcafef00d"');
   });
 
-  it('does NOT contain unsafe-inline or unsafe-eval (the inert-markdown / 10.5 precondition)', () => {
-    expect(html).not.toContain('unsafe-inline');
-    expect(html).not.toContain('unsafe-eval');
+  it('does NOT contain unsafe-inline or the broad unsafe-eval (only the narrow wasm token; 10.5 precondition)', () => {
+    // Assert the exact FORBIDDEN quoted tokens — NOT a bare substring, which would false-fail on
+    // the permitted 'wasm-unsafe-eval' (it contains the substring `unsafe-eval`).
+    expect(html).not.toContain(`'unsafe-inline'`);
+    expect(html).not.toContain(`'unsafe-eval'`);
+    // Belt + suspenders: the only `unsafe-eval` occurrence is preceded by `wasm-`.
+    expect(html).not.toMatch(/(?<!wasm-)unsafe-eval/u);
   });
 
   it('links every stylesheet (vscode-tokens theme layer LAST) + the bundle, and the mount root', () => {

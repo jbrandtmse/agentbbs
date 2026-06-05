@@ -2,10 +2,16 @@
 //
 // The CSP is the security boundary of a surface that renders agent-authored markdown. This guard
 // pins the load-bearing strict shape produced by `buildRoomWebviewHtml` — `default-src 'none'`, a
-// per-load nonce on script + style, `img-src`/`font-src` pinned to the cspSource ONLY,
-// `connect-src 'none'`, and NO `unsafe-inline`/`unsafe-eval`/wildcard — to the builder's OWN
-// output. A regression that loosens ANY directive (a wildcard, an `unsafe-*`, a dropped nonce, a
-// re-added `data:`) MUST turn a test RED here.
+// per-load nonce on script + style, the narrow `'wasm-unsafe-eval'` token on `script-src` (REQUIRED
+// for the byte-shared ui-shared Shiki/oniguruma WASM markdown renderer — its ABSENCE rendered every
+// message body empty in the real webview; Epic 10 manual smoke #2), `img-src`/`font-src` pinned to
+// the cspSource ONLY, `connect-src 'none'`, and NO `'unsafe-inline'`/`'unsafe-eval'`/wildcard — to
+// the builder's OWN output. A regression that loosens ANY directive (a wildcard, a broad `unsafe-*`,
+// a dropped nonce, a DROPPED `'wasm-unsafe-eval'`, a re-added `data:`) MUST turn a test RED here.
+//
+// NOTE: the *runtime* "WASM compiles → bodies actually render" behavior is NOT verifiable here —
+// happy-dom does not enforce CSP. This guard PINS the CSP STRING; the lead's real Ext-Dev-Host
+// smoke is the runtime evidence (Rule 12).
 //
 // The final MUTATION test proves the guard is non-vacuous WITHOUT mutating the production source
 // (so `git diff` on webview-html.ts stays empty): it builds a set of plausible-WRONG CSP strings
@@ -71,8 +77,15 @@ function assertStrictCsp(csp: string, nonce: string): void {
   const d = directives(csp);
   // The locked-down base.
   expect(d.get('default-src')).toBe(`default-src 'none'`);
-  // Scripts: ONLY the per-load nonce.
-  expect(d.get('script-src')).toBe(`script-src 'nonce-${nonce}'`);
+  // Scripts: the per-load nonce + the narrow WASM token. `'wasm-unsafe-eval'` is REQUIRED here
+  // (defect-fix, Epic 10 manual smoke #2): the byte-shared ui-shared markdown renderer compiles
+  // Shiki's oniguruma WASM in-webview, which Chromium blocks without this token (→ empty message
+  // bodies). It is the purpose-built WebAssembly token — NOT `'unsafe-inline'`/`'unsafe-eval'` —
+  // so no JS-eval/inline-script surface opens (NFR12 inert rendering preserved). This is a PIN:
+  // dropping the token (the regression that broke rendering) MUST turn this RED.
+  expect(d.get('script-src')).toBe(
+    `script-src 'nonce-${nonce}' 'wasm-unsafe-eval'`,
+  );
   // Styles: nonce + own-origin only.
   expect(d.get('style-src')).toBe(`style-src ${CSP_SOURCE} 'nonce-${nonce}'`);
   // Images + fonts: own-origin ONLY (no data:/https:/wildcard).
@@ -80,8 +93,14 @@ function assertStrictCsp(csp: string, nonce: string): void {
   expect(d.get('font-src')).toBe(`font-src ${CSP_SOURCE}`);
   // Network: none.
   expect(d.get('connect-src')).toBe(`connect-src 'none'`);
-  // No loosening tokens ANYWHERE in the CSP.
-  expect(csp).not.toMatch(/unsafe-inline|unsafe-eval/u);
+  // No FORBIDDEN loosening tokens ANYWHERE in the CSP. We assert the two forbidden quoted tokens
+  // PRECISELY: `'unsafe-inline'` and `'unsafe-eval'`. NOTE: `'wasm-unsafe-eval'` legitimately
+  // contains the substring `unsafe-eval`, so a naive /unsafe-eval/ match would FALSE-FAIL — we
+  // require the EXACT quoted `'unsafe-eval'` token (preceded by `'`, not by `wasm-`) to be absent.
+  expect(csp).not.toContain(`'unsafe-inline'`);
+  expect(csp).not.toContain(`'unsafe-eval'`);
+  // The ONLY permitted `unsafe`-bearing token is the exact WASM token; nothing broader.
+  expect(csp).not.toMatch(/(?<!wasm-)unsafe-eval/u);
   expect(csp).not.toContain('*');
   expect(csp).not.toContain('data:');
   expect(csp).not.toContain('https:');
@@ -113,23 +132,33 @@ describe('buildRoomWebviewHtml — strict CSP content-guard (Story 10.5 AC1)', (
       `img-src ${CSP_SOURCE}`,
       `font-src ${CSP_SOURCE}`,
       `style-src ${CSP_SOURCE} 'nonce-${NONCE}'`,
-      `script-src 'nonce-${NONCE}'`,
+      // Mirrors the production room CSP: nonce + the narrow WASM token.
+      `script-src 'nonce-${NONCE}' 'wasm-unsafe-eval'`,
       `connect-src 'none'`,
     ];
 
     const loosenings: ReadonlyArray<readonly [string, string[]]> = [
-      // script-src gains unsafe-inline.
+      // script-src gains unsafe-inline (alongside the legitimate wasm token).
       [
         'script-src unsafe-inline',
         base.map((dir) =>
           dir.startsWith('script-src') ? `${dir} 'unsafe-inline'` : dir,
         ),
       ],
-      // script-src gains unsafe-eval.
+      // script-src gains unsafe-eval (the FORBIDDEN broad eval token, distinct from the permitted
+      // 'wasm-unsafe-eval'). Proves the precise-token guard discriminates the two.
       [
         'script-src unsafe-eval',
         base.map((dir) =>
           dir.startsWith('script-src') ? `${dir} 'unsafe-eval'` : dir,
+        ),
+      ],
+      // script-src DROPS the required wasm token (the exact regression that broke message-body
+      // rendering — the PIN must turn RED on its absence).
+      [
+        'script-src missing wasm-unsafe-eval',
+        base.map((dir) =>
+          dir.startsWith('script-src') ? `script-src 'nonce-${NONCE}'` : dir,
         ),
       ],
       // The nonce is dropped from script-src (an unprotected/non-loading script).

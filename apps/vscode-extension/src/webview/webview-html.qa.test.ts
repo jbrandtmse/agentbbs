@@ -62,17 +62,22 @@ describe('buildRoomWebviewHtml — CSP directive content-guard (AC2, Rule 10 har
     expect(csp).toMatch(/default-src 'none'/);
   });
 
-  it('script-src admits ONLY the per-load nonce — no host, no unsafe-*', () => {
+  it("script-src admits the per-load nonce + the narrow 'wasm-unsafe-eval' token — no host, no broad unsafe-*", () => {
     const csp = cspOf(build());
     const scriptSrc = csp
       .split(';')
       .map((d) => d.trim())
       .find((d) => d.startsWith('script-src'));
     expect(scriptSrc).toBeDefined();
-    expect(scriptSrc).toBe(`script-src 'nonce-${NONCE}'`);
-    // The exact-match above already forbids these; assert explicitly so a regression is unmistakable.
-    expect(scriptSrc).not.toContain('unsafe-inline');
-    expect(scriptSrc).not.toContain('unsafe-eval');
+    // The nonce + the WASM token the byte-shared ui-shared Shiki markdown renderer requires
+    // (Epic 10 manual smoke #2 — without it every message body rendered empty). 'wasm-unsafe-eval'
+    // permits WebAssembly ONLY; it is NEITHER 'unsafe-inline' NOR the broad 'unsafe-eval'.
+    expect(scriptSrc).toBe(`script-src 'nonce-${NONCE}' 'wasm-unsafe-eval'`);
+    // The exact-match above already forbids the FORBIDDEN tokens; assert explicitly so a regression
+    // is unmistakable. NOTE: 'wasm-unsafe-eval' contains the substring `unsafe-eval`, so assert the
+    // exact quoted forbidden tokens (not a bare substring) to avoid a false-fail on the wasm token.
+    expect(scriptSrc).not.toContain(`'unsafe-inline'`);
+    expect(scriptSrc).not.toContain(`'unsafe-eval'`);
     expect(scriptSrc).not.toContain('*');
   });
 
@@ -128,10 +133,12 @@ describe('buildRoomWebviewHtml — CSP directive content-guard (AC2, Rule 10 har
     expect(connectSrc).not.toContain('https:');
   });
 
-  it('the WHOLE CSP carries no wildcard, no unsafe-*, and no data:/https: scheme (strict floor)', () => {
+  it('the WHOLE CSP carries no wildcard, no FORBIDDEN unsafe-* (only the narrow wasm token), and no data:/https: scheme (strict floor)', () => {
     const csp = cspOf(build());
-    expect(csp).not.toContain('unsafe-inline');
-    expect(csp).not.toContain('unsafe-eval');
+    expect(csp).not.toContain(`'unsafe-inline'`);
+    expect(csp).not.toContain(`'unsafe-eval'`);
+    // The ONLY permitted unsafe-bearing token is the exact 'wasm-unsafe-eval'; nothing broader.
+    expect(csp).not.toMatch(/(?<!wasm-)unsafe-eval/u);
     expect(csp).not.toContain('*');
     expect(csp).not.toContain('data:');
     expect(csp).not.toContain('https:');

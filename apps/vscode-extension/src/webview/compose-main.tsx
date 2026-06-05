@@ -13,8 +13,15 @@
 // so the host refreshes the tree (and, for a posted announcement, can hand off to the navigable
 // proto-room — the AC3 initiate→respond loop); on cancel/Esc it posts `{ type:'composeClose' }` so
 // the host closes the panel. These are host→webview-CHANNEL frames only (NFR5 — no agent push).
+//
+// EPIC-10 DEFECT-FIX (StrictMode-safe bridge lifecycle): see main.tsx. `acquireVsCodeApi()` can be
+// invoked EXACTLY ONCE (it throws on a second call), and the bridge owns a `window` 'message'
+// listener. Creating the bridge during render + disposing it from a `useEffect` cleanup hung the
+// surface under React StrictMode (the throw-away first mount disposed the bridge; the remount could
+// neither recreate it nor re-acquire the api). FIX: acquire the api + create the bridge ONCE at
+// MODULE scope in `mount()` (outside the StrictMode tree) and pass them in as props.
 
-import { StrictMode, useEffect, useRef } from 'react';
+import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 // The SAME side-effecting ui-shared stylesheets the web + the room webview mount (byte-shared), THEN
 // the VS Code theme layer LAST so its :root `--vscode-*` overrides win.
@@ -37,51 +44,41 @@ declare function acquireVsCodeApi(): {
 };
 
 /**
- * The stateful compose webview root — creates the bridge once, mirrors the live theme-kind onto the
- * mount root, and mounts {@link ComposeApp}. Success/close fire host-directed frames the host listens
- * for (tree refresh + panel close).
+ * The minimal `acquireVsCodeApi()` shape this surface uses (postMessage to the host). */
+interface ComposeVsCodeApi {
+  postMessage(message: unknown): void;
+}
+
+/**
+ * The compose webview root — mounts {@link ComposeApp} over the MODULE-scope bridge (created once in
+ * `mount()`, outside the StrictMode tree). Success/close fire host-directed frames the host listens
+ * for (tree refresh + panel close). It holds NO bridge lifecycle of its own — a StrictMode
+ * unmount/remount is harmless because the bridge + its window 'message' listener live at module
+ * scope (the Epic-10 defect-fix; see the header).
  */
 function ComposeRoot({
-  rootElement,
+  bridge,
+  api,
   kind,
   operatorHandle,
   projectId,
 }: {
-  rootElement: HTMLElement;
+  bridge: Bridge;
+  api: ComposeVsCodeApi;
   kind: ComposeKind;
   operatorHandle: string | null;
   projectId: string | null;
 }) {
-  const bridgeRef = useRef<(Bridge & { dispose(): void }) | null>(null);
-  const apiRef = useRef<ReturnType<typeof acquireVsCodeApi> | null>(null);
-
-  if (bridgeRef.current === null) {
-    const api = acquireVsCodeApi();
-    apiRef.current = api;
-    api.setState({ composeKind: kind, projectId });
-    bridgeRef.current = createPostMessageBridge(api, {
-      // Re-apply the live theme-kind onto the mount root so the HC overrides flip live (the same
-      // mechanism the room webview uses). No live fold for a compose surface — it is a form.
-      onThemeKind: (k) => {
-        rootElement.dataset['themeKind'] = k;
-      },
-    });
-  }
-
-  useEffect(() => {
-    return () => bridgeRef.current?.dispose();
-  }, []);
-
   return (
     <ComposeApp
-      bridge={bridgeRef.current}
+      bridge={bridge}
       kind={kind}
       operatorHandle={operatorHandle}
       projectId={projectId}
       onSuccess={(payload) =>
-        apiRef.current?.postMessage({ type: 'composeSuccess', payload })
+        api.postMessage({ type: 'composeSuccess', payload })
       }
-      onClose={() => apiRef.current?.postMessage({ type: 'composeClose' })}
+      onClose={() => api.postMessage({ type: 'composeClose' })}
     />
   );
 }
@@ -104,10 +101,25 @@ function mount(): void {
   // activeColorTheme.kind); the `vscode-tokens.css` HC overrides key off the `data-theme-kind`
   // attribute directly, and `onThemeKind` re-applies it live — so no React seed is needed.
 
+  // Acquire the api + create the bridge ONCE, at module scope (outside the StrictMode tree). The
+  // bridge's window 'message' listener stays live for the life of the webview; a StrictMode
+  // mount/unmount/remount never disposes it (the defect this fix removes). No live fold for a
+  // compose surface — it is a form; the only host frame it consumes is the live theme-kind.
+  const api = acquireVsCodeApi();
+  api.setState({ composeKind: kind, projectId });
+  const bridge: Bridge = createPostMessageBridge(api, {
+    // Re-apply the live theme-kind onto the mount root so the HC overrides flip live (the same
+    // mechanism the room webview uses).
+    onThemeKind: (k) => {
+      rootElement.dataset['themeKind'] = k;
+    },
+  });
+
   createRoot(rootElement).render(
     <StrictMode>
       <ComposeRoot
-        rootElement={rootElement}
+        bridge={bridge}
+        api={api}
         kind={kind}
         operatorHandle={operatorHandle}
         projectId={projectId}

@@ -133,3 +133,34 @@ Tests (changed):
 Host-test harness (changed):
 - apps/vscode-extension/host-tests/room-panel.in-host.ts (10.6 real-host evidence: themeKind read/flow/push + live-poll delta)
 - apps/vscode-extension/host-tests/run-host-tests.cjs (assert the new 10.6 probe fields)
+
+## Review / Defect-fix
+
+### Defect-fix (2026-06-03) — webview room + compose stuck on "opening room…" (HIGH, manual-smoke / Rule 14)
+
+**Found by:** the lead's manual interactive smoke in a real VS Code Extension Development Host (Rule 14). Opening a room hung on the RoomApp loading state ("opening room…"); the `readRoom`/`readContract` bridge requests never resolved. The compose webviews shared the same latent bug.
+
+**Root cause (verified):** the webview↔host postMessage round-trip was broken under React **StrictMode** combined with the **dev-mode webview bundle**.
+- `main.tsx` (`WebviewRoot`) and `compose-main.tsx` (`ComposeRoot`) called `acquireVsCodeApi()` + `createPostMessageBridge(...)` **during render** (guarded by a `bridgeRef`), and disposed the bridge from a `useEffect(() => () => bridge.dispose(), [])` cleanup. `createPostMessageBridge` registers the response correlator via `window.addEventListener('message', …)`; `dispose()` removes it.
+- The webview esbuild bundle was a **dev build** (no `process.env.NODE_ENV` define), so React ran in dev mode and StrictMode simulated mount→unmount→remount on initial mount. The throw-away first mount's cleanup **disposed** the bridge (removing the window 'message' listener); on remount the `bridgeRef` still held the **disposed** bridge (not null), so it was NOT recreated — and `acquireVsCodeApi()` cannot be called twice ("acquireVsCodeApi can only be invoked once" — confirmed against installed `@types/vscode`). Net: no live 'message' listener → host `{type:'response',id,ok,result}` frames dropped → requests never resolved → stuck.
+- The host side (`bridge.ts` `createBridge`/`dispatchRequest`, the response wire `type:'response'`) was CORRECT; the bug was purely the **webview-side bridge lifecycle** under StrictMode + the dev bundle.
+
+**Fix (both — the correct lifecycle AND the production build; Rule 3 verified):**
+1. **StrictMode-safe bridge lifecycle** (correct regardless of build mode): in BOTH `main.tsx` and `compose-main.tsx`, acquire the api + create the bridge ONCE at **module scope inside `mount()`** (outside the StrictMode component tree), and pass the bridge in as a prop. The host frame hooks (`onDelta`/`onThemeKind`/`onStatus`) forward into React via mutable "sink" refs the root registers in a `useEffect` (cleared on unmount) — so a StrictMode unmount/remount only re-points the sinks and the window 'message' listener stays live throughout. The bridge is never disposed by a React lifecycle (the webview's iframe teardown discards the whole context). `acquireVsCodeApi()` is now invoked exactly once.
+2. **Production webview build:** added `define: { 'process.env.NODE_ENV': '"production"' }` + `minify: true` to esbuild's `webviewBuildOptions` (the compose bundle spreads it → inherits). Verified the built `dist/webview/main.js` has **0** remaining `process.env.NODE_ENV` references (fully replaced) → React runs its production runtime in the shipped VSIX (StrictMode double-invoke disabled) + smaller bundle (compose dropped to 382 KB minified). esbuild `define`/`minify` confirmed against installed `esbuild@0.28.0` types (Rule 3).
+
+**Why every automated tier missed it (gap closed):** the unit/DOM tests inject a FAKE `Bridge` (the `request()` interface) directly, and the `@vscode/test-electron` probes call `dispatchRequest(...)` directly — NONE mounted the real React root and exercised `createPostMessageBridge` ↔ host `createBridge` end-to-end over a real message channel under StrictMode.
+
+**Regression test (gap-closer, Rule 7/8/12):** `WebviewBridgeRoundtrip.test.tsx` — a happy-dom DOM-tier test (root-`pnpm test`-discoverable under the `ui-shared-dom` project) that wires the REAL webview `createPostMessageBridge` to a REAL host `createBridge` over an in-memory `node:sqlite` ledger (a room seeded via real core ops `register`/`announceProject`/`postAnnouncement`/`reply`), with a mock `acquireVsCodeApi` whose `postMessage` reaches the host and whose host frames are re-dispatched as real `window` 'message' events. It mounts under `<StrictMode>` and asserts the room LOADS (RoomView content renders; not stuck). **MUTATION-CHECK (Rule 7, in-suite non-vacuity):** the test runs BOTH lifecycle variants — the FIXED module-scope-acquire shape (LOADS) and the OLD acquire-in-render + dispose-on-cleanup shape (STAYS STUCK on "opening room…"). The mock `acquireVsCodeApi` faithfully **throws on a second call**, reproducing the real unrecoverable StrictMode failure. The OLD variant red proves the assertion discriminates the exact defect.
+
+**Rule 13 (CLIENT-layer only):** `git diff HEAD -- packages/core packages/mcp-server packages/ui-shared` EMPTY — no core/contract/ui-shared change.
+
+**Gate (full aggregate, Rule 12):** ROOT `pnpm test` 1472 passed / 171 files / 0 failed (baseline 1429 from 10.6 dev + new); `tsc --noEmit` 0; `eslint .` 0; `pnpm run build` clean (production webview bundle rebuilt so the lead's re-smoke loads the fix); real-host `@vscode/test-electron` ALL probes exit 0 (node:sqlite gate, AC1 host-opens-ledger, AC2 tree-proto-room-navigable, AC4 room-panel-reply-activates [themeKindRead/htmlHasThemeKind/themeKindPushed/livePollPushedDelta all green], AC1/AC3 compose-initiate-writes-land, Rule-14 integrated-operator-flow) — host bundle behaviorally unchanged by this fix and still activates in real Electron. Baseline flakes (seed-protocol-race EPERM, Shiki full-suite) did not surface. **PRE-EXISTING NOTE (not this fix — Rule 6 git-confirmed unmodified):** `prettier --check .` flags ONE file, `host-tests/integrated-flow.in-host.ts`, which is untouched by this defect-fix (no git diff) — a format issue committed earlier in Epic 10; flagged for the lead, NOT auto-fixed (out of scope).
+
+**Files (defect-fix):**
+- apps/vscode-extension/src/webview/main.tsx (module-scope acquire + bridge; frame sinks; bridge prop — no useEffect dispose)
+- apps/vscode-extension/src/webview/compose-main.tsx (same StrictMode-safe lifecycle; bridge + api passed as props)
+- apps/vscode-extension/esbuild.js (webviewBuildOptions: production NODE_ENV define + minify; compose inherits via spread)
+- apps/vscode-extension/src/webview/WebviewBridgeRoundtrip.test.tsx (NEW — end-to-end StrictMode round-trip regression, mutation-checked)
+
+**NOT committed** (per the defect-fix charter): changes left uncommitted for the lead's real-Ext-Dev-Host re-smoke + commit; the webview bundle was rebuilt so the re-smoke loads the fixed bundle.

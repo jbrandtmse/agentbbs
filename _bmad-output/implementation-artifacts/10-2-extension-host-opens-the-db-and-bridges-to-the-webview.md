@@ -177,3 +177,36 @@ The bridge poll advanced `lastSentSeq` (and stamped the delta frame's `maxSeq`) 
 
 ### Named-deferred (by design, not dropped)
 Remaining bridge WRITE ops (react/unreact/joinBoard/updateFocus/announceProject/postAnnouncement/addParticipant) → Epic-10 stories 10.3–10.6, named in `bridge.ts` + recorded in `deferred-work.md`. `updateFocus` must carry the same trim discipline when wired.
+
+## Manual-smoke enhancement (2026-06-04) — in-plugin DB path configurability
+
+**Found at:** the lead's Epic-10 manual smoke (Rule 14). The extension's ledger discovery was `AGENTBBS_DB`-env-only with a `process.cwd()` walk-up default, which is unreliable in a VS Code extension host: for a GUI-launched / installed extension, `cwd` is usually the VS Code **install dir**, NOT the workspace, so the walk-up reliably missed the project's `.agentbbs/`. There was no in-plugin setting. The user wanted the DB path configurable WITHIN the plugin (a VS Code setting + a workspace-relative default).
+
+**Scope:** extension/client layer ONLY (Rule 13). `@agentbbs/data-access` was NOT changed — it already exposes the `env` + `startDir` options this consumes via `resolveDbPath`. `git diff HEAD -- packages/core packages/mcp-server packages/data-access packages/ui-shared` is EMPTY (verified).
+
+### What changed
+
+1. **New contributed setting `agentbbs.databasePath`** (`apps/vscode-extension/package.json` → `contributes.configuration.properties`): `type: string`, `default: ""`, `scope: "resource"` (per-workspace override), with a `markdownDescription` documenting absolute/workspace-relative paths, the leading `${workspaceFolder}` token + `~`, the empty=auto-discover behavior, and that a change prompts a window reload.
+
+2. **Pure precedence resolver (the testable seam):** `apps/vscode-extension/src/db-path-setting.ts#resolveExtensionDbPath({ settingValue, env, workspaceFolder, cwd, home })`:
+   - (a) `agentbbs.databasePath` setting (non-empty) **WINS** — expanded via `expandSettingPath`: leading `${workspaceFolder}` → the first workspace folder's `fsPath`, leading `~` → home, RELATIVE → resolved against the workspace folder (else cwd), ABSOLUTE → verbatim/normalized. (The explicit in-plugin setting is the user's intent → it wins.)
+   - (b) else `AGENTBBS_DB` env (parity with the MCP server / web host so all surfaces can share one board) — handled verbatim inside `resolveDbPath`.
+   - (c) else **workspace-folder walk-up**: `resolveDbPath({ startDir: workspaceFolder ?? cwd })` — the discovery start dir defaults to the WORKSPACE folder, NOT `process.cwd()` (the core fix for the installed-extension reliability gap).
+
+3. **Host wiring** (`apps/vscode-extension/src/extension.ts`): `activate()` now calls a `resolveHostDbPath()` host helper that reads `vscode.workspace.getConfiguration('agentbbs').get('databasePath')` (mirroring the existing `operatorHandle` pattern) + `vscode.workspace.workspaceFolders?.[0]?.uri.fsPath`, hands them to the pure resolver, and passes the result to `openLedger(dbPath)` (which already accepted an explicit override). The resolved `dbPath` is logged on activate via the existing `${ACTIVATION_LOG} (ledger: ${ledger.dbPath})` line (diagnostics). The `.agentbbs/` dir + file are created by the node:sqlite adapter's `openNodeSqliteDatabase` → `ensureDbDirectory` (verified — same path the better-sqlite3 connection uses); an open failure is caught and logged, not a silent crash (existing behavior, preserved).
+
+4. **Live re-config:** `activate()` subscribes to `vscode.workspace.onDidChangeConfiguration`; when it `affectsConfiguration('agentbbs.databasePath')` the operator is prompted (`showInformationMessage` + "Reload Window" → `workbench.action.reloadWindow`) to reload and re-open the ledger at the new path. Chose the reload prompt over a live hot-swap because the tree, open panels, and the poll all hold the live handle — a reload is the deterministic, low-risk way to re-open. Host→its-own-UI only (NFR5 preserved).
+
+### Tests (Rule 7/8)
+- `apps/vscode-extension/src/db-path-setting.test.ts` (12 tests, root-`pnpm test` discoverable): precedence (setting > env > workspace-walk-up); `${workspaceFolder}` / `~` / relative / absolute expansion; empty + whitespace-only setting falls through; no-workspace falls back to cwd; the walk-up STARTS at the workspace folder (not cwd).
+- **Rule 7 mutation-check (non-vacuous):** flipped the resolver to check env-before-setting + start from cwd → 3 tests went RED (setting-wins, workspace-walk-up-origin, the distinct-results sentinel). Reverted byte-identically (`git diff` on `db-path-setting.ts` empty); suite green.
+- Updated the two activation mocks (`abi-proof.test.ts`, `bundle-and-activation.test.ts`) to add `workspace.workspaceFolders` (undefined) + `workspace.onDidChangeConfiguration` (disposable) so `activate()` loads under the node test env.
+
+### Gate
+Full aggregate gate green: `pnpm run build` (all packages), root `pnpm test` = **1484 passed / 172 files**, `pnpm run lint` clean, `pnpm run format:check` clean. `packages/*` diff EMPTY (Rule 13). Bundle rebuilt (`pnpm --filter @agentbbs/vscode-extension run build:bundle`) so the lead's re-smoke loads the change; `dist/extension.cjs` contains the `databasePath` reference.
+
+**NOT committed** — left uncommitted for the lead's real-Ext-Dev-Host re-smoke (the live `vscode.workspace.workspaceFolders` behavior can't be fully modelled in happy-dom/unit; the pure resolver is pinned, the lead verifies end-to-end with the setting set) + commit.
+
+### Files
+- **Added:** `apps/vscode-extension/src/db-path-setting.ts`, `apps/vscode-extension/src/db-path-setting.test.ts`
+- **Modified:** `apps/vscode-extension/package.json` (contributed `agentbbs.databasePath` setting), `apps/vscode-extension/src/extension.ts` (resolveHostDbPath wiring + onDidChangeConfiguration reload prompt), `apps/vscode-extension/src/abi-proof.test.ts` + `apps/vscode-extension/src/bundle-and-activation.test.ts` (mock: workspaceFolders + onDidChangeConfiguration), `apps/vscode-extension/dist/*` (rebuilt bundle)

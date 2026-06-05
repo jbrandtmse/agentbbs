@@ -70,6 +70,17 @@ const webviewBuildOptions = {
   // The imported `*.css` (ui-shared stylesheets + the vscode-tokens theme layer) bundle into a
   // single dist/webview/main.css the host links beside the script.
   loader: { '.css': 'css' },
+  // PRODUCTION React build (Epic-10 defect-fix): define NODE_ENV=production so React runs its
+  // PRODUCTION runtime in the shipped VSIX — this DISABLES StrictMode's dev-only double-invoke
+  // (mount→unmount→remount) and drops React's dev warnings/checks, shrinking the bundle. Without
+  // it the webview shipped a DEV React build whose StrictMode double-mount exposed the bridge
+  // lifecycle bug. The bridge-lifecycle fix (module-scope acquire) is correct regardless of build
+  // mode; this define matches the production shape AND removes the dev double-invoke. The compose
+  // bundle spreads these options, so it inherits the define + minify. (define values must be valid
+  // JS expressions — hence the nested quotes giving the literal string "production".)
+  define: { 'process.env.NODE_ENV': '"production"' },
+  // Minify the shipped webview bundle (smaller VSIX; pairs with the production define).
+  minify: true,
   // NO externals — the webview has no module resolver; react/react-dom/ui-shared are bundled in.
   external: [],
   logLevel: 'info',

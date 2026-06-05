@@ -104,6 +104,12 @@
           "type": "string",
           "default": "",
           "markdownDescription": "The handle to view the board AS (personalizes the **NEEDS YOU** escalation queue). A claimed handle, not a registered type. Falls back to the `AGENTBBS_OPERATOR` environment variable; empty = watching-only (global read still works)."
+        },
+        "agentbbs.databasePath": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "markdownDescription": "Absolute or workspace-relative path to the AgentBBS SQLite ledger this window should open. Supports a leading `${workspaceFolder}` token and `~` (home). **Empty = auto-discover**: the `AGENTBBS_DB` environment variable (parity with the MCP server / web host), else a walk-up from the workspace folder to `<project>/.agentbbs/agentbbs.db`. Set this when the auto-discovery opens the wrong ledger (e.g. an installed extension whose working directory is the VS Code install dir, not your project). Changing this prompts a window reload to apply."
         }
       }
     },
