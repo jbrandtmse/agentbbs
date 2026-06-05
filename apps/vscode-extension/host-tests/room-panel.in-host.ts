@@ -150,8 +150,12 @@ export async function run(): Promise<void> {
     result.htmlHasNonceCsp =
       html.includes('Content-Security-Policy') && html.includes('nonce-');
     result.htmlHasRoomId = html.includes(`data-room-id="${proto.roomId}"`);
+    // NO unsafe-inline / NO bare unsafe-eval. The room script-src carries the NARROW
+    // 'wasm-unsafe-eval' token (the byte-shared ui-shared Shiki/oniguruma WASM markdown engine —
+    // defect-fix #2); that token CONTAINS the substring "unsafe-eval", so match the bare token
+    // precisely (lookbehind excludes the wasm- prefix), NOT a naive substring.
     result.htmlNoUnsafe =
-      !html.includes('unsafe-inline') && !html.includes('unsafe-eval');
+      !html.includes('unsafe-inline') && !/(?<!wasm-)unsafe-eval/u.test(html);
 
     // Story 10.6 (AC2) — ColorThemeKind is readable in the real host + flows into the panel HTML as
     // the initial data-theme-kind. (The light/dark/HC value depends on the host's active theme; we
@@ -184,8 +188,11 @@ export async function run(): Promise<void> {
     }
     result.cspStrict =
       dirMap.get('default-src') === `default-src 'none'` &&
-      // script-src: ONLY the per-load nonce (no host, no unsafe-*).
-      /^script-src 'nonce-[0-9a-f]+'$/u.test(dirMap.get('script-src') ?? '') &&
+      // script-src: the per-load nonce + the NARROW 'wasm-unsafe-eval' token (the ui-shared Shiki
+      // WASM markdown engine — defect-fix #2) — no host, no unsafe-inline, no bare unsafe-eval.
+      /^script-src 'nonce-[0-9a-f]+' 'wasm-unsafe-eval'$/u.test(
+        dirMap.get('script-src') ?? '',
+      ) &&
       // img-src / font-src: EXACTLY the host's own-asset cspSource — nothing more.
       dirMap.get('img-src') === `img-src ${cspSrc}` &&
       dirMap.get('font-src') === `font-src ${cspSrc}` &&
@@ -195,9 +202,11 @@ export async function run(): Promise<void> {
         'u',
       ).test(dirMap.get('style-src') ?? '') &&
       dirMap.get('connect-src') === `connect-src 'none'` &&
-      // No unsafe-* and no data: anywhere (own-origin only; the inert markdown emits no images).
+      // No unsafe-inline / no BARE unsafe-eval / no data: anywhere (own-origin only; the inert
+      // markdown emits no images). The narrow 'wasm-unsafe-eval' (matched precisely above) is
+      // permitted; the lookbehind keeps this from false-failing on it.
       !cspRaw.includes('unsafe-inline') &&
-      !cspRaw.includes('unsafe-eval') &&
+      !/(?<!wasm-)unsafe-eval/u.test(cspRaw) &&
       !cspRaw.includes('data:');
 
     // AC1 — re-open the SAME room: REVEAL, not a duplicate (still ONE created panel).
