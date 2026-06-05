@@ -1,12 +1,32 @@
 {
+  // VS Code extension typecheck config (Story 10.1).
+  //
+  // Build split: esbuild.js produces the runnable bundle (dist/extension.cjs,
+  // format:'cjs' — the extension host loads `main` via CommonJS require()); `tsc
+  // --noEmit` (this config) is the TYPE-CHECK pass only. So `composite`/emit are OFF
+  // — nothing downstream consumes this package's `dist/*.d.ts` (it is a leaf app, not
+  // a library), and the runtime artifact comes from esbuild, not tsc.
+  //
+  // The package is `"type": "module"`, so the .ts source is ESM under the base
+  // NodeNext settings (no module override needed) — consistent with every other
+  // workspace package. The CommonJS host entry is the esbuild `.cjs` output, not a
+  // tsc concern. `@types/vscode` provides the ambient `vscode` module types.
+  // Story 10.4 adds the WEBVIEW React bundle (src/webview/*.tsx) — a BROWSER context, distinct
+  // from the host CJS code. The host code (extension.ts/bridge.ts/db.ts/tree/*) is node; the
+  // webview .tsx is browser React. One typecheck config covers both: `jsx: react-jsx` (React 19
+  // automatic runtime — no per-file `import React`), the DOM lib (the webview touches
+  // document/window), and the react/react-dom types alongside node/vscode. esbuild produces the
+  // two runnable bundles; this is the `tsc --noEmit` type-check pass only.
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": "src",
-    "outDir": "dist"
+    "noEmit": true,
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "jsx": "react-jsx",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node", "vscode", "react", "react-dom"]
   },
-  "include": ["src/**/*.ts"],
-  "references": [
-    { "path": "../../packages/ui-shared" },
-    { "path": "../../packages/data-access" }
-  ]
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
 }

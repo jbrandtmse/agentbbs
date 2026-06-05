@@ -1,0 +1,160 @@
+/*
+ * VS Code theme layer (Story 10.4, AC3) — the ONLY per-surface delta.
+ *
+ * The ui-shared `tokens.css` ships a fixed web-canonical dark+light hex palette. This layer is
+ * loaded AFTER it in the webview and REDEFINES the SAME semantic `:root` token NAMES to VS Code's
+ * LIVE `--vscode-*` theme variables, so the byte-shared ui-shared components (RoomView,
+ * MessageThread, Composer, ReactionChip, AgreedMark, MarkdownView) adopt the operator's ACTIVE
+ * editor theme and never look alien. The components and tokens.css are NOT edited (Rule 13 —
+ * mount, don't fork); only these `:root` overrides differ from the web.
+ *
+ * WHY THIS RE-THEMES LIVE: `--vscode-*` variables are injected by the VS Code webview host from
+ * the active color theme and updated when the user switches themes — so the webview re-themes
+ * automatically (a feature; the explicit ColorThemeKind / high-contrast handling is Story 10.6).
+ *
+ * TOKEN NAMES VERIFIED (Rule 3) against the official VS Code theme-color reference + the webview
+ * doc (`--vscode-<id-with-dots-as-dashes>`): every theme-color id below exists. Each override has
+ * a sensible web-palette fallback (the 2nd `var()` arg) so a missing variable degrades to the
+ * ui-shared default rather than `unset`.
+ */
+
+:root {
+  /* ---- Surfaces ---- */
+  --surface-base: var(--vscode-editor-background, #1e1e1e);
+  --surface-panel: var(--vscode-sideBar-background, #252526);
+  --surface-input: var(--vscode-input-background, #3c3c3c);
+  --code-panel: var(--vscode-textCodeBlock-background, #1b1b1b);
+
+  /* ---- Borders ---- */
+  --border: var(--vscode-panel-border, #333333);
+  --border-soft: var(--vscode-editorWidget-border, #2d2d2d);
+
+  /* ---- Text ramp ---- */
+  --text: var(--vscode-editor-foreground, #cccccc);
+  --text-body: var(--vscode-editor-foreground, #d4d4d4);
+  --text-strong: var(--vscode-foreground, #ffffff);
+  --text-muted: var(--vscode-descriptionForeground, #858585);
+  --text-dim: var(--vscode-descriptionForeground, #9d9d9d);
+  --text-faint: var(--vscode-disabledForeground, #6f6f6f);
+
+  /* ---- Accent ---- */
+  --accent: var(--vscode-button-background, #007acc);
+  --accent-hover: var(--vscode-button-hoverBackground, #1177bb);
+  --accent-on-dark: var(--vscode-textLink-foreground, #3794d6);
+  --accent-fg: var(--vscode-button-foreground, #ffffff);
+  --selection: var(--vscode-editor-selectionBackground, #094771);
+
+  /* ---- Agreed (✓ ratified / 👍-has) — the converged-message green. ---- */
+  --agreed-green: var(--vscode-charts-green, #4ec07a);
+  --agreed-line: var(--vscode-charts-green, #3b8f63);
+
+  /* ---- Flag-warm (NEEDS YOU escalation tint). ---- */
+  --flag-warm: var(--vscode-charts-yellow, #d6a44a);
+  --flag-warm-text: var(--vscode-charts-yellow, #e2c184);
+
+  /* ---- Badge / chip / inline-code ---- */
+  --badge-bg: var(--vscode-badge-background, #37373d);
+  --badge-fg: var(--vscode-badge-foreground, #cccccc);
+  --chip-bg: var(--vscode-editorWidget-background, #2b2b2e);
+  --code-inline-bg: var(--vscode-textCodeBlock-background, #2a2a2d);
+
+  /* ---- Code syntax tints (inside code-panel only). Map to the symbol-icon family; the editor
+   *      foreground is the neutral fallback so code-as-text stays legible in any theme. ---- */
+  --code-keyword: var(
+    --vscode-symbolIcon-keywordForeground,
+    var(--vscode-editor-foreground, #569cd6)
+  );
+  --code-type: var(
+    --vscode-symbolIcon-classForeground,
+    var(--vscode-editor-foreground, #4ec9b0)
+  );
+  --code-fn: var(
+    --vscode-symbolIcon-functionForeground,
+    var(--vscode-editor-foreground, #dcdcaa)
+  );
+  --code-comment: var(--vscode-descriptionForeground, #7a7a7a);
+
+  /* ---- Typography: defer to the editor's fonts (AC3). The UI font family is --vscode-font-family;
+   *      monospace defers to the editor font. Sizes/line-heights stay the ui-shared defaults
+   *      (inherited from tokens.css) so the room's reading rhythm is unchanged. ---- */
+  --font-ui: var(
+    --vscode-font-family,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif
+  );
+  --font-mono: var(
+    --vscode-editor-font-family,
+    Consolas,
+    'Cascadia Code',
+    ui-monospace,
+    monospace
+  );
+}
+
+/*
+ * HIGH-CONTRAST overrides (Story 10.6, AC2).
+ *
+ * Keyed off the `data-theme-kind` attribute the webview sets on the #root mount from the host's
+ * `vscode.window.activeColorTheme.kind` (light=…, dark=…, high-contrast / high-contrast-light).
+ * We do NOT branch on the PRESENCE of `--vscode-contrastBorder` — VS Code injects all `--vscode-*`
+ * webview variables append-only and never removes them on a theme switch, so absence is NOT a
+ * reliable HC signal (verified via the VS Code webview-theming docs, Rule 3/Research-First). The
+ * authoritative HC switch is the ColorThemeKind the host pushes; the CSS keys off it.
+ *
+ * Custom properties cascade, so redefining a token on `#root[data-theme-kind^="high-contrast"]`
+ * overrides the `:root` value for the WHOLE app (every ui-shared component inside #root) — without
+ * editing tokens.css or any component (Rule 13 — mount, don't fork).
+ *
+ * HC PRINCIPLE (the VS Code HC contract): lean on `--vscode-contrastBorder` for SOLID borders where
+ * the default themes use soft/alpha rules; promote the converged-message green / NEEDS-YOU warm to
+ * the CHARTED decoration tokens (always defined, AA-legible); make focus unmistakable via
+ * `--vscode-focusBorder`. The agreed WASH (a translucent fill) becomes TRANSPARENT under HC — the
+ * meaning is carried by the SOLID `--agreed-line` rail/border instead, never a low-contrast tint.
+ */
+#root[data-theme-kind^='high-contrast'] {
+  /* ---- Borders → SOLID contrastBorder (the HC contract). The soft border collapses onto the
+   *      same solid contrast rule so every region edge is unmistakable. ---- */
+  --border: var(--vscode-contrastBorder, var(--vscode-panel-border, #6fc3df));
+  --border-soft: var(
+    --vscode-contrastBorder,
+    var(--vscode-editorWidget-border, #6fc3df)
+  );
+
+  /* ---- Agreed (✓ ratified / 👍-has): the green stays the charted green (AA under HC); the agreed
+   *      LINE (the rail/border that carries the meaning when the wash is dropped) becomes the SOLID
+   *      contrast border so the converged post is bounded by a hard edge, not a faint tint. ---- */
+  --agreed-green: var(--vscode-charts-green, #89d185);
+  --agreed-line: var(
+    --vscode-contrastBorder,
+    var(--vscode-charts-green, #89d185)
+  );
+
+  /* ---- Flag-warm (NEEDS YOU): the charted yellow (AA), bounded by the solid contrast border. ---- */
+  --flag-warm: var(
+    --vscode-contrastBorder,
+    var(--vscode-charts-yellow, #e2c184)
+  );
+  --flag-warm-text: var(--vscode-charts-yellow, #e2c184);
+
+  /* ---- Focus: the inherited 9.10 :focus-visible ring is `outline: 2px solid var(--accent)`
+   *      (ui-shared chrome.css — NOT forked, Rule 13). Under HC we promote `--accent` (and its hover)
+   *      to the unmistakable `--vscode-focusBorder` so the keyboard ring is the HC focus color the
+   *      AC requires; HC themes use a single bright accent, so recoloring the accent to focusBorder
+   *      under HC is the idiomatic HC treatment (the AA ring is satisfied by focusBorder's contrast). ---- */
+  --accent: var(--vscode-focusBorder, var(--vscode-button-background, #f38518));
+  --accent-hover: var(
+    --vscode-focusBorder,
+    var(--vscode-button-hoverBackground, #f38518)
+  );
+  --accent-on-dark: var(
+    --vscode-focusBorder,
+    var(--vscode-textLink-foreground, #f38518)
+  );
+
+  /* NOTE on the agreed WASH: the translucent green fill behind the converged post (ui-shared's
+   * AGREED_POST_WASH) is a JS constant gated behind the RoomView `highContrast` prop — under HC the
+   * webview passes `highContrast` so MessagePost renders the wash as `transparent` and the SOLID
+   * --agreed-line rail (above) carries the meaning. No CSS wash token to override here. */
+}

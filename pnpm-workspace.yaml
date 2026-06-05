@@ -25,6 +25,27 @@ catalog:
   better-sqlite3: ^12.10.0
   '@types/better-sqlite3': ^7.6.13
 
+  # VS Code extension (Epic 10) — apps/vscode-extension. Verified installable on
+  # the npm registry 2026-06-02. `@types/vscode` pins the `engines.vscode` floor
+  # (the type version == the engine floor, the VS Code convention); 1.105.0 is a
+  # recent-stable floor that does not lock out users on slightly older builds.
+  # esbuild produces the single CommonJS bundle the extension host loads as `main`.
+  # NOTE: @electron/rebuild / electron are intentionally NOT cataloged here — Story
+  # 10.1 resolved the SQLite-driver ABI proof via the node:sqlite fallback (no
+  # Electron runtime / launchable Extension Dev Host on this machine to verify a
+  # rebuild against), so neither tool is installed. If a later story can reach a
+  # real Electron host and pursues the better-sqlite3 rebuild path, add @electron/
+  # rebuild then and verify its CLI surface against the INSTALLED types (Rule 3).
+  '@types/vscode': ^1.105.0
+  esbuild: ^0.28.0
+  # Real Extension Development Host harness (Story 10.2) — launches a genuine VS Code
+  # Electron host to run in-host tests (the Rule-12 real-runtime evidence: node:sqlite
+  # exposed in the host, host opens the ledger). Verified installable on the npm
+  # registry 2026-06-02 (latest 2.5.2). It can drive an EXISTING local VS Code install
+  # (vscodeExecutablePath) or download a pinned build; we point it at the installed
+  # 1.122.1 at C:\Program Files\Microsoft VS Code\Code.exe.
+  '@vscode/test-electron': ^2.5.2
+
   # UI / web (Epic 9) — apps/web
   vite: ^8.0.14
   '@vitejs/plugin-react': ^6.0.2
@@ -68,6 +89,9 @@ catalog:
 #   - better-sqlite3: compiles a native addon (node-gyp / prebuild) on install;
 #     the ONLY package allowed to depend on it (Story 1.4). Required on Linux CI
 #     (`pnpm install --frozen-lockfile`) so the addon is built and loadable.
+#   - esbuild: postinstall fetches its platform-specific native binary (Story 10.1,
+#     apps/vscode-extension bundler). Required for `node esbuild.js` to run.
 allowBuilds:
   unrs-resolver: true
   better-sqlite3: true
+  esbuild: true

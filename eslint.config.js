@@ -120,6 +120,11 @@ export default tseslint.config(
       '**/node_modules/**',
       '**/*.tsbuildinfo',
       'coverage/**',
+      // Downloaded VS Code builds for the @vscode/test-electron real-host harness
+      // (Story 10.2). These contain VS Code's OWN source + many tsconfig.json files
+      // which otherwise confuse the tseslint parser (multiple candidate TSConfigRootDirs)
+      // and are not project code. Never lint them.
+      '**/.vscode-test/**',
       // Non-code BMad assets and planning artifacts are not linted.
       '_bmad/**',
       '_bmad-output/**',
@@ -147,9 +152,17 @@ export default tseslint.config(
     },
     rules: {
       // Naming: source files kebab-case (.ts) — .tsx handled in override below.
+      // `BoardTreeProvider.ts` is the architecture.md-committed name for the native VS Code
+      // `TreeDataProvider` class module (architecture.md l.558–560; Story 10.3) — a
+      // class-per-file convention like a React component, so it is ignored by the kebab rule
+      // (mirrors how `.config.js` / `main.tsx` are ignored). The vscode-free logic
+      // (tree-model / decoration-model / room-uri / operator-handle) stays kebab-case.
       'unicorn/filename-case': [
         'error',
-        { case: 'kebabCase', ignore: [/\.config\.js$/u] },
+        {
+          case: 'kebabCase',
+          ignore: [/\.config\.js$/u, /^BoardTreeProvider\.ts$/u],
+        },
       ],
       // No default exports (barrels re-export named; React .tsx overridden below).
       'import-x/no-default-export': 'error',
@@ -166,12 +179,18 @@ export default tseslint.config(
   //    `main.tsx` is the conventional Vite/React APP ENTRY filename (lowercase) — it
   //    mounts the root, it is not a component module — so it is ignored by the
   //    PascalCase rule (mirrors how `.config.js` is ignored above). Story 9.3.
+  //    `compose-main.tsx` (Story 10.7) is the SECOND webview ENTRY POINT (the compose
+  //    bundle) — same role as `main.tsx` (mounts the root, not a component module), so
+  //    it is ignored on the same grounds.
   {
     files: ['**/*.tsx'],
     rules: {
       'unicorn/filename-case': [
         'error',
-        { case: 'pascalCase', ignore: [/^main\.tsx$/u] },
+        {
+          case: 'pascalCase',
+          ignore: [/^main\.tsx$/u, /^compose-main\.tsx$/u],
+        },
       ],
       'import-x/no-default-export': 'off',
     },
@@ -227,6 +246,31 @@ export default tseslint.config(
     files: ['**/*.config.{js,ts,mts,cts}', 'eslint.config.js'],
     rules: {
       'import-x/no-default-export': 'off',
+    },
+  },
+
+  // 7b. Plain-JS build/tool scripts (e.g. apps/vscode-extension/esbuild.js, Story
+  //     10.1) run under Node and use node globals (process, console). They are NOT
+  //     package source and are not covered by the TS block's languageOptions, so the
+  //     base recommended `no-undef` would flag those globals. Provide node globals
+  //     here. Scoped to *.js tool scripts under apps/* / packages/* (not the linted
+  //     TS source, which already has node globals in block 2). Story 10.2 adds the
+  //     `.cjs` real-host test scripts under apps/*/host-tests/ (CommonJS Node scripts
+  //     using __dirname/require/process/console — the @vscode/test-electron harness).
+  {
+    files: [
+      'apps/*/esbuild.js',
+      'packages/*/esbuild.js',
+      'apps/*/host-tests/**/*.cjs',
+    ],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: { ...globals.node },
+    },
+    rules: {
+      // These are genuine CommonJS Node scripts (the .cjs real-host harness) — `require()`
+      // is correct here, not the TS `import`. Relax the TS-recommended no-require-imports.
+      '@typescript-eslint/no-require-imports': 'off',
     },
   },
 
