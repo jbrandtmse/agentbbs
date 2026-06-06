@@ -8,3 +8,10 @@
 2026-06-06T02:30:00Z	Story 11.0	qa_complete	spawn_at=2026-06-06T02:23:30Z model=claude-opus-4-8 tests_added=2 first_run_failures=0 clarifications=0 closing_sections_present=true
 2026-06-06T02:37:00Z	Story 11.0	cr_complete	spawn_at=2026-06-06T02:30:30Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=0 high=0 med=0 low=0 clarifications=0 closing_sections_present=true
 2026-06-06T02:42:00Z	Story 11.0	smoke_complete	method=other result=pass iterations=1 defects_caught=0 evidence=full-root-suite-1489-green+seed-race-3x-no-EPERM+cap-edge-12-green model=claude-opus-4-8
+2026-06-06T02:44:00Z	Story 11.0	committed	sha=de15256 submodules=
+2026-06-06T02:48:00Z	Story 11.1	story_created	path=_bmad-output/implementation-artifacts/11-1-operator-cli-scaffold.md integration_ac=present-consumers-11.2-11.3
+2026-06-06T03:00:00Z	Story 11.1	dev_complete	spawn_at=2026-06-06T02:48:30Z model=claude-opus-4-8 files=packages/cli/src/index.ts,packages/cli/src/export.ts,packages/cli/src/import.ts clarifications=0 cycle_iteration=1 nfr_tripwires=0 adr_violations_surfaced=0 closing_sections_present=true
+2026-06-06T03:00:00Z	Story 11.1	adr_verifications_complete	result=none_required acs=ac1-ac6 evidence=no-docs/adr
+2026-06-06T03:07:00Z	Story 11.1	qa_complete	spawn_at=2026-06-06T03:00:30Z model=claude-opus-4-8 tests_added=7 first_run_failures=0 clarifications=0 closing_sections_present=true
+2026-06-06T03:15:00Z	Story 11.1	cr_complete	spawn_at=2026-06-06T03:07:30Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=2 high=0 med=0 low=0 clarifications=0 closing_sections_present=true
+2026-06-06T03:17:00Z	Story 11.1	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=real-agentbbs-bin-5-paths:usage-lists-3-exit0,export/import-inert-stderr-exit1,unknown-exit1 model=claude-opus-4-8

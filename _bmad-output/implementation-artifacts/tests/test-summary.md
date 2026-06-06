@@ -1,70 +1,69 @@
-# Test Automation Summary — Story 11.0 (Epic-10 deferred cleanup; test-infra)
+# Test Automation Summary — Story 11.1 (Operator CLI scaffold)
 
-This story ships **no production code** — it stabilizes two long-carried intermittent flakes
-(AC1 Windows `seed-protocol-race` teardown `EPERM`; AC2 Shiki full-suite tokenizer flake) and adds
-one cap-edge unit test (AC3 `roomIdSchema`). The agent contract (`packages/core`,
-`packages/mcp-server/src`) is **byte-identical** (Rule 13). QA scope here is verification +
-non-vacuity hardening, NOT a new feature suite. All new/modified tests are discoverable by ROOT
-`pnpm test` (Rule 8). The canonical gate is the ROOT `pnpm test` (Rule 12 corollary — never a
-per-package run).
+QA stage: `qa-generate-e2e-tests`. Date: 2026-06-06.
 
-## What QA verified
+## Generated Tests
 
-### AC1 — `seed-protocol-race.test.ts` stabilization did NOT weaken the race assertions
-- Diffed HEAD vs working: the change touches ONLY the teardown helpers (`reapChildren` now
-  async-awaits each killed child's bounded exit; `removeTempTree` swallows a residual
-  post-assertion removal error) and the `afterEach`/`finally` call sites. **Zero assertion lines
-  changed.**
-- The 8 race assertions (`results` length = N_WORKERS, every worker `seeded`, exactly-one
-  `protocolAnnouncementCount`/`mainProjectCount`/`systemIdentityCount` === 1, `protocolRoomPresent`,
-  `mainHasSystemMember`) are **byte-identical in substance** (content-grep of `expect(...)` lines
-  identical, only line numbers shifted by added comments). `os.tmpdir()` discipline preserved.
+### Real-runtime CLI spawn test (Rule 3)
 
-### AC2 — `highlight.test.ts` stabilization did NOT weaken the NFR12 invariants
-- Content-only diff (line numbers stripped): the ONLY substantive change is the import line gaining
-  `beforeAll` + the added `beforeAll(prewarmHighlighter)` block. All 18 NFR12 assertions (class-spans
-  only / never inline `style=`/`color:`; HTML-escaped token text; the four `.code-*` tints;
-  unknown-lang inert fallback; `escapeHtml`) are **byte-identical**. Only singleton-init timing made
-  deterministic via the established prewarm discipline.
+- [x] `packages/cli/src/bin-spawn.e2e.test.ts` — spawns the BUILT `agentbbs` bin
+  (`packages/cli/dist/index.js`) as a real `node` child process and asserts on real
+  stdout, stderr, and the real process exit code. 7 tests:
+  - built bin exists (root gate builds dist first)
+  - `--help` → usage listing export/import/ui on **stdout**, exit **0**, stderr empty
+  - no args → usage on **stdout**, exit **0**
+  - unknown command → `Unknown command` + usage on **stdout**, exit **1** (AC2)
+  - `export` recognized → inert "not yet implemented" + "Story 11.2" on **stderr**,
+    **stdout empty**, exit **1** (AC3 marquee)
+  - `import` recognized → inert message + "Story 11.3" on **stderr**, stdout empty, exit 1 (AC3)
+  - `export --db <path> out.ndjson` → seam parsed, body still inert (stderr, exit 1)
 
-### AC3 — `roomIdSchema` cap-edge test is non-vacuous (Rule 7), independently confirmed
-- Ran the dev's 3-test file via ROOT vitest (node project) → green; the file IS discovered by the
-  default suite (matches `packages/*/src/**/*.test.ts`, not a `.tsx`, not gitignored, no opt-out tag).
-- **Independent mutation test:** set `ROOM_ID_MAX_LENGTH = 201` → all 3 dev tests RED (literal-200
-  pin + at-cap accept + over-cap reject all discriminate). Reverted byte-identical
-  (`git diff HEAD -- room-shared.ts` empty) → green.
+## Why the spawn test (gap it closes)
 
-## QA-added tests (genuinely-additive boundary completion — same `roomIdSchema`, no new surface)
+The dev's `index.test.ts` injects a `write` sink and reads `process.exitCode` in-process —
+correct and fast, but it structurally cannot prove: (1) the REAL process exit code (the
+`process.exitCode = 1` side effect only becomes a real non-zero exit when the node process
+exits), and (2) STREAM ROUTING — that the AC2 unknown-command path lands on **stdout** while
+the AC3 export/import inert scaffold lands on **stderr** (the unit tests inject one sink per
+call, so they cannot witness two paths on different real streams). The spawn test is the
+appropriate Rule-3 real-runtime evidence for a CLI surface and mirrors the
+spawn-the-real-binary pattern used by the mcp-server connection test.
 
-### `packages/mcp-server/src/tools/room-shared.cap-edge.test.ts`
-- [x] ACCEPTS a `room_id` of cap-1 length (199) — the just-inside point, so the at-cap (200) accept
-  cannot pass merely because the schema accepts everything.
-- [x] REJECTS an empty `room_id` (the lower length bound) — the symmetric other end of the cap RANGE
-  `[1, 200]`. (Comment notes the rejection is enforced by `.min(1)` AND the slug `regex`; the test
-  pins the observable contract that a zero-length id never reaches core.)
+## Mutation verification (Rule 7)
 
-## Mutation tests (Rule 7 — RED under mutant, reverted byte-identical)
-- `ROOM_ID_MAX_LENGTH = 201` → dev's 3 tests RED (upper-cap discrimination).
-- `.min(0).max(ROOM_ID_MAX_LENGTH - 2)` → the new at-cap (200) + cap-1 (199) accept tests RED
-  (upper-bound discrimination of the additive 199 case). Empty-rejection held under `.min(0)` because
-  the slug regex also forbids zero length — comment adjusted to not overclaim it isolates `.min(1)`.
-- All production mutations reverted; `git diff HEAD -- packages/mcp-server/src/tools/room-shared.ts`
-  empty.
+Marquee assertion spot-checked non-vacuous: temporarily changed `exportCommand`'s default
+sink from `process.stderr` to `process.stdout`, rebuilt, and confirmed the spawn test went
+**RED** (`expected '' to match /not yet implemented/i` — the stderr assertions failed because
+the message moved to stdout). Reverted `export.ts` **byte-identically** (`git diff` empty),
+rebuilt, test green again. The stream-routing distinction is genuinely guarded.
 
-## Gate evidence
-- ROOT `pnpm test`: **173 files / 1489 tests** green (1487 dev baseline + 2 QA-added cap-edge cases).
-- **Flake corroboration (Rule 12 fidelity):** 3 consecutive clean ROOT runs this session (1489/1489
-  each), no `EPERM`, no Shiki flake, no FAIL — on top of the dev's 5 prior runs = 8 consecutive green
-  full-suite runs.
-- Contract byte-identical (Rule 13): `git diff HEAD -- packages/core packages/mcp-server/src`
-  (excluding the new untracked test file) is empty; the schema `room-shared.ts` is unchanged.
+## AC coverage
 
-## Coverage
-- `roomIdSchema` length boundary: lower edge (empty reject), just-inside (199 accept), at-cap (200
-  accept), over-cap (201 reject), + the literal-200 constant pin — full range edge covered.
-- AC1/AC2: no new assertions (stabilization only); existing race + NFR12 invariants confirmed intact
-  and green under repeated parallel load.
+- **AC1** (usage lists export/import/ui, --help/-h exit 0): unit (`index.test.ts`) + spawn.
+- **AC2** (unknown → error + exit 1, on stdout): unit + spawn.
+- **AC3** (export/import recognized, inert stderr message + exit 1, distinct from AC2): unit
+  + spawn (the spawn test adds the real stdout/stderr separation + real exit code).
+- **AC5** (operator-only — export/import/ui NOT MCP tools): covered at the correct layer by
+  the existing `packages/mcp-server/src/tool-contract.drift.test.ts` (line 220 asserts the
+  live `listTools()` set EXACTLY equals the documented set — any leak goes RED) +
+  `server.bootstrap.test.ts`, both green in the full run. The CLI never imports the MCP
+  server, so no genuine gap exists in the CLI package; a redundant CLI-side assertion would
+  not strengthen the source-of-truth pin. NOT added (no gold-plating).
 
-## Next Steps
-- The lead's per-story smoke gate re-runs `pnpm test` (the flakes are intermittent; more repetitions
-  add confidence). No deferred items added by this story.
+## Discoverability (Rule 8)
+
+`bin-spawn.e2e.test.ts` is a `.test.ts` co-located under `packages/cli/src/`, matched by the
+root `agentbbs` node project's `include` (`packages/*/src/**/*.test.{ts,tsx}`), not in the
+`exclude` (which is `*.test.tsx` DOM files only), and `git check-ignore` confirms it is not
+gitignored. Collected by the canonical ROOT `pnpm test`.
+
+## Gate
+
+Canonical ROOT `pnpm test`: **175 files / 1508 tests passed / 0 failed** (was 174/1501; +1
+file, +7 tests = the spawn suite). `pnpm run build` clean. Prettier `--check` clean on the
+new file. No production code changed (the mutation was reverted byte-identically).
+
+## Scope respected
+
+No export/import logic implemented; no `ui.ts`/core/data-access/MCP-surface change; no new
+dependency. Only the one spawn test file was added.
