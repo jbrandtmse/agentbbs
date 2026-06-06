@@ -6,12 +6,11 @@
 //   (1) the REAL process exit code (a `process.exitCode = 1` side effect only becomes an
 //       actual non-zero exit when the real `node` process drains and exits — the unit test
 //       reads the variable, not the exit status the operator's shell sees);
-//   (2) STREAM ROUTING — the AC2 unknown-command path writes usage to STDOUT, while the
-//       AC3 export/import inert scaffold writes its "not yet implemented" message to
-//       STDERR. The unit tests inject ONE sink per call, so they cannot witness that these
-//       two recognized-vs-unknown paths land on DIFFERENT real streams (the honest-scaffold
-//       contract: a deferred op signals on stderr + non-zero exit, distinct from a usage
-//       dump on stdout);
+//   (2) STREAM ROUTING — the AC2 unknown-command path writes usage to STDOUT; the Story-11.2
+//       `export` writes the NDJSON archive to STDOUT and its summary to STDERR (so the summary
+//       never corrupts the STDOUT NDJSON); the still-inert `import` scaffold writes its "not
+//       yet implemented" message to STDERR. The unit tests inject ONE sink per call, so they
+//       cannot witness that these paths land on the correct real streams;
 //   (3) the shebang + `bin` mapping actually run `dispatch(process.argv.slice(2))` when the
 //       file is executed directly as the binary.
 //
@@ -26,11 +25,22 @@
 // fails loudly (a clear ENOENT / non-launch) rather than silently passing.
 
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+  announceProject,
+  check,
+  postAnnouncement,
+  reply,
+  register,
+} from '@agentbbs/core';
+import { createDataAccess } from '@agentbbs/data-access';
 import { describe, expect, it } from 'vitest';
+
+import { parseArchive } from './archive.js';
 
 // This file is at `packages/cli/src/`, so the built bin is `../dist/index.js`.
 const BIN = join(
@@ -94,22 +104,94 @@ describe('agentbbs bin (real spawn) — Rule 3 real-runtime evidence', () => {
     expect(stderr).toBe('');
   });
 
-  // The marquee real-runtime assertion: the AC3 honest-scaffold contract. `export`/`import`
-  // are RECOGNIZED (no "Unknown command"), their inert message lands on STDERR (NOT stdout —
-  // distinguishing them from the AC2 unknown-command usage dump), and the REAL process exit
-  // code is non-zero.
-  it('`export` is recognized: inert message on STDERR (stdout empty), real exit code 1', async () => {
-    const { code, stdout, stderr } = await runBin(['export']);
-    expect(code).toBe(1);
-    expect(stderr).toMatch(/not yet implemented/i);
-    expect(stderr).toContain('Story 11.2');
-    // Honest-scaffold contract: the message is on STDERR, and stdout carries NOTHING
-    // (in particular NOT the unknown-command usage — export is a recognized subcommand).
-    expect(stdout).toBe('');
-    expect(stderr).not.toContain('Unknown command');
+  // The marquee Story-11.2 real-runtime assertion: `export` (no out-path) writes the NDJSON
+  // archive to STDOUT, its one-line SUMMARY to STDERR (so the summary never corrupts the
+  // STDOUT NDJSON), and exits 0. Pointed at a FRESH temp DB (an empty board → header-only
+  // archive) so the spawn never touches the repo's real ledger.
+  it('`export --db <fresh>` writes a header-first NDJSON archive to STDOUT, summary to STDERR, exit 0', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agentbbs-export-spawn-'));
+    try {
+      const { code, stdout, stderr } = await runBin([
+        'export',
+        '--db',
+        join(dir, 'agentbbs.db'),
+      ]);
+      expect(code).toBe(0);
+      // STDOUT carries the NDJSON archive; its first line is the agentbbs_archive header.
+      const firstLine = stdout.split('\n')[0]!;
+      const header: unknown = JSON.parse(firstLine);
+      expect((header as { agentbbs_archive?: number }).agentbbs_archive).toBe(
+        1,
+      );
+      expect(stdout).not.toContain('Unknown command');
+      // The one-line summary lands on STDERR (not STDOUT — it must not corrupt the NDJSON).
+      expect(stderr).toMatch(/agentbbs export: wrote/i);
+      expect(stderr).toMatch(/0 event/i);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
-  it('`import` is recognized: inert message on STDERR (stdout empty), real exit code 1', async () => {
+  // POPULATED real-runtime export (Rule 3 / QA goal 1): seed a REAL on-disk ledger with several
+  // event types + a stored cursor, then SPAWN the built bin to export it to a FILE, and parse
+  // that file back. This exercises the full real-process path against a non-empty board (the
+  // empty-board spawn above only proves the header), proving the operator binary produces a
+  // round-trippable archive of actual board data.
+  it('`export <file> --db <seeded>` writes a populated archive a parser round-trips, exit 0', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agentbbs-export-spawn-full-'));
+    try {
+      const dbPath = join(dir, 'agentbbs.db');
+      // Seed a real ledger in-process, then CLOSE it so the spawned bin opens its own handle.
+      const da = createDataAccess({ dbPath });
+      let expectedSeqs: number[];
+      try {
+        await register(da, { handle: 'alice', currentFocus: 'kickoff' });
+        await register(da, { handle: 'bob', currentFocus: 'helping' });
+        const project = await announceProject(da, 'alice', {
+          title: 'Calling Interface',
+          description: 'Design it.',
+        });
+        const room = await postAnnouncement(da, 'alice', {
+          projectId: project.projectId,
+          subject: 'Need help',
+          body: 'Who can help?',
+        });
+        await reply(da, 'bob', { roomId: room.roomId, body: 'I can.' });
+        // alice replies AFTER bob so bob's check sees a message past his join floor → his stored
+        // cursor is non-zero (a 0 cursor is the unset sentinel and would be omitted).
+        await reply(da, 'alice', { roomId: room.roomId, body: 'thanks bob' });
+        await check(da, 'bob'); // stores bob's read-state cursor
+        expectedSeqs = (await da.eventsSince(0)).map((e) => e.seq);
+      } finally {
+        da.close();
+      }
+      expect(expectedSeqs.length).toBeGreaterThan(4);
+
+      const outPath = join(dir, 'archive.ndjson');
+      const { code, stderr } = await runBin([
+        'export',
+        outPath,
+        '--db',
+        dbPath,
+      ]);
+      expect(code).toBe(0);
+      expect(stderr).toMatch(/agentbbs export: wrote/i);
+
+      // Parse the file the REAL spawned process wrote and assert it carries the seeded ledger.
+      const parsed = parseArchive(readFileSync(outPath, 'utf8'));
+      expect(parsed.events.map((e) => e.seq)).toEqual(expectedSeqs);
+      expect(parsed.header.event_count).toBe(expectedSeqs.length);
+      // bob's stored cursor was captured as a read-state line.
+      expect(parsed.readState).toEqual([
+        { handle: 'bob', cursor: expect.any(Number) },
+      ]);
+      expect(parsed.readState[0]!.cursor).toBeGreaterThan(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('`import` is still recognized: inert message on STDERR (stdout empty), real exit code 1', async () => {
     const { code, stdout, stderr } = await runBin(['import']);
     expect(code).toBe(1);
     expect(stderr).toMatch(/not yet implemented/i);
@@ -118,16 +200,22 @@ describe('agentbbs bin (real spawn) — Rule 3 real-runtime evidence', () => {
     expect(stderr).not.toContain('Unknown command');
   });
 
-  // The arg-parse seam does not change the inert outcome (Story 11.2/11.3 consume the seam).
-  it('`export --db <path> out.ndjson` still exits 1 on STDERR (seam parsed, body inert)', async () => {
-    const { code, stdout, stderr } = await runBin([
-      'export',
-      '--db',
-      '/tmp/nonexistent.db',
-      'out.ndjson',
-    ]);
-    expect(code).toBe(1);
-    expect(stderr).toMatch(/not yet implemented/i);
-    expect(stdout).toBe('');
+  // A failing export (an out-path inside a non-existent directory → unwritable) reports a
+  // clear error on STDERR and exits non-zero (AC5).
+  it('`export <unwritable-path>` reports a clear error on STDERR and exits 1', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agentbbs-export-spawn-err-'));
+    try {
+      const { code, stdout, stderr } = await runBin([
+        'export',
+        join(dir, 'no-such-subdir', 'out.ndjson'),
+        '--db',
+        join(dir, 'agentbbs.db'),
+      ]);
+      expect(code).toBe(1);
+      expect(stderr).toMatch(/agentbbs export: failed/i);
+      expect(stdout).toBe('');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

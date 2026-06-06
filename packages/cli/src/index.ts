@@ -48,7 +48,7 @@ const SUBCOMMANDS: Subcommand[] = [
   {
     name: 'export',
     describe:
-      'Export the board ledger to a logical NDJSON archive. (Story 11.2 — not yet implemented.)',
+      'Export the board ledger to a portable, logical NDJSON archive (or stdout).',
     run: exportCommand,
   },
   {

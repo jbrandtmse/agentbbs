@@ -1,69 +1,70 @@
-# Test Automation Summary — Story 11.1 (Operator CLI scaffold)
+# Test Automation Summary — Story 11.2 (Export the ledger to a logical archive)
 
 QA stage: `qa-generate-e2e-tests`. Date: 2026-06-06.
 
-## Generated Tests
+## Scope
 
-### Real-runtime CLI spawn test (Rule 3)
+Story 11.2 ships `agentbbs export` (the logical NDJSON archive) + the shared `archive.ts`
+codec. The dev's test suite was already strong (real `createDataAccess` ledger, header/round-trip/
+read-state/empty-board/error coverage). This QA stage STRENGTHENED it along the five QA goals
+without touching production code (`archive.ts` / `export.ts` byte-identical — the temporary Rule-7
+mutation of `serializeArchive` was reverted byte-identical; `git diff` on `archive.ts` is empty).
 
-- [x] `packages/cli/src/bin-spawn.e2e.test.ts` — spawns the BUILT `agentbbs` bin
-  (`packages/cli/dist/index.js`) as a real `node` child process and asserts on real
-  stdout, stderr, and the real process exit code. 7 tests:
-  - built bin exists (root gate builds dist first)
-  - `--help` → usage listing export/import/ui on **stdout**, exit **0**, stderr empty
-  - no args → usage on **stdout**, exit **0**
-  - unknown command → `Unknown command` + usage on **stdout**, exit **1** (AC2)
-  - `export` recognized → inert "not yet implemented" + "Story 11.2" on **stderr**,
-    **stdout empty**, exit **1** (AC3 marquee)
-  - `import` recognized → inert message + "Story 11.3" on **stderr**, stdout empty, exit 1 (AC3)
-  - `export --db <path> out.ndjson` → seam parsed, body still inert (stderr, exit 1)
+## Generated / strengthened tests
 
-## Why the spawn test (gap it closes)
+### Lossless completeness — all 10 EVENT_TYPES (QA goal 4)
 
-The dev's `index.test.ts` injects a `write` sink and reads `process.exitCode` in-process —
-correct and fast, but it structurally cannot prove: (1) the REAL process exit code (the
-`process.exitCode = 1` side effect only becomes a real non-zero exit when the node process
-exits), and (2) STREAM ROUTING — that the AC2 unknown-command path lands on **stdout** while
-the AC3 export/import inert scaffold lands on **stderr** (the unit tests inject one sink per
-call, so they cannot witness two paths on different real streams). The spawn test is the
-appropriate Rule-3 real-runtime evidence for a CLI surface and mirrors the
-spawn-the-real-binary pattern used by the mcp-server connection test.
+- [x] `packages/cli/src/export.test.ts` — the `seedBoard` helper now exercises **every one of the
+  10 closed `EVENT_TYPES`** over the REAL ledger: added `identity.focus_updated` (alice
+  `updateFocus`), `room.participant_added` (bob pulls carol in via `addParticipant`), and
+  `message.unreacted` (alice 👍 her own reply then retracts it — bob's 👍 on the contract stays
+  live). New test `LOSSLESS COMPLETENESS — every one of the 10 EVENT_TYPES serializes + round-trips`
+  asserts every type is present in the archive AND the whole ledger round-trips `toEqual(eventsSince(0))`.
+  This is the institutional-memory guarantee: no event type is dropped or mangled by the codec.
 
-## Mutation verification (Rule 7)
+### Marquee non-vacuity — genuine codec discrimination (QA goal 2, Rule 7)
 
-Marquee assertion spot-checked non-vacuous: temporarily changed `exportCommand`'s default
-sink from `process.stderr` to `process.stdout`, rebuilt, and confirmed the spawn test went
-**RED** (`expected '' to match /not yet implemented/i` — the stderr assertions failed because
-the message moved to stdout). Reverted `export.ts` **byte-identically** (`git diff` empty),
-rebuilt, test green again. The stream-routing distinction is genuinely guarded.
+- [x] `packages/cli/src/archive.test.ts` — replaced the weak parsed-output-tamper "non-vacuous"
+  test (which never exercised the codec) with THREE real discrimination tests that feed
+  `parseArchive` a buggy archive and assert the round-trip equality the real test relies on goes
+  FALSE: (1) event lines missing `actor`, (2) event lines missing `seq`, (3) a dropped read-state
+  line. A vacuous round-trip would fail these.
+- [x] **Mutation-tested the marquee end-to-end (Rule 7):** temporarily mutated the production
+  `serializeArchive` to drop the `actor` field → the `export.test.ts` round-trips
+  (`parsed.events).toEqual(eventsSince(0))`) + the codec serialize/parse test went **RED (4
+  failures)** → reverted `archive.ts` **byte-identical** → green. Proven non-vacuous, not asserted.
 
-## AC coverage
+### Populated real-spawn export (QA goal 1, Rule 3)
 
-- **AC1** (usage lists export/import/ui, --help/-h exit 0): unit (`index.test.ts`) + spawn.
-- **AC2** (unknown → error + exit 1, on stdout): unit + spawn.
-- **AC3** (export/import recognized, inert stderr message + exit 1, distinct from AC2): unit
-  + spawn (the spawn test adds the real stdout/stderr separation + real exit code).
-- **AC5** (operator-only — export/import/ui NOT MCP tools): covered at the correct layer by
-  the existing `packages/mcp-server/src/tool-contract.drift.test.ts` (line 220 asserts the
-  live `listTools()` set EXACTLY equals the documented set — any leak goes RED) +
-  `server.bootstrap.test.ts`, both green in the full run. The CLI never imports the MCP
-  server, so no genuine gap exists in the CLI package; a redundant CLI-side assertion would
-  not strengthen the source-of-truth pin. NOT added (no gold-plating).
+- [x] `packages/cli/src/bin-spawn.e2e.test.ts` — new test
+  `export <file> --db <seeded>` **seeds a real on-disk ledger in-process** (registrations, a
+  project, a room, two replies, a stored `check` cursor), **closes it**, then SPAWNS the BUILT
+  bin (`packages/cli/dist/index.js`) to export it to a FILE, and **parses the file back**: asserts
+  the event seqs equal the seeded ledger, the header `event_count` matches, and bob's non-zero
+  read-state cursor was captured. (The pre-existing spawn test only exported an EMPTY board —
+  header-only; this proves the real operator binary round-trips actual board DATA.)
 
-## Discoverability (Rule 8)
+## AC coverage confirmation (no change needed — dev already satisfied)
 
-`bin-spawn.e2e.test.ts` is a `.test.ts` co-located under `packages/cli/src/`, matched by the
-root `agentbbs` node project's `include` (`packages/*/src/**/*.test.{ts,tsx}`), not in the
-`exclude` (which is `*.test.tsx` DOM files only), and `git check-ignore` confirms it is not
-gitignored. Collected by the canonical ROOT `pnpm test`.
+- **AC2 no-SQLite-leakage (Rule 18 precise-token):** the dev's leakage guard uses SQL-shaped
+  matchers (`/FROM\s+events/i`, `/FROM\s+cursors/i`, `PRAGMA`, `rowid`, `sqlite`, `CREATE TABLE`,
+  the `.db` path) and deliberately does NOT bare-substring-check the `events`/`cursors` table names
+  (the legitimate header tokens `ndjson-events` ⊃ `events`, `cursor_count` ⊃ `cursor` would
+  false-positive). The header is defined against `EVENT_TYPES` (`buildHeader` → `[...EVENT_TYPES].sort()`).
+  Confirmed correct.
+- **AC3 read-state losslessness:** the seed registers carol + alice who never `check` (cursor 0 →
+  omitted as byte-equivalent to absent); only bob's non-zero cursor is captured. The test asserts
+  exactly `[{ handle: 'bob', cursor }]`, proving the zero-sentinel omission is lossless.
 
 ## Gate
 
-Canonical ROOT `pnpm test`: **175 files / 1508 tests passed / 0 failed** (was 174/1501; +1
-file, +7 tests = the spawn suite). `pnpm run build` clean. Prettier `--check` clean on the
-new file. No production code changed (the mutation was reverted byte-identically).
+- ROOT `pnpm test` (the canonical gate — Rule 12, never per-package): **177 files / 1526 tests
+  passed** (was 1522; +4 net new). All new tests are co-located `*.test.ts`, discoverable by the
+  default suite (Rule 8).
+- Production code byte-identical: `git diff HEAD -- packages/cli/src/archive.ts` empty; no edit to
+  `export.ts` in this stage.
 
-## Scope respected
+## Next steps
 
-No export/import logic implemented; no `ui.ts`/core/data-access/MCP-surface change; no new
-dependency. Only the one spawn test file was added.
+- Story 11.3 (import) will consume this archive format; the round-trip becomes export→import→derive.
+- Story 11.4's `cursors` round-trip is now achievable (read-state captured + proven lossless here).

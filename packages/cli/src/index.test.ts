@@ -5,8 +5,13 @@
 // an exit code captures + RESETS `process.exitCode` to avoid bleeding into sibling cases
 // (and into the rest of the suite). Nothing is mocked beyond the injected sinks.
 
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { parseArchive } from './archive.js';
 import { dispatch } from './index.js';
 import { exportCommand, parseExportArgs } from './export.js';
 import { importCommand, parseImportArgs } from './import.js';
@@ -87,7 +92,7 @@ describe('dispatch — unknown command', () => {
   });
 });
 
-describe('dispatch — export/import scaffold (recognized subcommands, inert)', () => {
+describe('dispatch — export (real, Story 11.2) / import scaffold (recognized subcommands)', () => {
   let savedExitCode: typeof process.exitCode;
 
   beforeEach(() => {
@@ -98,12 +103,22 @@ describe('dispatch — export/import scaffold (recognized subcommands, inert)', 
     process.exitCode = savedExitCode;
   });
 
-  it('export is recognized (NOT "Unknown command") and sets exitCode 1', async () => {
-    const sink = makeSink();
-    await dispatch(['export'], sink.write);
-    // The dispatch sink (stdout) must NOT carry the unknown-command path.
-    expect(sink.lines.join('\n')).not.toContain('Unknown command');
-    expect(process.exitCode).toBe(1);
+  it('export is recognized (NOT "Unknown command")', async () => {
+    // Point at a fresh temp DB (an empty board → header-only archive) so the dispatch test
+    // never touches the repo's real ledger; capture the NDJSON via an injected `out` sink.
+    const dir = mkdtempSync(join(tmpdir(), 'agentbbs-export-dispatch-'));
+    try {
+      const sink = makeSink();
+      // `export` is dispatch-reachable: it routes to exportCommand (NOT the unknown-command
+      // path). Pointed at a fresh temp DB so it never touches the repo's real ledger. The
+      // real archive/round-trip behavior is covered in export.test.ts; this only asserts
+      // dispatch routing.
+      await dispatch(['export', '--db', join(dir, 'agentbbs.db')], sink.write);
+      // The dispatch sink (stdout) must NOT carry the unknown-command path.
+      expect(sink.lines.join('\n')).not.toContain('Unknown command');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('import is recognized (NOT "Unknown command") and sets exitCode 1', async () => {
@@ -113,13 +128,46 @@ describe('dispatch — export/import scaffold (recognized subcommands, inert)', 
     expect(process.exitCode).toBe(1);
   });
 
-  it('exportCommand writes the inert Story-11.2 message to its (stderr) sink + exitCode 1', async () => {
-    const sink = makeSink();
-    await exportCommand([], sink.write);
-    const out = sink.lines.join('\n');
-    expect(out).toMatch(/not yet implemented/i);
-    expect(out).toContain('Story 11.2');
-    expect(process.exitCode).toBe(1);
+  it('exportCommand writes a header-first NDJSON archive (empty board) + exits 0', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agentbbs-export-empty-'));
+    try {
+      const log: string[] = [];
+      const out: string[] = [];
+      await exportCommand(['--db', join(dir, 'agentbbs.db')], {
+        log: (line) => log.push(line),
+        out: (text) => out.push(text),
+        exportedAt: '2026-06-05T00:00:00.000Z',
+      });
+      // Empty board → a valid header-only archive (NOT an error), success summary on stderr.
+      expect(process.exitCode).toBeUndefined();
+      const archive = parseArchive(out.join(''));
+      expect(archive.header.agentbbs_archive).toBe(1);
+      expect(archive.events).toEqual([]);
+      expect(archive.readState).toEqual([]);
+      expect(log.join('\n')).toMatch(/wrote 0 event/i);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('exportCommand reports a clear error + non-zero exit when the out-path is unwritable', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agentbbs-export-badpath-'));
+    try {
+      const log: string[] = [];
+      // An out-path inside a non-existent directory → writeFileSync fails (ENOENT).
+      await exportCommand(
+        [
+          join(dir, 'no-such-subdir', 'out.ndjson'),
+          '--db',
+          join(dir, 'agentbbs.db'),
+        ],
+        { log: (line) => log.push(line) },
+      );
+      expect(process.exitCode).toBe(1);
+      expect(log.join('\n')).toMatch(/failed/i);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('importCommand writes the inert Story-11.3 message to its (stderr) sink + exitCode 1', async () => {

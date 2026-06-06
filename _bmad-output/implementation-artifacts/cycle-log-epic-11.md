@@ -15,3 +15,10 @@
 2026-06-06T03:07:00Z	Story 11.1	qa_complete	spawn_at=2026-06-06T03:00:30Z model=claude-opus-4-8 tests_added=7 first_run_failures=0 clarifications=0 closing_sections_present=true
 2026-06-06T03:15:00Z	Story 11.1	cr_complete	spawn_at=2026-06-06T03:07:30Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=2 high=0 med=0 low=0 clarifications=0 closing_sections_present=true
 2026-06-06T03:17:00Z	Story 11.1	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=real-agentbbs-bin-5-paths:usage-lists-3-exit0,export/import-inert-stderr-exit1,unknown-exit1 model=claude-opus-4-8
+2026-06-06T03:18:00Z	Story 11.1	committed	sha=fad8eab submodules=
+2026-06-06T03:24:00Z	Story 11.2	story_created	path=_bmad-output/implementation-artifacts/11-2-export-the-ledger-to-a-logical-archive.md integration_ac=present-consumers-11.3-11.4
+2026-06-06T03:40:00Z	Story 11.2	dev_complete	spawn_at=2026-06-06T03:24:30Z model=claude-opus-4-8 files=packages/cli/src/export.ts,packages/cli/src/archive.ts,packages/cli/src/index.ts clarifications=0 cycle_iteration=1 nfr_tripwires=0 adr_violations_surfaced=0 ac3_cursor_decision=read-state-section closing_sections_present=true
+2026-06-06T03:40:00Z	Story 11.2	adr_verifications_complete	result=none_required acs=ac1-ac6 evidence=no-docs/adr
+2026-06-06T03:48:00Z	Story 11.2	qa_complete	spawn_at=2026-06-06T03:40:30Z model=claude-opus-4-8 tests_added=3 first_run_failures=2 clarifications=0 closing_sections_present=true
+2026-06-06T03:58:00Z	Story 11.2	cr_complete	spawn_at=2026-06-06T03:48:30Z model=claude-opus-4-8 resolved=1 deferred=1 dismissed=3 high=1 med=0 low=1 clarifications=0 closing_sections_present=true note=HIGH-was-gate-RED-on-lint+prettier-autofixed
+2026-06-06T04:02:00Z	Story 11.2	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=real-agentbbs-export-2-boards:19-event-archive-20-valid-json-lines,header-count-matches,ascending-seq,5-lossless-fields,10-event_types-no-sqlite-leak model=claude-opus-4-8
