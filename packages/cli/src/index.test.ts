@@ -121,11 +121,32 @@ describe('dispatch — export (real, Story 11.2) / import scaffold (recognized s
     }
   });
 
-  it('import is recognized (NOT "Unknown command") and sets exitCode 1', async () => {
-    const sink = makeSink();
-    await dispatch(['import'], sink.write);
-    expect(sink.lines.join('\n')).not.toContain('Unknown command');
-    expect(process.exitCode).toBe(1);
+  it('import is recognized (NOT "Unknown command") — routes to importCommand + exits 1 on a bad in-path', async () => {
+    // `import` is dispatch-reachable: it routes to importCommand (NOT the unknown-command path).
+    // We point it at a NON-EXISTENT archive file (in a fresh temp dir) so it fails cleanly
+    // (clear error to its stderr sink + exit 1) WITHOUT reading the real stdin or touching the
+    // repo's ledger. The real replay/round-trip behavior is covered in import.test.ts; this only
+    // asserts dispatch routing + the error contract. Note: importCommand writes to its own
+    // stderr default (process.stderr), so the dispatch `write` sink stays empty here — the
+    // routing proof is that the unknown-command path was NOT taken and exitCode is 1.
+    const dir = mkdtempSync(join(tmpdir(), 'agentbbs-import-dispatch-'));
+    try {
+      const sink = makeSink();
+      await dispatch(
+        [
+          'import',
+          join(dir, 'no-such-archive.ndjson'),
+          '--db',
+          join(dir, 'agentbbs.db'),
+        ],
+        sink.write,
+      );
+      // The dispatch sink (stdout) must NOT carry the unknown-command path.
+      expect(sink.lines.join('\n')).not.toContain('Unknown command');
+      expect(process.exitCode).toBe(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('exportCommand writes a header-first NDJSON archive (empty board) + exits 0', async () => {
@@ -170,13 +191,23 @@ describe('dispatch — export (real, Story 11.2) / import scaffold (recognized s
     }
   });
 
-  it('importCommand writes the inert Story-11.3 message to its (stderr) sink + exitCode 1', async () => {
-    const sink = makeSink();
-    await importCommand([], sink.write);
-    const out = sink.lines.join('\n');
-    expect(out).toMatch(/not yet implemented/i);
-    expect(out).toContain('Story 11.3');
-    expect(process.exitCode).toBe(1);
+  it('importCommand reports a clear error + non-zero exit on a malformed archive (nothing appended)', async () => {
+    // Feed a malformed archive (not a valid header) via the injected stdin reader so the parse
+    // gate rejects BEFORE any ledger work. The error contract: a clear "failed" message on the
+    // (injected) log sink + exitCode 1. The DB is a fresh temp path that is never created
+    // because the parse fails first.
+    const dir = mkdtempSync(join(tmpdir(), 'agentbbs-import-malformed-'));
+    try {
+      const log: string[] = [];
+      await importCommand(['-', '--db', join(dir, 'agentbbs.db')], {
+        log: (line) => log.push(line),
+        readStdin: () => 'this is not a valid NDJSON archive\n',
+      });
+      expect(process.exitCode).toBe(1);
+      expect(log.join('\n')).toMatch(/failed/i);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

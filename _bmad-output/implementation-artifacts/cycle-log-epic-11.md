@@ -22,3 +22,10 @@
 2026-06-06T03:48:00Z	Story 11.2	qa_complete	spawn_at=2026-06-06T03:40:30Z model=claude-opus-4-8 tests_added=3 first_run_failures=2 clarifications=0 closing_sections_present=true
 2026-06-06T03:58:00Z	Story 11.2	cr_complete	spawn_at=2026-06-06T03:48:30Z model=claude-opus-4-8 resolved=1 deferred=1 dismissed=3 high=1 med=0 low=1 clarifications=0 closing_sections_present=true note=HIGH-was-gate-RED-on-lint+prettier-autofixed
 2026-06-06T04:02:00Z	Story 11.2	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=real-agentbbs-export-2-boards:19-event-archive-20-valid-json-lines,header-count-matches,ascending-seq,5-lossless-fields,10-event_types-no-sqlite-leak model=claude-opus-4-8
+2026-06-06T04:04:00Z	Story 11.2	committed	sha=68341e5 submodules=
+2026-06-06T04:10:00Z	Story 11.3	story_created	path=_bmad-output/implementation-artifacts/11-3-import-by-replaying-into-an-empty-board.md integration_ac=present-consumer-11.4
+2026-06-06T04:28:00Z	Story 11.3	dev_complete	spawn_at=2026-06-06T04:10:30Z model=claude-opus-4-8 files=packages/cli/src/import.ts,packages/cli/src/archive.ts,packages/cli/src/index.ts clarifications=0 cycle_iteration=1 nfr_tripwires=0 adr_violations_surfaced=0 ac4_createdat=reassigned-display-only closing_sections_present=true
+2026-06-06T04:28:00Z	Story 11.3	adr_verifications_complete	result=none_required acs=ac1-ac6 evidence=no-docs/adr
+2026-06-06T04:36:00Z	Story 11.3	qa_complete	spawn_at=2026-06-06T04:28:30Z model=claude-opus-4-8 tests_added=2 first_run_failures=0 clarifications=0 closing_sections_present=true note=flagged-non-atomic-mid-replay-for-CR
+2026-06-06T04:46:00Z	Story 11.3	cr_complete	spawn_at=2026-06-06T04:36:30Z model=claude-opus-4-8 resolved=0 deferred=2 dismissed=0 high=0 med=0 low=2 clarifications=0 closing_sections_present=true note=replay-non-atomicity-LOW-deferred-corruption-path-only
+2026-06-06T04:50:00Z	Story 11.3	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=real-export-import-reexport-round-trip:19-events-identical-seq/type/actor/payload,non-empty-board-rejected-exit1 model=claude-opus-4-8

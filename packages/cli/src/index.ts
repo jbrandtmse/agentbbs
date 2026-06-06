@@ -33,8 +33,8 @@ export { uiCommand, parseUiArgs, runUi } from './ui.js';
 export type { UiOptions, RunUiDeps } from './ui.js';
 export { exportCommand, parseExportArgs } from './export.js';
 export type { ExportOptions } from './export.js';
-export { importCommand, parseImportArgs } from './import.js';
-export type { ImportOptions } from './import.js';
+export { importCommand, parseImportArgs, runImport } from './import.js';
+export type { ImportOptions, ImportResult, RunImportDeps } from './import.js';
 
 /** A registered subcommand: a name + its handler over the post-name argv. */
 interface Subcommand {
@@ -53,8 +53,7 @@ const SUBCOMMANDS: Subcommand[] = [
   },
   {
     name: 'import',
-    describe:
-      'Import an NDJSON archive by replaying it into an empty board. (Story 11.3 — not yet implemented.)',
+    describe: 'Import an NDJSON archive by replaying it into an empty board.',
     run: importCommand,
   },
   {

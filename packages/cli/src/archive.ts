@@ -107,6 +107,9 @@ export interface ParsedArchive extends ArchiveContents {
   header: ArchiveHeader;
 }
 
+/** The closed event vocabulary as a Set, for O(1) `type`-membership checks during validation. */
+const EVENT_TYPE_SET: ReadonlySet<string> = new Set(EVENT_TYPES);
+
 /** Type guard: a parsed object is the archive header (has the version discriminator). */
 function isHeader(value: unknown): value is ArchiveHeader {
   return (
@@ -224,4 +227,107 @@ export function parseArchive(text: string): ParsedArchive {
   }
 
   return { header, events, readState };
+}
+
+/**
+ * A minimally-shaped event line (the fields `import` replay + the seq-reproduction check
+ * depend on). `parseArchive` returns events typed as `Event`, but a hostile/corrupt archive
+ * may not actually carry that shape — {@link validateParsedArchive} narrows each line to this
+ * before any append, so the replay never feeds a malformed object into `DataAccess.append`.
+ */
+function isShapedEvent(
+  value: unknown,
+): value is { seq: number; type: string; actor: string; payload: unknown } {
+  if (typeof value !== 'object' || value === null) return false;
+  const e = value as Record<string, unknown>;
+  return (
+    typeof e.seq === 'number' &&
+    Number.isInteger(e.seq) &&
+    typeof e.type === 'string' &&
+    typeof e.actor === 'string' &&
+    'payload' in e
+  );
+}
+
+/** Type guard: a value is a well-shaped {@link ReadStateEntry} (`{ handle: string, cursor: int }`). */
+function isShapedReadState(value: unknown): value is ReadStateEntry {
+  if (typeof value !== 'object' || value === null) return false;
+  const r = value as Record<string, unknown>;
+  return (
+    typeof r.handle === 'string' &&
+    typeof r.cursor === 'number' &&
+    Number.isInteger(r.cursor)
+  );
+}
+
+/**
+ * Validate a {@link ParsedArchive}'s SHAPE + COMPATIBILITY before it is replayed (Story 11.3
+ * AC5 — closes the Story-11.2-deferred "parse has no shape validation; import owns it" item).
+ *
+ * This is the parse-half's shape gate, kept in the shared codec so it is reusable + unit-tested
+ * independently of the import handler. It asserts, in order:
+ *   1. HEADER VERSION — `agentbbs_archive` must equal {@link ARCHIVE_VERSION} (an incompatible
+ *      version is rejected rather than mis-replayed).
+ *   2. EVERY EVENT — well-shaped (`seq`/`type`/`actor`/`payload`) AND its `type` is in the
+ *      closed `EVENT_TYPES` vocabulary (an unknown `type` is rejected — it would corrupt the
+ *      replayed board / fail core's discriminated union).
+ *   3. EVERY READ-STATE entry — well-shaped (`{ handle: string, cursor: integer }`).
+ *
+ * Throws a clear `Error` on the FIRST violation (so the caller maps it to a non-zero exit and
+ * appends nothing). Returns the same archive narrowed (the events are now known well-shaped).
+ *
+ * @param archive A {@link ParsedArchive} from {@link parseArchive}.
+ * @returns The validated archive (unchanged on success).
+ * @throws If the header version is incompatible, any event is malformed / has an unknown
+ *   `type`, or any read-state entry is malformed.
+ */
+export function validateParsedArchive(archive: ParsedArchive): ParsedArchive {
+  const { header, events, readState } = archive;
+
+  if (header.agentbbs_archive !== ARCHIVE_VERSION) {
+    throw new Error(
+      `Invalid archive: incompatible header version ${String(header.agentbbs_archive)} ` +
+        `(this build reads version ${ARCHIVE_VERSION}).`,
+    );
+  }
+
+  for (let i = 0; i < events.length; i++) {
+    const event = events[i];
+    if (!isShapedEvent(event)) {
+      throw new Error(
+        `Invalid archive: event line ${i + 1} is malformed (expected { seq, type, actor, payload }).`,
+      );
+    }
+    if (!EVENT_TYPE_SET.has(event.type)) {
+      throw new Error(
+        `Invalid archive: event line ${i + 1} has unknown type "${event.type}" ` +
+          `(not in the closed EVENT_TYPES vocabulary).`,
+      );
+    }
+  }
+
+  for (let i = 0; i < readState.length; i++) {
+    if (!isShapedReadState(readState[i])) {
+      throw new Error(
+        `Invalid archive: read-state line ${i + 1} is malformed (expected { handle: string, cursor: integer }).`,
+      );
+    }
+  }
+
+  return archive;
+}
+
+/**
+ * Parse AND validate an NDJSON archive in one call — the strict entry the importer (Story 11.3)
+ * uses. {@link parseArchive} on its own throws on a missing/garbled header or non-JSON line;
+ * this additionally runs {@link validateParsedArchive} (version + per-event `type` + read-state
+ * shape). Any malformed input — non-NDJSON, incompatible version, unknown event `type`, a
+ * truncated line — throws a clear `Error` (AC5).
+ *
+ * @param text The NDJSON archive text.
+ * @returns The fully parsed + validated archive.
+ * @throws If the archive is unparseable OR fails {@link validateParsedArchive}.
+ */
+export function parseAndValidateArchive(text: string): ParsedArchive {
+  return validateParsedArchive(parseArchive(text));
 }

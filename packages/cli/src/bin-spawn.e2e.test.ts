@@ -191,13 +191,107 @@ describe('agentbbs bin (real spawn) — Rule 3 real-runtime evidence', () => {
     }
   });
 
-  it('`import` is still recognized: inert message on STDERR (stdout empty), real exit code 1', async () => {
-    const { code, stdout, stderr } = await runBin(['import']);
-    expect(code).toBe(1);
-    expect(stderr).toMatch(/not yet implemented/i);
-    expect(stderr).toContain('Story 11.3');
-    expect(stdout).toBe('');
-    expect(stderr).not.toContain('Unknown command');
+  // Story 11.3 real-runtime (Rule 3): SPAWN the built bin to EXPORT a seeded ledger to a file,
+  // then SPAWN it again to IMPORT that file into a FRESH empty board — a real-process export →
+  // import round-trip across two `node` children. Asserts the imported board's events match the
+  // source seq-for-seq (read back via a fresh in-process handle), the summary lands on STDERR,
+  // exit 0. This exercises the whole replay path through the real binary, not just the unit seam.
+  it('`import <file> --db <fresh>` replays an exported archive into an empty board, exit 0', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agentbbs-import-spawn-'));
+    try {
+      const srcDb = join(dir, 'source.db');
+      const destDb = join(dir, 'restored.db');
+      const archivePath = join(dir, 'archive.ndjson');
+
+      // Seed a real source ledger in-process, then CLOSE it so the spawned bins open their own.
+      const da = createDataAccess({ dbPath: srcDb });
+      let sourceEvents: { seq: number; type: string; actor: string }[];
+      try {
+        await register(da, { handle: 'alice', currentFocus: 'kickoff' });
+        await register(da, { handle: 'bob', currentFocus: 'helping' });
+        const project = await announceProject(da, 'alice', {
+          title: 'Calling Interface',
+          description: 'Design it.',
+        });
+        const room = await postAnnouncement(da, 'alice', {
+          projectId: project.projectId,
+          subject: 'Need help',
+          body: 'Who can help?',
+        });
+        await reply(da, 'bob', { roomId: room.roomId, body: 'I can.' });
+        await reply(da, 'alice', { roomId: room.roomId, body: 'thanks bob' });
+        await check(da, 'bob'); // stores bob's read-state cursor
+        sourceEvents = (await da.eventsSince(0)).map((e) => ({
+          seq: e.seq,
+          type: e.type,
+          actor: e.actor,
+        }));
+      } finally {
+        da.close();
+      }
+
+      // EXPORT the source to a file (real spawn).
+      const exp = await runBin(['export', archivePath, '--db', srcDb]);
+      expect(exp.code).toBe(0);
+
+      // IMPORT the file into a FRESH empty board (real spawn).
+      const imp = await runBin(['import', archivePath, '--db', destDb]);
+      expect(imp.code).toBe(0);
+      expect(imp.stderr).toMatch(/agentbbs import: replayed/i);
+      expect(imp.stderr).toMatch(/restored 1 read-state cursor/i);
+      expect(imp.stdout).toBe('');
+      expect(imp.stderr).not.toContain('Unknown command');
+
+      // Read the restored board back and assert it matches the source seq-for-seq.
+      const restored = createDataAccess({ dbPath: destDb });
+      try {
+        const restoredEvents = (await restored.eventsSince(0)).map((e) => ({
+          seq: e.seq,
+          type: e.type,
+          actor: e.actor,
+        }));
+        expect(restoredEvents).toEqual(sourceEvents);
+        // The read-state cursor was restored.
+        expect(await restored.getCursor('bob')).toBeGreaterThan(0);
+      } finally {
+        restored.close();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // A non-empty target board is rejected by the real binary (AC2): clear error on STDERR, exit 1.
+  it('`import <file> --db <non-empty>` is rejected (clear error on STDERR, exit 1)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agentbbs-import-spawn-nonempty-'));
+    try {
+      const db = join(dir, 'agentbbs.db');
+      const archivePath = join(dir, 'archive.ndjson');
+
+      // Seed a board, export it to a file.
+      const da = createDataAccess({ dbPath: db });
+      try {
+        await register(da, { handle: 'alice', currentFocus: 'kickoff' });
+      } finally {
+        da.close();
+      }
+      const exp = await runBin(['export', archivePath, '--db', db]);
+      expect(exp.code).toBe(0);
+
+      // Now import INTO THE SAME (non-empty) board → rejected.
+      const { code, stdout, stderr } = await runBin([
+        'import',
+        archivePath,
+        '--db',
+        db,
+      ]);
+      expect(code).toBe(1);
+      expect(stderr).toMatch(/agentbbs import: failed/i);
+      expect(stderr).toMatch(/not empty/i);
+      expect(stdout).toBe('');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   // A failing export (an out-path inside a non-existent directory → unwritable) reports a
