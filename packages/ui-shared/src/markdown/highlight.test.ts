@@ -5,10 +5,28 @@
 // scopes classify to the four `.code-*` tints, and an unknown lang falls back to
 // inert plain text. Pure (no DOM needed) — runs in the node project.
 
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
-import { HIGHLIGHT_LANGS, highlightToInertHtml } from './highlight.js';
+import {
+  HIGHLIGHT_LANGS,
+  highlightToInertHtml,
+  prewarmHighlighter,
+} from './highlight.js';
 import { escapeHtml } from './escape-html.js';
+
+// Stabilization (Story 11.0 AC2): initialize the singleton Shiki highlighter ONCE
+// for this file before any per-test async call. Without this, each of the 6 direct
+// `highlightToInertHtml(...)` calls independently awaits the lazy `createHighlighter`
+// (oniguruma WASM) singleton; under full-suite PARALLEL load that first WASM init
+// contends with the other Shiki-driving test files (render-markdown.test.ts,
+// RoomApp.live.test.ts) and intermittently exceeds the implicit per-test timeout —
+// the recurring `9.5-shiki-warmup` / `10.5` / `10.6` flake. Prewarming here is the
+// established prewarm discipline (render-markdown.test.ts:70 does the same in-test);
+// a generous explicit timeout covers the one-time cold WASM compile under load. The
+// NFR12 assertions below are UNCHANGED — only the init timing is made deterministic.
+beforeAll(async () => {
+  await prewarmHighlighter();
+}, 30_000);
 
 describe('highlightToInertHtml — inert class-span output', () => {
   it('emits CSS-class spans, never inline style/color', async () => {
