@@ -1,70 +1,41 @@
-# Test Automation Summary — Story 11.2 (Export the ledger to a logical archive)
+# Test Automation Summary — Story 11.5 (Distribution & OSS stand-up docs)
 
-QA stage: `qa-generate-e2e-tests`. Date: 2026-06-06.
-
-## Scope
-
-Story 11.2 ships `agentbbs export` (the logical NDJSON archive) + the shared `archive.ts`
-codec. The dev's test suite was already strong (real `createDataAccess` ledger, header/round-trip/
-read-state/empty-board/error coverage). This QA stage STRENGTHENED it along the five QA goals
-without touching production code (`archive.ts` / `export.ts` byte-identical — the temporary Rule-7
-mutation of `serializeArchive` was reverted byte-identical; `git diff` on `archive.ts` is empty).
+QA stage: `qa-generate-e2e-tests`. Harden the GUARDS (this is a packaging + agent/operator-consumed-docs story, not a feature suite).
 
 ## Generated / strengthened tests
 
-### Lossless completeness — all 10 EVENT_TYPES (QA goal 4)
+### AC6 — README Rule-10 content-guard (load-bearing) — STRENGTHENED
+`packages/mcp-server/src/readme-content-guard.test.ts`
 
-- [x] `packages/cli/src/export.test.ts` — the `seedBoard` helper now exercises **every one of the
-  10 closed `EVENT_TYPES`** over the REAL ledger: added `identity.focus_updated` (alice
-  `updateFocus`), `room.participant_added` (bob pulls carol in via `addParticipant`), and
-  `message.unreacted` (alice 👍 her own reply then retracts it — bob's 👍 on the contract stays
-  live). New test `LOSSLESS COMPLETENESS — every one of the 10 EVENT_TYPES serializes + round-trips`
-  asserts every type is present in the archive AND the whole ledger round-trips `toEqual(eventsSince(0))`.
-  This is the institutional-memory guarantee: no event type is dropped or mangled by the codec.
+- The dev's guard pinned only the **sentinel block** (`AGENTBBS-README:BEGIN/END`) values to code (bins, `AGENTBBS_DB`, subcommands, live `listTools()` count = 17). QA found a real **call-form blind spot** (Rule 18 / Epic-8 class): the sentinel is the machine MIRROR, but an outside developer copy-pastes the VISIBLE prose/code-fences. A prose-only drift (e.g. the MCP-client config fence `"command": "agentbbs-mcp-server"` renamed to a non-existent bin) left the sentinel-only guard GREEN — **empirically proven**: renaming the visible config command to `agentbbs-server` passed all 6 original tests.
+- Added 4 visible-surface assertions (run against the README with the sentinel comment stripped):
+  1. The MCP-client config fence `"command"` value IS the mcp-server bin, and no `agentbbs-*` command value is anything other than the real bin (pins the literal copy-pasted invocation).
+  2. The visible README invokes the `agentbbs` cli bin in call form (`agentbbs <sub>`).
+  3. The visible README shows the `AGENTBBS_DB` env var.
+  4. The visible README invokes EVERY `SUBCOMMAND_NAMES` entry as `agentbbs <sub>` (drift in any one -> RED).
+- **Mutation-tested non-vacuous (Rule 7):** config-fence command rename (-> `agentbbs-server`) -> RED; visible `agentbbs export` -> `agentbbs dump` (sentinel kept) -> RED; visible `AGENTBBS_DB` -> `AGENTBBS_PATH` (sentinel kept) -> RED. README restored byte-identical each time (verified no leak).
 
-### Marquee non-vacuity — genuine codec discrimination (QA goal 2, Rule 7)
+### AC2 — packaged-web-dist resolution — STRENGTHENED
+`packages/cli/src/host/static-assets.test.ts`
 
-- [x] `packages/cli/src/archive.test.ts` — replaced the weak parsed-output-tamper "non-vacuous"
-  test (which never exercised the codec) with THREE real discrimination tests that feed
-  `parseArchive` a buggy archive and assert the round-trip equality the real test relies on goes
-  FALSE: (1) event lines missing `actor`, (2) event lines missing `seq`, (3) a dropped read-state
-  line. A vacuous round-trip would fail these.
-- [x] **Mutation-tested the marquee end-to-end (Rule 7):** temporarily mutated the production
-  `serializeArchive` to drop the `actor` field → the `export.test.ts` round-trips
-  (`parsed.events).toEqual(eventsSince(0))`) + the codec serialize/parse test went **RED (4
-  failures)** → reverted `archive.ts` **byte-identical** → green. Proven non-vacuous, not asserted.
+- The dev's 4 cases (override / monorepo walk-up / packaged-no-marker / fallback) over real temp dirs were complete. QA added 2 **precedence** pins:
+  1. `AGENTBBS_WEB_DIST` override wins even when a packaged web-dist exists (escape hatch is unconditional).
+  2. The monorepo dev path wins over a packaged web-dist when a workspace marker is present (the packaged branch does not shadow the dev experience — no regression).
 
-### Populated real-spawn export (QA goal 1, Rule 3)
+## Intentionally NOT changed (sufficient as shipped)
 
-- [x] `packages/cli/src/bin-spawn.e2e.test.ts` — new test
-  `export <file> --db <seeded>` **seeds a real on-disk ledger in-process** (registrations, a
-  project, a room, two replies, a stored `check` cursor), **closes it**, then SPAWNS the BUILT
-  bin (`packages/cli/dist/index.js`) to export it to a FILE, and **parses the file back**: asserts
-  the event seqs equal the seeded ledger, the header `event_count` matches, and bob's non-zero
-  read-state cursor was captured. (The pre-existing spawn test only exported an EMPTY board —
-  header-only; this proves the real operator binary round-trips actual board DATA.)
+- **AC1 real pack** — the dev's `distribution.packaging.test.ts` pins the static manifest; the actual `pnpm pack` tarball production (workspace:/catalog: rewrite, 304 web-dist assets) was dev-verified and is the lead's smoke (heavy/environment-coupled in-suite). Left to the lead smoke per the test's own documented rationale.
+- **AC3 VSIX node:sqlite-only bundle** — already proven against the BUILT artifact by `apps/vscode-extension/src/bundle-and-activation.test.ts` (`dist/extension.cjs` has `require("node:sqlite")`, 0 live `require("better-sqlite3")`, no `*.node`; plus a synthetic-import test exercising the `external` rule). The VSIX config guard (`vsix-packaging.test.ts`) pins the marketplace-valid manifest. A config-level `external` assertion would be redundant + weaker than the artifact proof — not added. Real `vsce package` `.vsix` production is the lead's smoke.
 
-## AC coverage confirmation (no change needed — dev already satisfied)
+## Discoverability (Rule 8)
+All touched test files are collected by ROOT `pnpm test`: the README guard + static-assets are node-project `*.test.ts`; `vsix-packaging.test.ts` is `apps/vscode-extension/src/*.test.ts` (node project, not the `*-dom` project). Confirmed via root run.
 
-- **AC2 no-SQLite-leakage (Rule 18 precise-token):** the dev's leakage guard uses SQL-shaped
-  matchers (`/FROM\s+events/i`, `/FROM\s+cursors/i`, `PRAGMA`, `rowid`, `sqlite`, `CREATE TABLE`,
-  the `.db` path) and deliberately does NOT bare-substring-check the `events`/`cursors` table names
-  (the legitimate header tokens `ndjson-events` ⊃ `events`, `cursor_count` ⊃ `cursor` would
-  false-positive). The header is defined against `EVENT_TYPES` (`buildHeader` → `[...EVENT_TYPES].sort()`).
-  Confirmed correct.
-- **AC3 read-state losslessness:** the seed registers carol + alice who never `check` (cursor 0 →
-  omitted as byte-equivalent to absent); only bob's non-zero cursor is captured. The test asserts
-  exactly `[{ handle: 'bob', cursor }]`, proving the zero-sentinel omission is lossless.
+## Canonical gate (ROOT, Rule 12)
+- `pnpm run lint` — exit 0, clean
+- `pnpm run typecheck` — exit 0, clean
+- `pnpm run build` — exit 0 (web-dist copy ran)
+- `pnpm test` — **182 files, 1588 passed** (was 1582; +6 QA assertions)
+- `pnpm run format` — exit 0, clean
 
-## Gate
-
-- ROOT `pnpm test` (the canonical gate — Rule 12, never per-package): **177 files / 1526 tests
-  passed** (was 1522; +4 net new). All new tests are co-located `*.test.ts`, discoverable by the
-  default suite (Rule 8).
-- Production code byte-identical: `git diff HEAD -- packages/cli/src/archive.ts` empty; no edit to
-  `export.ts` in this stage.
-
-## Next steps
-
-- Story 11.3 (import) will consume this archive format; the round-trip becomes export→import→derive.
-- Story 11.4's `cursors` round-trip is now achievable (read-state captured + proven lossless here).
+## Rule 13
+`git diff HEAD -- packages/core/src` empty; only mcp-server/src change is the new test file; agent-facing source byte-identical. The 17-tool drift-guard stays green.

@@ -36,3 +36,10 @@
 2026-06-06T05:16:00Z	Story 11.4	qa_complete	spawn_at=2026-06-06T05:08:30Z model=claude-opus-4-8 tests_added=3 first_run_failures=0 clarifications=0 closing_sections_present=true note=fixed-AC3-proto-room-vacuity+per-category-nonempty-guards
 2026-06-06T18:30:00Z	Story 11.4	cr_complete	spawn_at=2026-06-06T18:24:00Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=3 high=0 med=0 low=0 clarifications=0 closing_sections_present=true note=re-run-after-session-limit
 2026-06-06T18:32:00Z	Story 11.4	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=round-trip.fidelity.test-8/8-green-real-createDataAccess+full-suite-1550/179-at-CR model=claude-opus-4-8
+2026-06-06T18:33:00Z	Story 11.4	committed	sha=1f8353e submodules=
+2026-06-06T18:40:00Z	Story 11.5	story_created	path=_bmad-output/implementation-artifacts/11-5-distribution-and-open-source-stand-up-docs.md note=2-rule8-reconciliations-vsix-better-sqlite3-moot+12vs17-tools
+2026-06-06T19:05:00Z	Story 11.5	dev_complete	spawn_at=2026-06-06T18:40:30Z model=claude-opus-4-8 files=15+ clarifications=0 cycle_iteration=1 nfr_tripwires=0 adr_violations_surfaced=0 rule8_reconciliations=2 closing_sections_present=true
+2026-06-06T19:05:00Z	Story 11.5	adr_verifications_complete	result=none_required acs=ac1-ac7 evidence=no-docs/adr
+2026-06-06T19:18:00Z	Story 11.5	qa_complete	spawn_at=2026-06-06T19:05:30Z model=claude-opus-4-8 tests_added=6 first_run_failures=0 clarifications=0 closing_sections_present=true note=closed-readme-guard-call-form-blindspot-rule18
+2026-06-06T19:32:00Z	Story 11.5	cr_complete	spawn_at=2026-06-06T19:18:30Z model=claude-opus-4-8 resolved=1 deferred=0 dismissed=0 high=1 med=0 low=0 clarifications=0 closing_sections_present=true note=HIGH-readme-utf8-mojibake-autofixed
+2026-06-06T19:42:00Z	Story 11.5	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=4-npm-tarballs-0.1.0-no-workspace-leak+cli-ships-web-dist-304-files+vsix-1.88MB-node:sqlite-only-0-.node+bins-run+readme-17tools-mojibake-free model=claude-opus-4-8

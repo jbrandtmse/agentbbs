@@ -7,6 +7,10 @@ out/
 coverage/
 *.vsix
 
+# Web client copied into the cli package for npm distribution (Story 11.5, AC2) — a
+# derived artifact (apps/web/dist), not ours to reformat.
+packages/cli/web-dist/
+
 # Lockfile (pnpm owns its formatting)
 pnpm-lock.yaml
 
@@ -21,5 +25,4 @@ docs/
 .claude/
 
 # Pre-existing repo docs outside this story's scope.
-README.md
 epic-cycle-workflow-creation.md

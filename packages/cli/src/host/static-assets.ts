@@ -9,11 +9,19 @@
 // DIST PATH RESOLUTION (documented):
 //   1. `AGENTBBS_WEB_DIST` env override → use it verbatim (deploy/test escape hatch).
 //   2. Otherwise, walk up from this module's directory to the monorepo root (the dir
-//      with `pnpm-workspace.yaml`) and use `<root>/apps/web/dist`.
-// The built host runs from `packages/cli/dist/host/static-assets.js`, so the walk-up
-// finds the same workspace root the dev tree has. If the web build is missing, the host
-// still serves the JSON API + SSE; a GET for a client asset returns a clear 404 telling
-// the operator to build apps/web first (rather than a confusing blank page).
+//      with `pnpm-workspace.yaml`) and use `<root>/apps/web/dist` — the DEV monorepo path.
+//   3. If no workspace marker is found before the filesystem root (the INSTALLED-FROM-NPM
+//      case: `node_modules/@agentbbs/cli/dist/host/static-assets.js`, no monorepo), use the
+//      PACKAGED web client bundled inside the cli package at `<cli-package>/web-dist` — i.e.
+//      `../../web-dist` relative to this module (Story 11.5, AC2). The cli build/prepack
+//      copies `apps/web/dist` there and lists `web-dist` in the package `files`, so the
+//      published tarball carries the UI and an npm-installed `agentbbs ui` can serve it
+//      without a monorepo present.
+// The built host runs from `packages/cli/dist/host/static-assets.js`, so in the dev tree the
+// walk-up finds the workspace root; when installed from npm it falls through to the packaged
+// `web-dist`. If the web build is missing entirely, the host still serves the JSON API + SSE;
+// a GET for a client asset returns a clear 404 telling the operator to build apps/web first
+// (rather than a confusing blank page).
 //
 // SPA FALLBACK: any non-`/api/` GET that does not resolve to a real file under the dist
 // root falls back to `index.html` (client-side routing). A path-traversal attempt
@@ -26,6 +34,13 @@ import { fileURLToPath } from 'node:url';
 
 /** The env var that overrides web-dist discovery with a verbatim path. */
 export const WEB_DIST_ENV = 'AGENTBBS_WEB_DIST';
+
+/**
+ * The directory name, inside the published `@agentbbs/cli` package, that carries the
+ * built web client copied from `apps/web/dist` (Story 11.5, AC2). Sits at the cli
+ * package root, a sibling of `dist/`.
+ */
+export const PACKAGED_WEB_DIST_DIR = 'web-dist';
 
 /** A resolved static asset to serve, or a not-found signal. */
 export interface StaticResult {
@@ -88,7 +103,19 @@ export function resolveWebDist(
     if (parent === current) break; // filesystem root — no workspace marker found
     current = parent;
   }
-  // Fallback: assume the conventional layout relative to the start dir's likely root.
+
+  // No workspace marker found → the INSTALLED-FROM-NPM layout. The web client travels
+  // INSIDE the cli package at `<cli-package>/web-dist`. The built module lives at
+  // `<cli-package>/dist/host/static-assets.js`, so the packaged web client is two levels
+  // up from this module's directory (Story 11.5, AC2). Use it when it exists.
+  const packaged = join(resolve(start), '..', '..', PACKAGED_WEB_DIST_DIR);
+  if (existsSync(packaged)) {
+    return resolve(packaged);
+  }
+
+  // Final fallback: assume the conventional dev layout relative to the start dir's likely
+  // root (preserves the prior behaviour when neither marker nor packaged dir is present —
+  // the caller then serves the graceful "web not built" hint).
   return join(resolve(start), 'apps', 'web', 'dist');
 }
 

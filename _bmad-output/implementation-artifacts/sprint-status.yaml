@@ -204,7 +204,7 @@ development_status:
   11-2-export-the-ledger-to-a-logical-archive: done
   11-3-import-by-replaying-into-an-empty-board: review
   11-4-round-trip-fidelity-test: done
-  11-5-distribution-and-open-source-stand-up-docs: backlog
+  11-5-distribution-and-open-source-stand-up-docs: review
   epic-11-retrospective: optional
 
   # Epic 12: Global-board topology, cross-project onboarding & operator board skills

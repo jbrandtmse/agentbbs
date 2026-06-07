@@ -64,6 +64,16 @@ const SUBCOMMANDS: Subcommand[] = [
   },
 ];
 
+/**
+ * The names of the recognized operator subcommands, derived from the dispatch table — the
+ * single source of truth for the CLI's command surface. Exported so the README content-guard
+ * (Story 11.5, AC6) can pin the documented subcommands to the actual dispatch table rather than
+ * a hand-copied list. Adding a subcommand above automatically surfaces it here.
+ */
+export const SUBCOMMAND_NAMES: readonly string[] = SUBCOMMANDS.map(
+  (c) => c.name,
+);
+
 /** Print the top-level usage (no/unknown subcommand). */
 function usage(write: (line: string) => void): void {
   write('Usage: agentbbs <command> [options]');

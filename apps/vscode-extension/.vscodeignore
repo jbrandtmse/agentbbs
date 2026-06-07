@@ -1,0 +1,29 @@
+# What to EXCLUDE from the packaged .vsix (Story 11.5, AC3).
+#
+# The extension ships ONLY its built bundle (dist/) + the manifest + README/LICENSE.
+# Everything else — TypeScript source, tests, the in-host test harness, build scripts,
+# maps, tsconfig, and dev cruft — is excluded so the .vsix is small and contains no
+# source or test code. vsce includes everything NOT matched here (allow-by-default),
+# so this file is the deny-list.
+
+# Source & build inputs (the bundle in dist/ is what ships).
+src/**
+esbuild.js
+tsconfig.json
+tsconfig.tsbuildinfo
+.vscodeignore
+
+# Test code & the real-host (@vscode/test-electron) harness — never shipped.
+host-tests/**
+**/*.test.js
+**/*.test.ts
+**/*.test.cjs
+
+# Source maps — not needed in the distributed extension.
+**/*.map
+
+# Dev/CI cruft.
+.gitignore
+.git/**
+node_modules/**
+**/.DS_Store

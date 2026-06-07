@@ -9,6 +9,10 @@ out/
 *.tsbuildinfo
 *.vsix
 
+# Web client copied into the cli package for npm distribution (Story 11.5, AC2).
+# Populated from apps/web/dist at cli build/prepack; a derived artifact, not source.
+packages/cli/web-dist/
+
 # Downloaded VS Code builds for the @vscode/test-electron real-host harness (Story 10.2)
 .vscode-test/
 
