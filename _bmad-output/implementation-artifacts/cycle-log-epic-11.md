@@ -45,3 +45,5 @@
 2026-06-06T19:42:00Z	Story 11.5	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=4-npm-tarballs-0.1.0-no-workspace-leak+cli-ships-web-dist-304-files+vsix-1.88MB-node:sqlite-only-0-.node+bins-run+readme-17tools-mojibake-free model=claude-opus-4-8
 2026-06-06T19:43:00Z	Story 11.5	committed	sha=736ab59 submodules=
 2026-06-08T00:00:00Z	Epic 11	retrospective_complete	retro=_bmad-output/implementation-artifacts/epic-11-retro-2026-06-06.md rules_added=20,21
+2026-06-08T00:05:00Z	Epic 11	epic_merged_to_feature	repos=. feature_sha=8be1ddd merge_sha=8be1ddd submodules=
+2026-06-08T00:05:00Z	Epic 11	epic_summary	stories=6 total_high=0 total_med=0 total_low=5 total_smoke_defects=0 rework_events=0 tests_start=1484 tests_end=1588 rules_added=20,21
