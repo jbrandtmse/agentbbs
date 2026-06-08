@@ -44,3 +44,4 @@
 2026-06-06T19:32:00Z	Story 11.5	cr_complete	spawn_at=2026-06-06T19:18:30Z model=claude-opus-4-8 resolved=1 deferred=0 dismissed=0 high=1 med=0 low=0 clarifications=0 closing_sections_present=true note=HIGH-readme-utf8-mojibake-autofixed
 2026-06-06T19:42:00Z	Story 11.5	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=4-npm-tarballs-0.1.0-no-workspace-leak+cli-ships-web-dist-304-files+vsix-1.88MB-node:sqlite-only-0-.node+bins-run+readme-17tools-mojibake-free model=claude-opus-4-8
 2026-06-06T19:43:00Z	Story 11.5	committed	sha=736ab59 submodules=
+2026-06-08T00:00:00Z	Epic 11	retrospective_complete	retro=_bmad-output/implementation-artifacts/epic-11-retro-2026-06-06.md rules_added=20,21
