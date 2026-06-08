@@ -70,6 +70,17 @@ const CADENCE_HOOK_PATH = join(BMAD_DIR, 'cadence-hook.toml');
 const SNIPPET_PATH = join(BMAD_DIR, 'agent-prompt-snippet.md');
 const IDENTITY_BOOTSTRAP_PATH = join(BMAD_DIR, 'identity-bootstrap.md');
 const TEMPLATES_DIR = join(BMAD_DIR, 'custom-templates');
+const SKILLS_DIR = join(BMAD_DIR, 'skills');
+
+// The four operator board skills the kit inlines + installs at USER scope (Story 12.4 read trio +
+// 12.5 post). Each lives canonically at `integration/bmad/skills/<name>/SKILL.md`; the kit §3.10
+// inlines each VERBATIM and installs it to `~/.claude/skills/<name>/SKILL.md` via `writeOwnedFile`.
+const OPERATOR_SKILLS = [
+  'agentbbs-check',
+  'agentbbs-projects',
+  'agentbbs-read',
+  'agentbbs-post',
+] as const;
 
 // The four standard BMad dev-cycle skill overlay templates the kit inlines (mirror the live
 // `_bmad/custom/` set + the Story 8.3 `custom-templates/`).
@@ -298,6 +309,166 @@ describe('integration/bmad/install-agentbbs.md kit content guard', () => {
   );
 
   // ──────────────────────────────────────────────────────────────────────────────────────────
+  // (a2) OPERATOR-SKILL DRIFT PINS (Story 12.6 §3.10, Rule 10) — the kit INLINES each of the four
+  // canonical operator-skill bodies VERBATIM and installs them to USER scope `~/.claude/skills/`.
+  // A skill is a STANDALONE whole file (its YAML frontmatter is line 1, so it CANNOT be
+  // sentinel-wrapped); the drift pin therefore compares the canonical SKILL.md's whole body. A
+  // drift between an inlined skill and its canonical source must turn RED; re-copying it byte-
+  // identical turns it GREEN (mutation-tested at the QA stage).
+  // ──────────────────────────────────────────────────────────────────────────────────────────
+
+  it.each(OPERATOR_SKILLS)(
+    'inlines the %s operator-skill body VERBATIM (drift pin → skills/%s/SKILL.md)',
+    (skill) => {
+      const kit = readKit();
+      const skillBody = readSource(
+        join(SKILLS_DIR, skill, 'SKILL.md'),
+        `skills/${skill}/SKILL.md`,
+      );
+      // The canonical SKILL.md is a whole file with no internal sentinel. The kit inlines the whole
+      // body inside a fenced ```markdown block, so its full content must appear verbatim. We compare
+      // the trimmed body (the kit's fence boundary adds no inner bytes) so a trailing-newline
+      // difference at the fence does not false-positive while any real drift does.
+      expect(
+        kit.includes(skillBody.trimEnd()),
+        `the kit must inline the canonical skills/${skill}/SKILL.md body VERBATIM (Story 12.6 §3.10, ` +
+          `Rule 10). If the canonical skill changed, re-copy it into install-agentbbs.md §3.10 so the ` +
+          `kit does not drift (AC1/AC3).`,
+      ).toBe(true);
+    },
+  );
+
+  it('installs the four operator skills at USER scope via writeOwnedFile → ~/.claude/skills/<name>/SKILL.md (Story 12.6 §3.10)', () => {
+    const kit = readKit();
+    // §3.10 must exist as the operator-skills install section.
+    expect(
+      /###?\s*3\.10\b/.test(kit) && /operator board skills/i.test(kit),
+      'the kit must carry a §3.10 operator-skills install section (Story 12.6 AC1).',
+    ).toBe(true);
+
+    // It must use writeOwnedFile (NOT applyBlock — a whole-owned file cannot be sentinel-wrapped).
+    expect(
+      /\bwriteOwnedFile\b/.test(kit),
+      'the kit must install the operator skills with `writeOwnedFile` (§1) — a whole owned file, not ' +
+        'an applyBlock sentinel block (Story 12.6 §3.10 / Task 2).',
+    ).toBe(true);
+
+    // It must install at USER scope under ~/.claude/skills/.
+    expect(
+      /user scope/i.test(kit) && /\.claude\/skills\//.test(kit),
+      'the kit must install the operator skills at USER scope under `~/.claude/skills/` (one install ' +
+        'serves every repo against the one global board) — Story 12.6 §3.10.',
+    ).toBe(true);
+
+    // Each skill's user-scope SKILL.md target path must be named.
+    for (const skill of OPERATOR_SKILLS) {
+      expect(
+        kit.includes(`.claude/skills/${skill}/SKILL.md`) ||
+          kit.includes(`${skill}', 'SKILL.md'`),
+        `the kit must name the user-scope install target for ${skill} ` +
+          `(~/.claude/skills/${skill}/SKILL.md) — Story 12.6 §3.10.`,
+      ).toBe(true);
+    }
+  });
+
+  it('writeOwnedFile is part of the kit helper block (Story 12.6 Task 2)', () => {
+    const kit = readKit();
+    // The whole-owned-file helper must be EXPORTED from the §1 helper block (the same block the
+    // safety test extracts), alongside applyBlock + mergeMcpServer — so an agent can call it and the
+    // Rule-11 safety test can extract + execute it.
+    expect(
+      /export function writeOwnedFile\b/.test(kit),
+      'the kit §1 helper block must export `writeOwnedFile` (the whole-owned-file write path the ' +
+        'operator skills use) — Story 12.6 Task 2.',
+    ).toBe(true);
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────────────────────
+  // (a3) QA STRENGTHENING — ENCODING INTEGRITY (Rule 21). The drift pins above are STRUCTURALLY
+  // blind to multibyte-glyph corruption: a `kit.includes(skillBody)` byte-compare proves the kit's
+  // copy MATCHES the canonical source, but if the canonical source ITSELF were mojibake-corrupted
+  // (or the kit picked up a BOM/CRLF during a rewrite), the pin stays GREEN while the human-facing
+  // prose is garbage. Rule 21: a prose rewrite of a file with non-ASCII glyphs (these inlined skill
+  // bodies + the kit carry 👍 / em-dash `—` / arrow `→`) must be encoding-verified OUT-OF-BAND.
+  // This guard is that out-of-band check, automated: no BOM, no CRLF, no mojibake lead-byte
+  // sequences in the kit OR any canonical operator-skill source — and the intended glyphs survive.
+  // Distinct concern from the token drift pins (Rule 10): orthogonal, both required for an
+  // OSS-facing agent-consumed asset.
+  // ──────────────────────────────────────────────────────────────────────────────────────────
+
+  it('the kit + the four canonical operator-skill sources are encoding-clean — no BOM / CRLF / mojibake (Rule 21)', () => {
+    // Read RAW BYTES (not decoded) so a BOM or a mojibake double-encode is visible. `readFileSync`
+    // without an encoding returns a Buffer.
+    const targets: ReadonlyArray<readonly [string, string]> = [
+      [KIT_PATH, 'install-agentbbs.md'],
+      ...OPERATOR_SKILLS.map(
+        (s) =>
+          [join(SKILLS_DIR, s, 'SKILL.md'), `skills/${s}/SKILL.md`] as const,
+      ),
+    ];
+
+    // The deterministic mojibake LEAD-BYTE sequences a UTF-8→Latin-1→UTF-8 double-encode produces
+    // for the glyphs these files actually carry: em-dash `—` → `â€"` (0xC3 0xA2 0xE2…),
+    // arrow `→` → `â†'`, 👍 → `ðŸ‘` (0xC3 0xB0 0xC5 0xB8…). Matching the two lead bytes `â`(0xC3 0xA2)
+    // and `ð`(0xC3 0xB0) catches the whole class without false-positiving on legitimate UTF-8 (a real
+    // `—` is bytes 0xE2 0x80 0x94, which never contains 0xC3 0xA2). See Epic 11 Story 11.5 / Rule 21.
+    const MOJIBAKE_LEADS = [
+      Buffer.from([0xc3, 0xa2]), // â — the em-dash / arrow / smart-quote mojibake lead
+      Buffer.from([0xc3, 0xb0]), // ð — the emoji (👍) mojibake lead
+    ];
+    const BOM = Buffer.from([0xef, 0xbb, 0xbf]);
+
+    for (const [path, label] of targets) {
+      const raw = readFileSync(path); // Buffer (raw bytes)
+
+      expect(
+        raw.subarray(0, 3).equals(BOM),
+        `${label} must NOT begin with a UTF-8 BOM (Rule 21) — a spurious BOM corrupts an OSS-facing ` +
+          `agent-consumed asset and is invisible to the token drift pins.`,
+      ).toBe(false);
+
+      expect(
+        raw.includes(Buffer.from('\r\n')),
+        `${label} must use LF line endings, not CRLF (Rule 21 / the kit's documented-LF assumption). ` +
+          `A CRLF round-trip is exactly the lossy path that introduces mojibake.`,
+      ).toBe(false);
+
+      for (const lead of MOJIBAKE_LEADS) {
+        expect(
+          raw.includes(lead),
+          `${label} must contain NO mojibake lead-byte sequence ${JSON.stringify([...lead])} ` +
+            `(Rule 21) — the inlined skill bodies + kit carry 👍 / em-dash / arrows, and a rewrite ` +
+            `through an encoding-lossy path double-encodes them into garbage the token drift pins ` +
+            `cannot see. If this fails, reverse the encoding per-character + strip the BOM + ` +
+            `normalize to LF, then reconfirm the machine tokens are byte-intact.`,
+        ).toBe(false);
+      }
+    }
+  });
+
+  it('the intended non-ASCII glyphs SURVIVE in the kit (converse non-vacuity for the Rule-21 guard)', () => {
+    // The absence-of-mojibake guard above would pass vacuously on a file that had been stripped of
+    // ALL non-ASCII content. Pin that the intended glyphs are actually PRESENT (decoded), so the
+    // encoding guard means "the glyphs are here AND correct", not "the glyphs are gone". The kit
+    // carries 👍 (the FR21 agreed-mark), em-dash `—`, and arrow `→` (counts from the dev's Rule-21
+    // out-of-band verification: 👍×18, em-dash×290, arrow×21 at authoring time — pin a conservative
+    // floor so ordinary editing does not fight the guard while a wholesale strip turns it RED).
+    const kit = readKit(); // decoded UTF-8
+    expect(
+      (kit.match(/\u{1F44D}/gu) ?? []).length,
+      'the kit must still carry the 👍 agreed-mark glyph (decoded) — converse of the mojibake guard.',
+    ).toBeGreaterThan(0);
+    expect(
+      (kit.match(/—/g) ?? []).length, // em-dash —
+      'the kit must still carry em-dash `—` glyphs (decoded).',
+    ).toBeGreaterThan(0);
+    expect(
+      (kit.match(/→/g) ?? []).length, // arrow →
+      'the kit must still carry arrow `→` glyphs (decoded).',
+    ).toBeGreaterThan(0);
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────────────────────
   // (b) SELF-CONTAINED — the kit carries the content inline; it issues NO fetch for content.
   // ──────────────────────────────────────────────────────────────────────────────────────────
 
@@ -391,6 +562,24 @@ describe('integration/bmad/install-agentbbs.md kit content guard', () => {
       'description',
       'origin',
       'taskflow',
+      // Operator-skill RESPONSE-SHAPE fields + the writeOwnedFile param (Story 12.6 §3.10), not
+      // tools — the backticked field names the four inlined operator skills document for the data
+      // the REAL tools return / accept. `content` is the `writeOwnedFile(path, content)` param;
+      // `announcements`/`messages`/`protocol` are `check` result fields; `projects`/`members`/`room`/
+      // `room_id`/`subject`/`body` are `list_*`/`read_room`/`post_announcement` shape fields. The
+      // TOOLS the skills compose (`check`, `list_projects`, `list_members`, `list_announcements`,
+      // `list_rooms`, `read_room`, `reply`, `post_announcement`, `join_board`, `login`) ARE real §6
+      // tools and pass the scan without an allowlist entry.
+      'content',
+      'announcements',
+      'messages',
+      'protocol',
+      'room_id',
+      'projects',
+      'members',
+      'room',
+      'subject',
+      'body',
     ]);
 
     const candidates = backtickedTokens(kit);

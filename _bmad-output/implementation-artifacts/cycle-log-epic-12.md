@@ -42,3 +42,10 @@ Append-only. TAB-separated, four fields: `<UTC> TAB <Story <id> | Epic N> TAB <s
 2026-06-09T00:48:00Z	Story 12.5	qa_complete	spawn_at=2026-06-09T00:37:00Z model=claude-opus-4-8 tests_added=2 first_run_failures=0 closing_sections_present=true cycle_iteration=1
 2026-06-09T01:02:00Z	Story 12.5	cr_complete	spawn_at=2026-06-09T00:49:00Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=0 high=0 med=0 low=0 clarifications=0 closing_sections_present=true cycle_iteration=1
 2026-06-09T01:03:00Z	Story 12.5	smoke_complete	method=api result=pass iterations=1 defects_caught=0 evidence=post-3-branches-own+to-join-first+room-reply-readback model=claude-opus-4-8
+2026-06-09T01:05:00Z	Story 12.5	committed	sha=b8b530e submodules=
+2026-06-09T01:18:00Z	Story 12.6	story_created	path=_bmad-output/implementation-artifacts/12-6-install-kit-integration-and-safety-re-proof.md
+2026-06-09T01:42:00Z	Story 12.6	dev_complete	spawn_at=2026-06-09T01:19:00Z model=claude-opus-4-8 files=integration/bmad/install-agentbbs.md,packages/mcp-server/src/install-kit-doc.test.ts,packages/mcp-server/src/tools/install-kit-safety.integration.test.ts,_bmad-output/implementation-artifacts/deferred-work.md clarifications=0 nfr_tripwires=0 adr_violations_surfaced=0 closing_sections_present=true cycle_iteration=1
+2026-06-09T01:42:30Z	Story 12.6	adr_verifications_complete	result=none_required
+2026-06-09T01:54:00Z	Story 12.6	qa_complete	spawn_at=2026-06-09T01:43:00Z model=claude-opus-4-8 tests_added=4 first_run_failures=0 closing_sections_present=true cycle_iteration=1
+2026-06-09T02:08:00Z	Story 12.6	cr_complete	spawn_at=2026-06-09T01:55:00Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=2 high=0 med=0 low=0 clarifications=0 closing_sections_present=true cycle_iteration=1
+2026-06-09T02:09:00Z	Story 12.6	smoke_complete	method=api result=pass iterations=1 defects_caught=0 evidence=e2e-install-4-skills-resolve+idempotent+foreign-byte-identical+17-tool-global-connection model=claude-opus-4-8
