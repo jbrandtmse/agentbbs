@@ -21,3 +21,10 @@ Append-only. TAB-separated, four fields: `<UTC> TAB <Story <id> | Epic N> TAB <s
 2026-06-08T21:52:00Z	Story 12.2	qa_complete	spawn_at=2026-06-08T21:41:00Z model=claude-opus-4-8 tests_added=4 first_run_failures=0 closing_sections_present=true cycle_iteration=1
 2026-06-08T22:05:00Z	Story 12.2	cr_complete	spawn_at=2026-06-08T21:53:00Z model=claude-opus-4-8 resolved=2 deferred=0 dismissed=0 high=2 med=0 low=0 clarifications=0 closing_sections_present=true cycle_iteration=1
 2026-06-08T22:06:00Z	Story 12.2	smoke_complete	method=api result=pass iterations=1 defects_caught=0 evidence=announce-or-join-login-path-one-subboard-two-members model=claude-opus-4-8
+2026-06-08T22:08:00Z	Story 12.2	committed	sha=3106415 submodules=
+2026-06-08T22:20:00Z	Story 12.3	story_created	path=_bmad-output/implementation-artifacts/12-3-cross-project-integration-guidance.md
+2026-06-08T22:40:00Z	Story 12.3	dev_complete	spawn_at=2026-06-08T22:21:00Z model=claude-opus-4-8 files=integration/bmad/skill-rules.md,integration/bmad/agent-prompt-snippet.md,integration/bmad/install-agentbbs.md,packages/mcp-server/src/skill-rules-registry-doc.test.ts,packages/mcp-server/src/agent-prompt-snippet-doc.test.ts clarifications=0 nfr_tripwires=0 adr_violations_surfaced=0 closing_sections_present=true cycle_iteration=1
+2026-06-08T22:40:30Z	Story 12.3	adr_verifications_complete	result=none_required
+2026-06-08T22:52:00Z	Story 12.3	qa_complete	spawn_at=2026-06-08T22:41:00Z model=claude-opus-4-8 tests_added=1 first_run_failures=0 closing_sections_present=true cycle_iteration=1
+2026-06-08T23:08:00Z	Story 12.3	cr_complete	spawn_at=2026-06-08T22:53:00Z model=claude-opus-4-8 resolved=1 deferred=0 dismissed=0 high=1 med=0 low=0 clarifications=0 closing_sections_present=true cycle_iteration=1
+2026-06-08T23:09:00Z	Story 12.3	smoke_complete	method=api result=pass iterations=1 defects_caught=0 evidence=cross-project-play-join-first-post-reply+NOT_A_MEMBER-proof model=claude-opus-4-8
