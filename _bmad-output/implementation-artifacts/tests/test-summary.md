@@ -1,44 +1,41 @@
-# Test Automation Summary — Story 10.7 (operator initiate-parity compose surfaces)
+# Test Automation Summary — Story 11.5 (Distribution & OSS stand-up docs)
 
-QA value-add tests on the SEAMS the dev's AC-shaped suite did not exercise. All mutation-tested
-non-vacuous (Rule 7) and reverted byte-identical. Discoverable by ROOT `pnpm test` (Rule 8); the
-`.tsx` runs under the root `ui-shared-dom` happy-dom project (Rule 12). No production drift — the
-Rule-13 contract drift-guard (`packages/core` / `mcp-server` / `ui-shared`) stays EMPTY.
+QA stage: `qa-generate-e2e-tests`. Harden the GUARDS (this is a packaging + agent/operator-consumed-docs story, not a feature suite).
 
-## Generated Tests
+## Generated / strengthened tests
 
-### Bridge tier — `apps/vscode-extension/src/bridge.test.ts`
-New `describe('bridge dispatch — INITIATE seams …')`:
-- [x] `whoami` (the new host-read FocusAffordance gate driver) in all 3 shapes: watching-only (no actor → all-null), registered (handle+focus+registered:true), unregistered-but-configured (registered:false), and reflects a LIVE updateFocus.
-- [x] `joinBoard` IDEMPOTENCY — a re-join succeeds, appends NO second membership event (maxSeq unchanged), operator appears exactly once.
-- [x] `updateFocus` POSITIVE trim — a valid focus with surrounding whitespace persists TRIMMED (candidate b; the dev only covered whitespace-ONLY rejection).
-- [x] `announceProject` POSITIVE trim — a valid title with surrounding whitespace lands trimmed.
+### AC6 — README Rule-10 content-guard (load-bearing) — STRENGTHENED
+`packages/mcp-server/src/readme-content-guard.test.ts`
 
-### Host tier — `apps/vscode-extension/src/compose-panel.test.ts`
-New `describe('ComposePanelManager — a SWAPPED surface still dispatches …')`:
-- [x] After open(focus)→open(create-project), an announceProject over the SWAPPED panel still LANDS (proves the fresh per-kind bridge re-bind on swap — the HTML-only assertion cannot see a stale/disposed bridge).
-- [x] A watching-only INITIATE write over the panel bridge → host-surface NO_OPERATOR, nothing persists (the gate fires through the real per-panel bridge path).
+- The dev's guard pinned only the **sentinel block** (`AGENTBBS-README:BEGIN/END`) values to code (bins, `AGENTBBS_DB`, subcommands, live `listTools()` count = 17). QA found a real **call-form blind spot** (Rule 18 / Epic-8 class): the sentinel is the machine MIRROR, but an outside developer copy-pastes the VISIBLE prose/code-fences. A prose-only drift (e.g. the MCP-client config fence `"command": "agentbbs-mcp-server"` renamed to a non-existent bin) left the sentinel-only guard GREEN — **empirically proven**: renaming the visible config command to `agentbbs-server` passed all 6 original tests.
+- Added 4 visible-surface assertions (run against the README with the sentinel comment stripped):
+  1. The MCP-client config fence `"command"` value IS the mcp-server bin, and no `agentbbs-*` command value is anything other than the real bin (pins the literal copy-pasted invocation).
+  2. The visible README invokes the `agentbbs` cli bin in call form (`agentbbs <sub>`).
+  3. The visible README shows the `AGENTBBS_DB` env var.
+  4. The visible README invokes EVERY `SUBCOMMAND_NAMES` entry as `agentbbs <sub>` (drift in any one -> RED).
+- **Mutation-tested non-vacuous (Rule 7):** config-fence command rename (-> `agentbbs-server`) -> RED; visible `agentbbs export` -> `agentbbs dump` (sentinel kept) -> RED; visible `AGENTBBS_DB` -> `AGENTBBS_PATH` (sentinel kept) -> RED. README restored byte-identical each time (verified no leak).
 
-### DOM tier — `apps/vscode-extension/src/webview/ComposeApp.test.tsx`
-New `describe('ComposeApp — JoinProjectPicker joinable filter seam …')`:
-- [x] EXCLUDES projects the operator already belongs to (canonical-handle compare, mixed-case directory handle proves case-insensitivity) — the load-bearing filter the dev's members:[] test never exercised.
-- [x] The calm "no projects to join" empty state when the operator belongs to all (NOT surfaced as an error; no phantom choices).
+### AC2 — packaged-web-dist resolution — STRENGTHENED
+`packages/cli/src/host/static-assets.test.ts`
 
-## Mutation tests (Rule 7 — all RED under mutant, reverted byte-identical)
-- Drop the joinable exclude-already-member filter (push every project) → both filter tests RED.
-- Drop the `updateFocus` host-side trim → the positive-trim test RED.
-- Drop the per-kind bridge re-bind on swap → the swapped-surface-still-LANDS test RED (timeout, no response).
-- (joinBoard idempotency: NOT mutated — core dedup is Rule-13-protected; the test pins documented behavior.)
+- The dev's 4 cases (override / monorepo walk-up / packaged-no-marker / fallback) over real temp dirs were complete. QA added 2 **precedence** pins:
+  1. `AGENTBBS_WEB_DIST` override wins even when a packaged web-dist exists (escape hatch is unconditional).
+  2. The monorepo dev path wins over a packaged web-dist when a workspace marker is present (the packaged branch does not shadow the dev experience — no regression).
 
-## Gate evidence
-- ROOT `pnpm test`: 1470/1470 (baseline 1459 + 11 new). No known flakes triggered (seed-protocol-race EPERM + Shiki both passed in the full run).
-- typecheck exit 0; lint exit 0; prettier `--check` clean on the 3 files.
+## Intentionally NOT changed (sufficient as shipped)
 
-## Coverage
-- INITIATE bridge writes (4) + gate + whoami + idempotency + trim: covered.
-- Compose surfaces (4) mount + right op + gate + join-first + no-modal + joinable filter + empty state: covered.
-- Panel-exclusivity (single reused panel, swap re-bind, gate over real bridge): covered.
-- Real-host evidence (the 4 writes land + navigable proto-room loop + gate): the dev's `host-tests/compose-panel.in-host.ts` (run via `pnpm --filter @agentbbs/vscode-extension test:host`).
+- **AC1 real pack** — the dev's `distribution.packaging.test.ts` pins the static manifest; the actual `pnpm pack` tarball production (workspace:/catalog: rewrite, 304 web-dist assets) was dev-verified and is the lead's smoke (heavy/environment-coupled in-suite). Left to the lead smoke per the test's own documented rationale.
+- **AC3 VSIX node:sqlite-only bundle** — already proven against the BUILT artifact by `apps/vscode-extension/src/bundle-and-activation.test.ts` (`dist/extension.cjs` has `require("node:sqlite")`, 0 live `require("better-sqlite3")`, no `*.node`; plus a synthetic-import test exercising the `external` rule). The VSIX config guard (`vsix-packaging.test.ts`) pins the marketplace-valid manifest. A config-level `external` assertion would be redundant + weaker than the artifact proof — not added. Real `vsce package` `.vsix` production is the lead's smoke.
 
-## Next Steps
-- The lead's end-of-epic Rule-14 integrated exploratory smoke + the real-browser/real-host Rule-12 smoke run after this story.
+## Discoverability (Rule 8)
+All touched test files are collected by ROOT `pnpm test`: the README guard + static-assets are node-project `*.test.ts`; `vsix-packaging.test.ts` is `apps/vscode-extension/src/*.test.ts` (node project, not the `*-dom` project). Confirmed via root run.
+
+## Canonical gate (ROOT, Rule 12)
+- `pnpm run lint` — exit 0, clean
+- `pnpm run typecheck` — exit 0, clean
+- `pnpm run build` — exit 0 (web-dist copy ran)
+- `pnpm test` — **182 files, 1588 passed** (was 1582; +6 QA assertions)
+- `pnpm run format` — exit 0, clean
+
+## Rule 13
+`git diff HEAD -- packages/core/src` empty; only mcp-server/src change is the new test file; agent-facing source byte-identical. The 17-tool drift-guard stays green.

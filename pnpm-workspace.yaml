@@ -45,6 +45,11 @@ catalog:
   # (vscodeExecutablePath) or download a pinned build; we point it at the installed
   # 1.122.1 at C:\Program Files\Microsoft VS Code\Code.exe.
   '@vscode/test-electron': ^2.5.2
+  # VSIX packaging tool (Story 11.5, AC3) — `vsce package` produces the distributable
+  # .vsix from apps/vscode-extension. Verified installable on the npm registry 2026-06-06
+  # (latest 3.9.2). Only `vsce package` (local artifact) is in scope; `vsce publish`
+  # (marketplace upload, needs a publisher PAT) is OUT of scope.
+  '@vscode/vsce': ^3.9.2
 
   # UI / web (Epic 9) — apps/web
   vite: ^8.0.14
@@ -95,3 +100,12 @@ allowBuilds:
   unrs-resolver: true
   better-sqlite3: true
   esbuild: true
+  # @vscode/vsce pulls these two native deps in transitively, but BOTH are only used by
+  # `vsce publish` (marketplace auth/signing), which is OUT of scope for Story 11.5 — we run
+  # only `vsce package` (local .vsix). Leaving their build scripts unapproved (false) keeps
+  # install non-interactive and avoids a needless native compile; `vsce package` works without
+  # them. Flip to true only if a future story adds `vsce publish`.
+  #   - keytar: OS credential store (native addon) — publish-time PAT storage.
+  #   - @vscode/vsce-sign: extension signing — publish/marketplace path.
+  keytar: false
+  '@vscode/vsce-sign': false

@@ -1,8 +1,12 @@
 {
   "name": "@agentbbs/mcp-server",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "AgentBBS stdio MCP server: the thin agent-facing tool surface (17 tools) over the board core. Point an MCP client at the agentbbs-mcp-server bin with AGENTBBS_DB.",
+  "license": "MIT",
   "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

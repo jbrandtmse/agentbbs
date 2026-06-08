@@ -76,8 +76,10 @@ const NO_CLIENT_FROM_CORE = {
     '@agentbbs/ui-shared/*',
     '@agentbbs/web',
     '@agentbbs/web/*',
-    '@agentbbs/vscode-extension',
-    '@agentbbs/vscode-extension/*',
+    // The VS Code extension package is named UNSCOPED (`agentbbs-vscode-extension`) because
+    // `vsce package` rejects npm-style scoped names (Story 11.5, AC3, verified empirically).
+    'agentbbs-vscode-extension',
+    'agentbbs-vscode-extension/*',
   ],
   message:
     'core must not import from any client/app package OR from @agentbbs/data-access (the concrete storage adapter). core depends only on its own ports (the DataAccess interface); dependencies flow client/adapter -> core, never the reverse.',
@@ -117,6 +119,9 @@ export default tseslint.config(
   {
     ignores: [
       '**/dist/**',
+      // The web client copied into the cli package for npm distribution (Story 11.5, AC2) —
+      // a built artifact (apps/web/dist), never linted as source.
+      '**/web-dist/**',
       '**/node_modules/**',
       '**/*.tsbuildinfo',
       'coverage/**',
@@ -271,6 +276,17 @@ export default tseslint.config(
       // These are genuine CommonJS Node scripts (the .cjs real-host harness) — `require()`
       // is correct here, not the TS `import`. Relax the TS-recommended no-require-imports.
       '@typescript-eslint/no-require-imports': 'off',
+    },
+  },
+
+  // 7c. ESM build/tool scripts (e.g. packages/cli/scripts/copy-web-dist.mjs, Story 11.5)
+  //     run under Node as ES modules and use node globals (process). Like block 7b but
+  //     sourceType: module (these use `import`, not `require`). NOT package source.
+  {
+    files: ['apps/*/scripts/**/*.mjs', 'packages/*/scripts/**/*.mjs'],
+    languageOptions: {
+      sourceType: 'module',
+      globals: { ...globals.node },
     },
   },
 

@@ -4,7 +4,7 @@
 // VS Code Electron extension host and runs an in-host test module (`extensionTestsPath`)
 // inside it. It is a standalone Node script (NOT a vitest test) — the default `pnpm test`
 // suite stays headless/fast; this is invoked explicitly via `pnpm --filter
-// @agentbbs/vscode-extension test:host` (and at the lead's per-story smoke). The in-host
+// agentbbs-vscode-extension test:host` (and at the lead's per-story smoke). The in-host
 // module writes its findings to a JSON file (AGENTBBS_PROBE_OUT) which this runner reads
 // + asserts out-of-band, so a host failure surfaces with the empirical evidence attached.
 //

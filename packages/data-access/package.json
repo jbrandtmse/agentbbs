@@ -1,8 +1,12 @@
 {
   "name": "@agentbbs/data-access",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "AgentBBS data-access seam: the only SQLite-aware module. Provides the DataAccess implementations (better-sqlite3 + node:sqlite) and ledger path discovery behind the core port.",
+  "license": "MIT",
   "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
   "//sideEffects": "The package has NO module-load side effects (every module only DEFINES functions/constants/types; nothing runs at import). Declaring it side-effect-free lets bundlers (esbuild, for the VS Code extension) TREE-SHAKE the unused better-sqlite3 path when a consumer imports only the node:sqlite adapter — so `require('better-sqlite3')` never lands in the extension-host bundle (where the native addon is absent). Story 10.2.",
   "sideEffects": false,
   "exports": {

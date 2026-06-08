@@ -1,4 +1,4 @@
-// @agentbbs/vscode-extension — the VS Code operator surface.
+// agentbbs-vscode-extension — the VS Code operator surface.
 //
 // This module is the extension-host ENTRY POINT (the package `main`, bundled to
 // dist/extension.cjs by esbuild). It is a THIN CLIENT (NFR2 / project-rules Rule 13): it

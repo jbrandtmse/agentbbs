@@ -131,17 +131,68 @@ function forkWorker(
   });
 }
 
-/** Kill any still-running children (defensive — no orphans even on failure). */
-function reapChildren(): void {
+/**
+ * Kill any still-running children (defensive — no orphans even on failure) AND await
+ * their actual exit before returning.
+ *
+ * Story 11.0 AC1: previously this sent `SIGKILL` and returned IMMEDIATELY without
+ * awaiting exit, so the subsequent `removeTempTree(dir)` could run while a just-killed
+ * worker still held the `.db`/`-wal`/`-shm` handle → Windows `EPERM` on removal. We now
+ * await each killed child's `exit` (bounded, so a stuck child can't hang teardown), so
+ * the OS has released the worker's file handles before we attempt the tree removal. In
+ * the happy path `liveChildren` is already empty (every worker exited 0 via the awaited
+ * `Promise.all`), so this is a no-op there; it only matters on the defensive failure
+ * path. Combined with the best-effort `removeTempTree`, the teardown is robust.
+ */
+async function reapChildren(): Promise<void> {
+  const exits: Promise<void>[] = [];
   for (const child of liveChildren) {
-    if (!child.killed) child.kill('SIGKILL');
+    if (child.exitCode === null && child.signalCode === null) {
+      exits.push(
+        new Promise<void>((resolveExit) => {
+          // Resolve on exit, or after a short bound so a wedged child cannot hang
+          // teardown (the dir cleanup is best-effort regardless).
+          const timer = setTimeout(resolveExit, 2000);
+          child.once('exit', () => {
+            clearTimeout(timer);
+            resolveExit();
+          });
+        }),
+      );
+      if (!child.killed) child.kill('SIGKILL');
+    }
   }
+  await Promise.all(exits);
   liveChildren.clear();
 }
 
-/** Remove the temp DB tree, robust to the Windows handle-release race (see 1.7). */
+/**
+ * Remove the temp DB tree, robust to the Windows handle-release race (see 1.7).
+ *
+ * Story 11.0 AC1 — BEST-EFFORT / NON-FATAL teardown: this runs in `finally` AFTER the
+ * race assertions have already passed, so a failure to remove the tree is a cleanup
+ * nuisance, NOT a test failure. On Windows, a just-SIGKILL'd worker (the defensive
+ * `reapChildren` path) or an AV/indexer can momentarily still hold the `.db`/`-wal`/
+ * `-shm` handle, and Windows then reports `EPERM` (not `EBUSY`) on the directory
+ * removal — which previously intermittently RED'd the gate even though the test's
+ * guarantee was fully proven. We keep the wide retry budget (≈1s of handle-release
+ * grace) and then SWALLOW a residual removal error rather than let teardown fail the
+ * gate. The `os.tmpdir()` discipline is preserved: the worst case is a stray temp dir
+ * under the OS temp root (which the OS reclaims), never an orphan in the repo.
+ */
 function removeTempTree(dir: string): void {
-  rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 });
+  try {
+    rmSync(dir, {
+      recursive: true,
+      force: true,
+      maxRetries: 20,
+      retryDelay: 50,
+    });
+  } catch {
+    // Best-effort: a lingering Windows handle on a temp-only DB sidecar must not fail a
+    // test whose assertions already passed. The dir lives under os.tmpdir(); leave it
+    // for the OS to reclaim rather than red the gate.
+  }
 }
 
 /**
@@ -253,8 +304,8 @@ beforeAll(() => {
   expect(existsSync(WORKER_DIST)).toBe(true);
 }, TEST_TIMEOUT_MS);
 
-afterEach(() => {
-  reapChildren();
+afterEach(async () => {
+  await reapChildren();
 });
 
 describe('cross-process protocol-seed race (AC #2 — idempotent under genuine multi-process bootstrap)', () => {
@@ -294,7 +345,9 @@ describe('cross-process protocol-seed race (AC #2 — idempotent under genuine m
         expect(protocolRoomPresent).toBe(true);
         expect(mainHasSystemMember).toBe(true);
       } finally {
-        reapChildren();
+        // Await child exit (handles released) BEFORE the best-effort tree removal, so a
+        // just-killed worker's lingering handle does not EPERM the cleanup (AC1).
+        await reapChildren();
         removeTempTree(dir);
       }
     },

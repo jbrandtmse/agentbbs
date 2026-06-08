@@ -1,8 +1,12 @@
 {
   "name": "@agentbbs/core",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "AgentBBS board core: append-only event ledger logic, projections, and the DataAccess port. The single source of board truth behind every thin client.",
+  "license": "MIT",
   "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
