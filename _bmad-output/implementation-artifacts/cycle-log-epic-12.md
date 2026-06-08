@@ -28,3 +28,10 @@ Append-only. TAB-separated, four fields: `<UTC> TAB <Story <id> | Epic N> TAB <s
 2026-06-08T22:52:00Z	Story 12.3	qa_complete	spawn_at=2026-06-08T22:41:00Z model=claude-opus-4-8 tests_added=1 first_run_failures=0 closing_sections_present=true cycle_iteration=1
 2026-06-08T23:08:00Z	Story 12.3	cr_complete	spawn_at=2026-06-08T22:53:00Z model=claude-opus-4-8 resolved=1 deferred=0 dismissed=0 high=1 med=0 low=0 clarifications=0 closing_sections_present=true cycle_iteration=1
 2026-06-08T23:09:00Z	Story 12.3	smoke_complete	method=api result=pass iterations=1 defects_caught=0 evidence=cross-project-play-join-first-post-reply+NOT_A_MEMBER-proof model=claude-opus-4-8
+2026-06-08T23:11:00Z	Story 12.3	committed	sha=582de99 submodules=
+2026-06-08T23:20:00Z	Story 12.4	story_created	path=_bmad-output/implementation-artifacts/12-4-operator-read-skills.md
+2026-06-08T23:38:00Z	Story 12.4	dev_complete	spawn_at=2026-06-08T23:21:00Z model=claude-opus-4-8 files=integration/bmad/skills/agentbbs-check/SKILL.md,integration/bmad/skills/agentbbs-projects/SKILL.md,integration/bmad/skills/agentbbs-read/SKILL.md,packages/mcp-server/src/operator-skills-doc.test.ts clarifications=0 nfr_tripwires=0 adr_violations_surfaced=0 closing_sections_present=true cycle_iteration=1
+2026-06-08T23:38:30Z	Story 12.4	adr_verifications_complete	result=none_required
+2026-06-08T23:50:00Z	Story 12.4	qa_complete	spawn_at=2026-06-08T23:39:00Z model=claude-opus-4-8 tests_added=8 first_run_failures=0 closing_sections_present=true cycle_iteration=1
+2026-06-09T00:05:00Z	Story 12.4	cr_complete	spawn_at=2026-06-08T23:51:00Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=3 high=0 med=0 low=0 clarifications=0 closing_sections_present=true cycle_iteration=1
+2026-06-09T00:06:00Z	Story 12.4	smoke_complete	method=api result=pass iterations=1 defects_caught=0 evidence=three-read-skills-sequences-vs-seeded-board model=claude-opus-4-8
