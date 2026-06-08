@@ -49,3 +49,5 @@ Append-only. TAB-separated, four fields: `<UTC> TAB <Story <id> | Epic N> TAB <s
 2026-06-09T01:54:00Z	Story 12.6	qa_complete	spawn_at=2026-06-09T01:43:00Z model=claude-opus-4-8 tests_added=4 first_run_failures=0 closing_sections_present=true cycle_iteration=1
 2026-06-09T02:08:00Z	Story 12.6	cr_complete	spawn_at=2026-06-09T01:55:00Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=2 high=0 med=0 low=0 clarifications=0 closing_sections_present=true cycle_iteration=1
 2026-06-09T02:09:00Z	Story 12.6	smoke_complete	method=api result=pass iterations=1 defects_caught=0 evidence=e2e-install-4-skills-resolve+idempotent+foreign-byte-identical+17-tool-global-connection model=claude-opus-4-8
+2026-06-09T02:11:00Z	Story 12.6	committed	sha=7897030 submodules=
+2026-06-09T02:20:00Z	Epic 12	integrated_smoke_complete	method=api result=pass scope=onboard+global-board+cross-project-play+operator-read+operator-post seams=5 defects_caught=0 model=claude-opus-4-8
