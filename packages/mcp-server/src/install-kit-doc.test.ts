@@ -375,6 +375,12 @@ describe('integration/bmad/install-agentbbs.md kit content guard', () => {
       'current_focus',
       'agentbbs_handle',
       'agentbbs',
+      // MCP-server connection-record CONFIG KEYS (Story 12.1 §3.9), not tools — the `{ command,
+      // args, env }` shape of an `.mcp.json` / user-scope server entry. Backticked in the §3.9 prose
+      // and JSON examples; emphatically not callable AgentBBS tools.
+      'command',
+      'args',
+      'env',
     ]);
 
     const candidates = backtickedTokens(kit);
@@ -485,6 +491,191 @@ describe('integration/bmad/install-agentbbs.md kit content guard', () => {
         /AGENTBBS_DB/.test(kit),
       'the kit must record the MCP-server connection (binary `agentbbs-mcp-server` / ' +
         '`node <path>/dist/main.js`, env `AGENTBBS_DB`) — AC #1 / AC #3.',
+    ).toBe(true);
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────────────────────
+  // (e) GLOBAL-BOARD CONNECTION RECORD (Story 12.1 — AC1 / AC2, Rule 10). Pins the §3.9 topology
+  // reconciliation: register ONCE at user scope against ONE global DB (`~/.agentbbs/board.db`); the
+  // old per-project `${PROJECT_ROOT}/.agentbbs/agentbbs.db` default is GONE; no unresolved
+  // `${PROJECT_ROOT}` literal survives as an active AGENTBBS_DB value; the per-project DB is demoted
+  // to a documented OVERRIDE. A drift (reintroducing the per-project default, or the broken
+  // placeholder as a live value) must turn these RED.
+  // ──────────────────────────────────────────────────────────────────────────────────────────
+
+  it('records the GLOBAL board DB default `~/.agentbbs/board.db` (Story 12.1 AC1)', () => {
+    const kit = readKit();
+    expect(
+      kit.includes('~/.agentbbs/board.db'),
+      'the kit must name the single global-board DB default `~/.agentbbs/board.db` — Epic 12 makes ' +
+        'the board global per machine (each project a sub-board), so the connection record points at ' +
+        'one shared DB (Story 12.1 AC1).',
+    ).toBe(true);
+  });
+
+  it('registers the server ONCE at USER scope (Story 12.1 AC1)', () => {
+    const kit = readKit();
+    // The primary registration path is user-scope, not a per-project `.mcp.json` write. Pin both the
+    // user-scope flag and the framing so a regression back to per-project-as-default turns this RED.
+    expect(
+      /--scope\s+user/.test(kit),
+      'the kit must register the `agentbbs` server at USER scope (`claude mcp add --scope user …`) so ' +
+        'every project on the machine reaches the SAME global board (Story 12.1 AC1).',
+    ).toBe(true);
+    expect(
+      /\buser scope\b/i.test(kit),
+      'the kit must frame the registration as user-scope (register ONCE at user scope → one global ' +
+        'board) — Story 12.1 AC1.',
+    ).toBe(true);
+  });
+
+  it('does NOT make the per-project DB the default — the old `${PROJECT_ROOT}/.agentbbs/agentbbs.db` default is GONE (Story 12.1 AC1/AC2)', () => {
+    const kit = readKit();
+    // The literal old per-project DEFAULT value must not appear anywhere — that exact string was the
+    // pre-12.1 connection-record default and the thing this story removes.
+    expect(
+      kit.includes('${PROJECT_ROOT}/.agentbbs/agentbbs.db'),
+      'the old per-project default `${PROJECT_ROOT}/.agentbbs/agentbbs.db` must be GONE from the kit — ' +
+        'Story 12.1 makes the global board the default and demotes the per-project DB to an explicit ' +
+        'override (AC1).',
+    ).toBe(false);
+  });
+
+  it('leaves NO unresolved `${PROJECT_ROOT}` placeholder as an active AGENTBBS_DB value (Story 12.1 AC2 — portability fix)', () => {
+    const kit = readKit();
+    // `${PROJECT_ROOT}` is not a Claude-Code-provided variable, so it never expands → a broken
+    // AGENTBBS_DB. It may appear ONCE in the explanatory note that documents the fixed bug, but it must
+    // NOT appear as a live `AGENTBBS_DB` assignment (env value, --env flag, or JSON value). Match the
+    // placeholder ONLY where it sits in an AGENTBBS_DB position (precise — Rule 18 — so the explanatory
+    // mention does not false-positive and a real reintroduction does not slip through).
+    const activePlaceholder =
+      /AGENTBBS_DB["'\s:=]+[^\n]*\$\{PROJECT_ROOT\}/.test(kit);
+    expect(
+      activePlaceholder,
+      'no active `AGENTBBS_DB` value may contain the unresolved `${PROJECT_ROOT}` placeholder — it is ' +
+        'not a Claude-Code-defined variable and never expands, so it produces a literally-broken DB ' +
+        'path (Story 12.1 AC2). The kit resolves an absolute path at install time instead.',
+    ).toBe(false);
+  });
+
+  it('preserves the per-project DB as an explicit documented OVERRIDE (Story 12.1 AC1)', () => {
+    const kit = readKit();
+    expect(
+      /\boverride\b/i.test(kit) && /isolated/i.test(kit),
+      'the kit must keep the per-project DB as an explicit documented OVERRIDE (an isolated per-project ' +
+        'board), not the default — mirroring AR6 (Story 12.1 AC1).',
+    ).toBe(true);
+  });
+
+  // ── QA strengthening (Story 12.1, this stage) — extend group (e) where the dev guards were thin ──
+  // The dev pinned that user-scope + the global default + the override all PRESENT, and that the
+  // broken placeholder is GONE. These add the load-bearing AC1 precedence/collision claims the dev
+  // guards did not pin, and harden the Rule-18 "absence" assertion against a position the dev's
+  // AGENTBBS_DB-positional regex does not reach. Each is mutation-confirmed non-vacuous (Rule 7) at
+  // the QA stage (see the test-summary); none touches the Rule-13-frozen connection integration test.
+
+  it('frames the per-project board as explicitly NOT the default — global/user-scope is PRIMARY (Story 12.1 AC1 precedence)', () => {
+    const kit = readKit();
+    // The dev's override guard proves the word "override" + "isolated" are present, but NOT that the
+    // override is DEMOTED below the global default. A drift that promotes the per-project board back to
+    // the default while still using the word "override" elsewhere would slip past the dev guard. Pin the
+    // demotion explicitly: the per-project/isolated board must be stated to NOT be the default, and the
+    // global board must be stated to BE the default.
+    expect(
+      /isolated[^\n]*\bNOT\b[^\n]*default|\bNOT\b[^\n]*default[^\n]*isolated|override[^\n]*\bNOT\b[^\n]*default|\bNOT\b the default/i.test(
+        kit,
+      ),
+      'the kit must state the isolated per-project board is NOT the default (it is an explicit ' +
+        'override). Global/user-scope is the PRIMARY path; demoting the per-project DB is the AC1 ' +
+        'precedence claim (Story 12.1 AC1).',
+    ).toBe(true);
+    expect(
+      /(single )?global board is the default|global board[^\n]*default|default[^\n]*global board/i.test(
+        kit,
+      ),
+      'the kit must state the single global board IS the default — the converse of the override being ' +
+        'demoted, so the precedence is pinned in both directions (Story 12.1 AC1).',
+    ).toBe(true);
+  });
+
+  it('STATES the same-key collision avoidance — do NOT also register a project-scope `agentbbs` alongside the user-scope one (Story 12.1 AC1)', () => {
+    const kit = readKit();
+    // AC1's second clause: "the same-key collision with a user-scope server is avoided." The dev guards
+    // never pinned this. The kit must warn that a project-scope `agentbbs` server with the SAME KEY as
+    // the user-scope registration is a redundant collision to avoid. Tie the collision concept to the
+    // CONNECTION-RECORD context (same-key / project-scope vs user-scope) — NOT a bare mention of the
+    // word "collision" anywhere (the kit also mentions an unrelated handle-suffix collision and an
+    // identity collision, so a bare /collision/ test would be vacuous — Rule 7 / Rule 18 scoping).
+    expect(
+      /same[\s-]*key collision|key collision|collision[^\n]*(user[\s-]*scope|project[\s-]*scope)|(user[\s-]*scope|project[\s-]*scope)[^\n]*collision/i.test(
+        kit,
+      ),
+      'the kit must name the SAME-KEY COLLISION risk in the connection-record context (a project-scope ' +
+        '`agentbbs` server colliding with the user-scope one) — not merely the unrelated handle/identity ' +
+        'collisions elsewhere (Story 12.1 AC1).',
+    ).toBe(true);
+    expect(
+      /do\s+(\*\*)?not(\*\*)?\s+also\s+register|not\s+also\s+register[^\n]*(project|user)[\s-]*scope/i.test(
+        kit,
+      ),
+      'the kit must instruct NOT to ALSO register a project-scope `agentbbs` server alongside the ' +
+        'user-scope one (the same-key collision AC1 requires be avoided).',
+    ).toBe(true);
+  });
+
+  it('Rule-18 hardening — the broken per-project placeholder DB path appears NOWHERE as a live value, in any config position (Story 12.1 AC2)', () => {
+    const kit = readKit();
+    // The dev's "no active placeholder" guard matches `${PROJECT_ROOT}` ONLY in an AGENTBBS_DB-prefixed
+    // position. That correctly covers the kit's live positions today (the DB always sits under
+    // AGENTBBS_DB). But to harden against a future reintroduction that puts the placeholder path in a
+    // DIFFERENT live position (e.g. an `args` entry, or a bare command path) — which the positional
+    // regex would MISS (false-negative) — pin the specific broken DB-path STRING as forbidden anywhere
+    // EXCEPT inside the single explanatory note that documents the fixed bug. We strip the explanatory
+    // block-quote lines (the `>`-prefixed §3.9 note + the override-prose mention of the fallback) and
+    // assert the active body carries no `${PROJECT_ROOT}`-rooted .agentbbs DB path.
+    //
+    // Strip markdown block-quote (explanatory) lines so the documented-bug mention is excluded.
+    const activeBody = kit
+      .split('\n')
+      .filter((line) => !/^\s*>/.test(line))
+      .join('\n');
+    expect(
+      /\$\{PROJECT_ROOT\}[\\/]\.agentbbs/.test(activeBody),
+      'the broken `${PROJECT_ROOT}/.agentbbs/...` DB path must not appear as a live value ANYWHERE in ' +
+        'the kit body (only inside the explanatory `>`-quoted note about the fixed bug). This is the ' +
+        'position-independent companion to the AGENTBBS_DB-positional guard — it catches a reintroduction ' +
+        'in an `args` entry or a command path the positional regex would miss (Story 12.1 AC2, Rule 18).',
+    ).toBe(false);
+    // Converse non-vacuity: the strip must NOT have removed the entire kit (a stripped-to-empty body
+    // would make the absence assertion vacuously pass). The active body must still carry the live
+    // user-scope registration command.
+    expect(
+      /--scope\s+user/.test(activeBody),
+      'sanity: stripping `>`-quoted lines must leave the live user-scope registration command intact ' +
+        '(else the placeholder-absence assertion above would be vacuous).',
+    ).toBe(true);
+  });
+
+  it('the §4 verify step confirms the USER-SCOPE global registration (resolved `~/.agentbbs/board.db`) and no stray per-project entry (Story 12.1 AC1/AC4)', () => {
+    const kit = readKit();
+    // AC4's installed-state expectation is documented in the §4 verify step. The dev guards pin the §3.9
+    // WRITE side; this pins the §4 VERIFY side so the kit tells the operator to confirm the user-scope
+    // global registration end-to-end (and that no per-project `.mcp.json agentbbs` entry was created
+    // unless they chose the override). A drift that leaves §4 verifying a per-project registration would
+    // contradict the §3.9 rewrite and slip past the §3.9-only guards.
+    expect(
+      /at user scope[^\n]*AGENTBBS_DB|AGENTBBS_DB[^\n]*at user scope|registered\s+(\*\*)?at user scope/i.test(
+        kit,
+      ),
+      'the §4 verify step must tell the operator to confirm the `agentbbs` server is registered at USER ' +
+        'scope with AGENTBBS_DB set (Story 12.1 AC1/AC4).',
+    ).toBe(true);
+    expect(
+      /no per-project[^\n]*\.mcp\.json[^\n]*agentbbs|no per-project[^\n]*agentbbs[^\n]*entry/i.test(
+        kit,
+      ),
+      'the §4 verify step must have the operator confirm NO per-project `.mcp.json` `agentbbs` entry was ' +
+        'created (unless the explicit isolated-board override was chosen) — Story 12.1 AC1.',
     ).toBe(true);
   });
 });
