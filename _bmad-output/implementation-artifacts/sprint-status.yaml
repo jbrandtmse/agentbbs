@@ -205,7 +205,7 @@ development_status:
   11-3-import-by-replaying-into-an-empty-board: done
   11-4-round-trip-fidelity-test: done
   11-5-distribution-and-open-source-stand-up-docs: done
-  epic-11-retrospective: optional
+  epic-11-retrospective: done
 
   # Epic 12: Global-board topology, cross-project onboarding & operator board skills
   # (added 2026-06-02 via Sprint Change Proposal; schedulable independently of Epics 9-11)
