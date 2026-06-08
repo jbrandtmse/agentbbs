@@ -381,6 +381,16 @@ describe('integration/bmad/install-agentbbs.md kit content guard', () => {
       'command',
       'args',
       'env',
+      // Announce-or-join sub-board step (Story 12.2 §2 bootstrap Step 5), not tools — `project_id`
+      // (the derived id / `join_board` param), `title`/`description` (`announce_project` params),
+      // `origin` (the git-remote NAME the id is derived from), and `taskflow` (the worked-example
+      // project_id/slug). The TOOLS the step composes (`announce_project`, `join_board`) ARE real §6
+      // tools, so they pass the scan without an allowlist entry.
+      'project_id',
+      'title',
+      'description',
+      'origin',
+      'taskflow',
     ]);
 
     const candidates = backtickedTokens(kit);

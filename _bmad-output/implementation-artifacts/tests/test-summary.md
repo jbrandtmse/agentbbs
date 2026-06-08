@@ -1,66 +1,81 @@
-# Test Automation Summary — Story 12.1 (Global-board default & framing reconciliation)
+# Test Automation Summary — Story 12.2 (onboarding announces the project sub-board)
 
-QA stage: `qa-generate-e2e-tests`. Story is a configuration/asset + planning-doc reconciliation
-(install-kit `.mcp.json` registration moved from a broken per-project `${PROJECT_ROOT}` board to a
-user-scope registration against ONE global `AGENTBBS_DB`, default `~/.agentbbs/board.db`). NO
-board-engine change (Rule 13). The deliverable is the agent-CONSUMED install kit, so the test tier is
-a Rule-10 content-guard pinning the kit's machine-relevant claims to source-of-truth — not a UI/API
-E2E. The complementary real-runtime proof already exists (`install-kit-connection.integration.test.ts`,
-which spawns the real `dist/main.js`).
+QA stage: `qa-generate-e2e-tests`. Asset + tests story (FR41), NO board-engine change (Rule 13).
+Canonical gate = ROOT `pnpm test` (cross-package resolves against live `src`).
 
-## Generated / Strengthened Tests
+## Strengthening rationale
 
-### Content-guards (extended) — `packages/mcp-server/src/install-kit-doc.test.ts`
-The dev added 5 group-(e) guards (global default present, user-scope present, old `${PROJECT_ROOT}`
-default GONE, no active-`AGENTBBS_DB` placeholder, override present). QA added 4 more pinning the
-load-bearing AC1/AC2 claims the dev guards left thin:
+The dev's coverage was already substantial (content-guard + 3 real-runtime cases, both
+mutation-tested). QA targeted the three thin spots the lead flagged.
 
-- [x] **Precedence** — the per-project board is explicitly stated NOT to be the default, and the
-  global board IS the default (pins the AC1 demotion in both directions; the dev's override guard only
-  proved the words "override"+"isolated" present, not the demotion).
-- [x] **Same-key collision avoidance (AC1 clause 2)** — the kit must name the same-key collision in the
-  connection-record context (project-scope vs user-scope) AND instruct "do not also register" a
-  project-scope `agentbbs` alongside the user-scope one. The dev had NO collision guard. The collision
-  word-pin is scoped to the connection-record context so the two unrelated `collision` mentions
-  (handle-suffix collision, identity collision) cannot make it vacuous.
-- [x] **Rule-18 hardening (AC2)** — the broken `${PROJECT_ROOT}/.agentbbs/...` DB path must appear
-  NOWHERE as a live value in the kit body (only inside the `>`-quoted explanatory note). This is the
-  POSITION-INDEPENDENT companion to the dev's `AGENTBBS_DB`-positional regex: it catches a
-  reintroduction in an `args` entry or a command path the positional regex would MISS (false-negative).
-  Includes a converse non-vacuity check (the `>`-quote strip must leave the live `--scope user` command).
-- [x] **§4 verify side (AC1/AC4)** — the verify step must confirm the user-scope global registration
-  and that no stray per-project `.mcp.json agentbbs` entry was created. Pins the VERIFY side of the
-  §3.9 WRITE the dev guards covered.
+### AC2 — three-way `project_id` consistency, bound to core's ACTUAL slug rule
 
-## Mutation testing (Rule 7) — every new assertion proven non-vacuous
+Gap: the dev's derivation guard pinned that the asset MENTIONS git-remote/origin, folder name,
+`@<project>`, and `project_id` — but did NOT pin that the asset describes core's ACTUAL slug
+algorithm (the Dev-Notes "do not invent a divergent one" hazard). Added two content-guard cases in
+`identity-bootstrap-doc.test.ts`:
 
-| New guard | Mutation applied to kit | Result |
+- **`states core's ACTUAL slug rule … bound to packages/core/src/projects/slug.ts`** — reads
+  `slug.ts` as TEXT (no deep cross-package import → zero typecheck risk) and asserts the bootstrap
+  block describes each of core's three transforms: lowercase (`.toLowerCase()`), collapse every run
+  of non-`[a-z0-9]` to a single `-` (`/[^a-z0-9]+/g`), strip leading/trailing `-` (`/^-+|-+$/g`).
+  Sanity-pins those literals are present in slug.ts first, so the guard can't go vacuous if core's
+  algorithm moves. A divergent slug DESCRIPTION in the asset OR a core slug-rule change the asset
+  fails to follow turns it RED.
+- **`the worked example is slug-consistent`** — applies core's rule (mirrored from slug.ts literals,
+  whose presence is asserted) to the worked-example title `Taskflow`, asserting it yields the stated
+  `project_id` `taskflow` AND the handle `amelia-dev@taskflow`'s `@<project>` scope — the concrete
+  three-way anchor.
+
+Integration: strengthened the first-agent AC #2 assertion in
+`identity-bootstrap-workflow.integration.test.ts` to bind the three-way to a `coreSlug` mirror
+(`derivedId = coreSlug(title)`; `derivedId === PROJECT_ID`; `sc.project_id === derivedId`;
+`handle.endsWith('@'+derivedId)`) rather than the hardcoded constant — so a live-tool slug drift
+surfaces as `sc.project_id !== coreSlug(title)`.
+
+### AC1/AC3 — "exactly one sub-board" + "no error surfaced", non-hiding
+
+Gap: `readProject` uses `.find` (first match), which would MASK a second same-id directory record;
+`announcedCount === 1` only counts announcement EVENTS. Added `projectRecordCount` (a
+`.filter().length` over the live `list_projects` directory) and asserted it `=== 1` in BOTH
+idempotent paths (second SESSION same agent; second AGENT same repo) — the non-hiding "exactly one
+sub-board record" form. The `join_board` no-error and `PROJECT_EXISTS`-is-the-expected-branch
+assertions were already present and load-bearing.
+
+## Mutation tests (Rule 7) — all non-vacuous, all reverted byte-identical
+
+| # | Mutation | Result |
 |---|---|---|
-| Rule-18 hardening | placeholder DB path injected into override `args` as `${PROJECT_ROOT}/.agentbbs/board.db` (NOT the dev's exact old-default literal, so the dev's two literal-string guards stay GREEN) | only the hardening guard RED — proves it adds coverage the positional + literal guards miss |
-| Precedence | removed "NOT the default" / "global board is the default" framing from the override section | precedence guard RED |
-| Same-key collision | removed BOTH connection-record collision callouts (primary + override) | collision guard RED (the discriminating "do not also register" assertion) |
-| §4 verify | rewrote §4 verify to a per-project framing (dropped "at user scope" + "no per-project entry") | §4-verify guard RED |
+| 1 | Asset slug rule → divergent "replace spaces with `-`" (drop `[a-z0-9]`/strip clauses) | slug-rule guard RED. Reverted byte-identical. |
+| 2 | core `slug.ts` `.toLowerCase()` → `.normalize()` | slug-rule guard sanity-pin RED (bind to source-of-truth proven). `slug.ts` restored, `git diff` empty (Rule 13). |
+| 3 | integration `coreSlug` drop `.toLowerCase()` | first-agent AC2 three-way RED. Reverted byte-identical. |
+| 4 | `projectRecordCount(...)` expectation `1 → 2` | second-session AC3 RED (assertion discriminates). Reverted. |
+| 5 | Perturb a char INSIDE the install-kit inlined bootstrap block | drift pin (`inlines the identity-bootstrap sentinel block VERBATIM`) RED. Kit restored byte-identical. |
 
-All mutations reverted byte-identical → 22/22 GREEN. The kit working-tree state after QA = the dev's
-§3.9 rewrite, with zero mutation residue (all guard-target phrases confirmed intact).
+The dev's prior call-form phantom-scan mutations (rename `announce_project{` → phantom RED) remain
+covered by the dev's existing cases; the broadened `` /`([a-z][a-z_]{2,})(?:`|\{)/g `` candidate
+pattern + the `project_id`/`title`/`description`/`origin`/`taskflow` allowlist (Rule 18) are present
+in both guards.
 
-## Rule-13-frozen path (untouched)
-`packages/mcp-server/src/tools/install-kit-connection.integration.test.ts` (real `dist/main.js` spawn)
-stays GREEN — the kit's PRIMARY path is user-scope; the illustrative explicit-Node JSON form (which
-that frozen test pins) remains the documented fallback, not a regression to per-project.
+## Two-places drift (Rule 18 / Epic-8 lesson)
 
-## Coverage
-- Install-kit content-guards: 22/22 (18 dev + 4 QA), all mutation-confirmed.
-- Rule-13 board engine (`packages/core`, `packages/data-access`, `packages/mcp-server/src`): byte-identical
-  except the permitted `install-kit-doc.test.ts`.
+`install-kit-doc.test.ts` drift pin GREEN; explicit byte-compare of the two
+`AGENTBBS-IDENTITY-BOOTSTRAP` sentinel blocks = BYTE-IDENTICAL. Mutation #5 confirms a divergence
+turns the pin RED.
 
-## Canonical ROOT gate (Rule 20, all legs)
-- lint: 0 findings (exit 0)
-- typecheck: exit 0
-- build: clean (exit 0)
-- test: 182 files / **1597 passed** / 0 failed
-- format --check: clean (exit 0)
+## Discoverability (Rule 8)
 
-## Test discoverability (Rule 8)
-New tests are added to the existing `*-doc.test.ts` content-guard file (correct Vitest naming, not
-ignored, not tagged) — discovered and run by the canonical ROOT `pnpm test` (confirmed in the 1597-count).
+All additions extend existing default-suite `.test.ts` files — discoverable, not ignored, not opted
+out. Confirmed present in the root `pnpm test` run.
+
+## Gate (Rule 20 — full canonical gate, independently re-run)
+
+- `pnpm run lint` — 0 errors
+- `pnpm run typecheck` — 0 errors
+- `pnpm run build` — clean
+- `pnpm test` — 1605 passed (182 files, 0 failed)
+- `pnpm run format` (`prettier --check .`) — clean (fixed one formatting warning the edit introduced)
+
+Rule 13: `git diff HEAD -- packages/core packages/data-access` is EMPTY; board-engine source
+byte-identical; only the 3 test files changed by QA (the two assets are dev-authored, unchanged by QA —
+all mutation tests restored byte-identical).
