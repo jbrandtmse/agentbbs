@@ -1,4 +1,5 @@
-// Content-guard for the operator READ skills (Story 12.4, AC #4).
+// Content-guard for the operator READ skills (Story 12.4, AC #4) + the operator WRITE skill (Story
+// 12.5, AC3).
 //
 // Story 12.4 authors three NEW user-scope, operator-invoked, AGENT-EXECUTED slash-command skills
 // (markdown `SKILL.md` assets) that drive the board READ-ONLY on demand (FR43), composing the
@@ -7,8 +8,25 @@
 //   - `agentbbs-projects` — resolve identity → `login` → `list_projects` (+ `list_members` for focus).
 //   - `agentbbs-read`     — resolve identity → `login` → `list_announcements`/`list_rooms` (a project)
 //                           or `read_room` (a room).
-// Story 12.6 (capstone) inlines/installs these into the kit; THIS story authors the canonical sources
-// (`integration/bmad/skills/<name>/SKILL.md`) plus this guard.
+//
+// Story 12.5 adds the ONE WRITE operator skill — `agentbbs-post` — composing the already-shipped
+// write tools (still Rule 13: no new tool/event/error code):
+//   - `agentbbs-post`     — resolve identity → `login` → post a coordination message: a
+//                           `post_announcement` on your own sub-board (default), a `join_board` +
+//                           `post_announcement` into another project's sub-board (`--to`; join FIRST
+//                           because post_announcement GATES on membership — the CR-12.3-H1 lesson),
+//                           or a `reply` into an active room (`--room`; reply GRANTS membership).
+//
+// PARTITION (Story 12.5): the READ-ONLY sweep (no write tool in any call form; the "states it is
+// read-only/pull-only" text; the first-run-protocol pin) applies ONLY to the THREE READ skills in
+// `SKILLS`. `agentbbs-post` is intentionally NOT in `SKILLS` — it is a write skill and would (and
+// must) fail the read-only sweep. Instead it has its OWN block below asserting a BOUNDED write set:
+// it may CALL only `login`/`join_board`/`post_announcement`/`reply`, and must NEVER call any OTHER
+// write tool (`announce_project`/`react`/`unreact`/`add_participant`/`update_focus`/`register`); plus
+// the load-bearing join-before-post ordering for the cross-project `--to` path.
+//
+// Story 12.6 (capstone) inlines/installs all four into the kit; THESE stories author the canonical
+// sources (`integration/bmad/skills/<name>/SKILL.md`) plus this guard.
 //
 // Like the identity-bootstrap / agent-prompt-snippet / negotiation-protocol doc guards, this is a
 // DOCUMENTATION content guard, NOT a code drift guard (that is `tool-contract.drift.test.ts`, which
@@ -467,5 +485,366 @@ describe('operator read-skill content guard — QA strengthening (Story 12.4)', 
         ).toBe(true);
       });
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The operator WRITE skill — `agentbbs-post` (Story 12.5, AC3).
+//
+// `agentbbs-post` is the ONE write skill: the operator's way to PLACE a coordination message on the
+// board on demand (FR43). It is deliberately NOT in `SKILLS` above — the read-only sweep would (and
+// must) fail it. This block is its own guard, pinning:
+//   (1) frontmatter `name: agentbbs-post` + a `description` (the Claude Code skill contract);
+//   (2) it NAMES + CALLS exactly its four composed tools (`login`, `join_board`, `post_announcement`,
+//       `reply`), pinned to the live §6 surface (Rule 13 — existing tools only);
+//   (3) BOUNDED WRITE: it must NEVER CALL any OTHER write tool — not `announce_project`, `react`,
+//       `unreact`, `add_participant`, `update_focus`, or `register` (in ANY call form, Rule 18);
+//   (4) the load-bearing join-before-post ORDERING on the cross-project `--to` path — it
+//       `join_board`s BEFORE `post_announcement` (the CR-12.3-H1 correctness property: post gates on
+//       membership, only reply grants it, so a cross-project post into a non-joined board would hit
+//       NOT_A_MEMBER without a prior join);
+//   (5) no phantom tools (Rule 10/18) — every backticked tool-looking token, bare or call form, is a
+//       real §6 tool or an allowlisted non-tool token;
+//   (6) it resolves identity from the repo's `AGENTS.md` `AGENTBBS-IDENTITY` block and degrades
+//       gracefully when none exists (same per-repo identity convention as the read skills).
+
+const POST_SKILL = 'agentbbs-post' as const;
+
+// The BOUNDED write set: the ONLY write tools `agentbbs-post` is permitted to CALL.
+const POST_ALLOWED_CALL_TOOLS = [
+  'login',
+  'join_board',
+  'post_announcement',
+  'reply',
+] as const;
+
+// Every write tool EXCEPT the bounded-allowed subset. `agentbbs-post` must never CALL one of these in
+// ANY form (the Rule-18 call-form-agnostic guarantee). They may appear ONLY as a bare backticked token
+// in the explicit "never call any other write tool" forbid-list — never as an invocation.
+const POST_FORBIDDEN_WRITE_TOOLS = WRITE_TOOLS.filter(
+  (t) => !(POST_ALLOWED_CALL_TOOLS as readonly string[]).includes(t),
+);
+
+// Backticked non-tool tokens `agentbbs-post` legitimately references: the identity-block field, the
+// composed tools' params, an order/message field, and an example slug. Minimal + explicit (Rule 18:
+// never weaken the scan to silence a real phantom).
+const POST_NON_TOOL_TOKENS = new Set([
+  'agentbbs_handle', // the recorded-handle field in the AGENTBBS-IDENTITY block
+  'project_id', // param of join_board / post_announcement; the target sub-board
+  'room_id', // param of reply; the room target / the returned proto-room id
+  'subject', // param of post_announcement
+  'body', // param of post_announcement / reply
+  'seq', // the order key (referenced when explaining activation)
+  'taskflow', // the example project slug in the `amelia-dev@taskflow` illustration
+]);
+
+describe('integration/bmad/skills operator WRITE skill content guard — agentbbs-post (Story 12.5)', () => {
+  const realTools = readCanonicalToolNames();
+
+  it('sanity: every bounded-allowed write tool is a real registered tool (Rule 13 — no new tool)', () => {
+    // agentbbs-post composes ONLY existing tools. If a bounded-allowed tool is not in the live §6 set,
+    // the story would be inventing a tool (Rule 13 violation) — fail loudly here.
+    for (const tool of POST_ALLOWED_CALL_TOOLS) {
+      expect(
+        realTools.has(tool),
+        `${POST_SKILL} composes the \`${tool}\` tool, which must be a real registered tool (§6) — ` +
+          `Story 12.5 composes existing tools only (Rule 13)`,
+      ).toBe(true);
+    }
+  });
+
+  it('has YAML frontmatter with `name: agentbbs-post` and a `description`', () => {
+    const fm = readFrontmatter(readSkill(POST_SKILL));
+    expect(
+      fm,
+      `${POST_SKILL}/SKILL.md must open with a YAML frontmatter block (--- … ---) — the Claude Code ` +
+        `skill contract`,
+    ).not.toBeNull();
+    const frontmatter = fm as string;
+    expect(
+      new RegExp(`(^|\\n)\\s*name:\\s*${POST_SKILL}\\b`).test(frontmatter),
+      `${POST_SKILL}/SKILL.md frontmatter must declare \`name: ${POST_SKILL}\``,
+    ).toBe(true);
+    expect(
+      /(^|\n)\s*description:\s*\S/.test(frontmatter),
+      `${POST_SKILL}/SKILL.md frontmatter must declare a non-empty \`description\` (the trigger phrasing)`,
+    ).toBe(true);
+  });
+
+  it('names + backticks every write tool it composes (login, join_board, post_announcement, reply)', () => {
+    const skill = readSkill(POST_SKILL);
+    for (const tool of POST_ALLOWED_CALL_TOOLS) {
+      expect(
+        skill.includes(tool),
+        `${POST_SKILL}/SKILL.md must name the \`${tool}\` tool it composes — dropping it would leave ` +
+          `the skill missing a write it is built on (AC1/AC2, Rule 13)`,
+      ).toBe(true);
+    }
+    // Each composed tool must appear as a backticked candidate (bare or call form) — so a reword that
+    // strips ALL backticks (making the phantom scan vacuously pass on an empty set) is caught here too.
+    const candidates = [...skill.matchAll(/`([a-z][a-z_]{2,})(?:`|\{)/g)].map(
+      (m) => m[1],
+    );
+    for (const tool of POST_ALLOWED_CALL_TOOLS) {
+      expect(
+        candidates.includes(tool),
+        `${POST_SKILL}/SKILL.md must backtick the \`${tool}\` tool name (AC3) — its absence would ` +
+          `also make the phantom-tool scan vacuous`,
+      ).toBe(true);
+    }
+  });
+
+  it('BOUNDED WRITE — calls NO write tool beyond login/join_board/post_announcement/reply (Rule 18)', () => {
+    // THE load-bearing bounded-write pin: agentbbs-post is the one write skill, but its writes are
+    // bounded. It must NEVER CALL another write tool in ANY form (backtick+brace, bare/backtick brace,
+    // or paren) — only NAME them as bare tokens in its "never call any other write tool" forbid-list.
+    // Reuse the call-form-AGNOSTIC detector the 12.4 QA added, restricted to the FORBIDDEN subset (the
+    // allowed four are legitimately called and must NOT be flagged).
+    const skill = readSkill(POST_SKILL);
+    const offenders = POST_FORBIDDEN_WRITE_TOOLS.filter((tool) =>
+      new RegExp('`?' + tool + '\\s*[\\{(]').test(skill),
+    );
+    expect(
+      offenders,
+      `${POST_SKILL}/SKILL.md invokes out-of-bounds write tool(s) ${JSON.stringify(offenders)} in ` +
+        `some call form (\`tool{ … }\`, tool{ … }, or tool( … )). The post skill's write set is ` +
+        `BOUNDED: it may CALL only login/join_board/post_announcement/reply. Name any other write ` +
+        `tool only as a bare token in the "never call any other write tool" forbid-list, never as an ` +
+        `invocation.`,
+    ).toEqual([]);
+  });
+
+  it('names every forbidden write tool as a bare token in its forbid-list (explicit bounded-write contract)', () => {
+    // Converse / non-vacuity: the skill DOES name each out-of-bounds write tool as a bare backticked
+    // token in its forbid-list — so the executing agent has the explicit bound. (If the call-form scan
+    // above ever flags one of these, it has degenerated into a bare-name scan and would forbid the
+    // forbid-list itself.)
+    const skill = readSkill(POST_SKILL);
+    for (const tool of POST_FORBIDDEN_WRITE_TOOLS) {
+      expect(
+        new RegExp('`' + tool + '`').test(skill),
+        `${POST_SKILL}/SKILL.md should name \`${tool}\` as a bare token in its "never call any other ` +
+          `write tool" forbid-list (so the bounded-write contract is explicit to the executing agent)`,
+      ).toBe(true);
+    }
+  });
+
+  it('join-before-post on the `--to` cross-project path (the CR-12.3-H1 correctness property)', () => {
+    // The load-bearing ordering: because `post_announcement` GATES on membership (NOT_A_MEMBER) and
+    // only `reply` GRANTS it, posting into another project's sub-board MUST `join_board` FIRST. Pin
+    // that the cross-project (`--to`) branch names BOTH tools and orders join BEFORE post. We scope to
+    // the cross-project branch (from its `--to` heading to the next `###`/`##` heading) so a join/post
+    // mention from a DIFFERENT branch (the own-board default) cannot vacuously satisfy the ordering.
+    const skill = readSkill(POST_SKILL);
+
+    // Both tools must be present somewhere (Rule 13).
+    expect(skill.includes('join_board')).toBe(true);
+    expect(skill.includes('post_announcement')).toBe(true);
+
+    // Locate the cross-project branch: the section whose heading mentions `--to` (Branch B). Take the
+    // window from that heading to the next heading boundary.
+    const headingRe = /\n#{2,4} [^\n]*/g;
+    const headings = [...skill.matchAll(headingRe)];
+    const toHeadingIdx = headings.findIndex((h) => /--to/.test(h[0]));
+    expect(
+      toHeadingIdx,
+      `${POST_SKILL}/SKILL.md must have a heading for the cross-project \`--to <project_id>\` path`,
+    ).toBeGreaterThanOrEqual(0);
+    const start = headings[toHeadingIdx].index as number;
+    const end =
+      toHeadingIdx + 1 < headings.length
+        ? (headings[toHeadingIdx + 1].index as number)
+        : skill.length;
+    const branch = skill.slice(start, end);
+
+    const joinPos = branch.indexOf('join_board');
+    const postPos = branch.indexOf('post_announcement');
+    expect(
+      joinPos,
+      `${POST_SKILL}/SKILL.md cross-project (\`--to\`) branch must name \`join_board\``,
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      postPos,
+      `${POST_SKILL}/SKILL.md cross-project (\`--to\`) branch must name \`post_announcement\``,
+    ).toBeGreaterThanOrEqual(0);
+    // join_board must come BEFORE post_announcement in the cross-project branch — the CR-12.3-H1 fix.
+    expect(
+      joinPos < postPos,
+      `${POST_SKILL}/SKILL.md cross-project (\`--to\`) branch must \`join_board\` BEFORE ` +
+        `\`post_announcement\` — post_announcement GATES on membership (NOT_A_MEMBER) and only reply ` +
+        `grants it, so a cross-project post into a non-joined board fails without a prior join ` +
+        `(the CR-12.3-H1 defect). Branch was: ${JSON.stringify(branch.trim().slice(0, 400))}`,
+    ).toBe(true);
+  });
+
+  it('names no phantom tools — every backticked tool-looking token is a real tool or allowlisted (Rule 10/18)', () => {
+    // Scan backticked snake_case tokens in BOTH bare (`` `tok` ``) and call (`` `tok{ ``) form — the
+    // Rule-18 call-form-aware pattern. Each candidate must be a real §6 tool or an allowlisted non-tool
+    // token; anything else is a phantom that would become a real (failing) agent instruction once
+    // Story 12.6 installs the skill.
+    const skill = readSkill(POST_SKILL);
+    const candidates = [...skill.matchAll(/`([a-z][a-z_]{2,})(?:`|\{)/g)].map(
+      (m) => m[1],
+    );
+    const phantom = candidates.filter(
+      (tok) => !realTools.has(tok) && !POST_NON_TOOL_TOKENS.has(tok),
+    );
+    expect(
+      phantom,
+      `${POST_SKILL}/SKILL.md references tool-looking token(s) that are NOT registered tools and are ` +
+        `not allowlisted non-tool tokens: ${JSON.stringify([...new Set(phantom)])}. A skill installed ` +
+        `into an agent's command set must not instruct it to call a tool that does not exist (AC3, ` +
+        `Rule 10). If a token is a real new tool it will be in docs/mcp-tool-contract.md §6; if it is ` +
+        `a non-tool identifier, add it to POST_NON_TOOL_TOKENS.`,
+    ).toEqual([]);
+  });
+
+  it('resolves identity from the AGENTBBS-IDENTITY block and degrades gracefully (same convention as the read skills)', () => {
+    const skill = readSkill(POST_SKILL);
+    expect(
+      skill.includes(IDENTITY_BLOCK_NAME),
+      `${POST_SKILL}/SKILL.md must resolve identity from the \`${IDENTITY_BLOCK_NAME}\` sentinel block ` +
+        `(per-repo identity for a user-scope install)`,
+    ).toBe(true);
+    expect(
+      skill.includes('AGENTS.md'),
+      `${POST_SKILL}/SKILL.md must read the recorded handle from the repo's \`AGENTS.md\``,
+    ).toBe(true);
+    // Reuse the recorded handle AS-IS (no third canonicalization — do not worsen 10.3-operator-handle-dup).
+    expect(
+      /as written|as-is|verbatim|do not re-?derive|do not (re-?case|invent)/i.test(
+        skill,
+      ),
+      `${POST_SKILL}/SKILL.md must reuse the recorded handle as written (no third canonicalization)`,
+    ).toBe(true);
+    // Degrade gracefully when no identity block exists (not crash / not invent a handle).
+    expect(
+      /degrade gracefully|not yet (been )?onboarded|not yet on the board|run the .*(install|bootstrap)/i.test(
+        skill,
+      ),
+      `${POST_SKILL}/SKILL.md must degrade gracefully when there is no AGENTBBS-IDENTITY block ` +
+        `(point the operator at the install/bootstrap; do not crash or invent a handle)`,
+    ).toBe(true);
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // QA-stage strengthening (Story 12.5, qa-generate-e2e-tests).
+  //
+  // The dev's agentbbs-post guard is sound (bounded write, join-before-post, phantom,
+  // identity) but thin on two load-bearing AC properties the QA focus calls out:
+  //
+  //   (D) AC1/AC2 room_id REPORTING — both ACs say each branch "reports the resulting
+  //       room_id". The dev allowlists `room_id` as a non-tool token but never PINS
+  //       that EACH of the three branches (A reply / B --to / C own-board default)
+  //       actually reports it. A reword dropping a branch's report line would pass
+  //       every dev case. Pinned per-branch below, scoped to each branch's heading
+  //       window so a report line in a DIFFERENT branch cannot vacuously satisfy it.
+  //   (E) AC3/NFR-parity LOGIN_UNKNOWN degrade — the post skill (like the read skills)
+  //       handles the recorded-but-unregistered (`LOGIN_UNKNOWN`) case by pointing at
+  //       the install/bootstrap and explicitly NOT registering (register is OUT of the
+  //       bounded write set — onboarding is the kit's job). The dev pins this for the
+  //       three read skills but NOT for the write skill. Pinned below, scoped to the
+  //       LOGIN_UNKNOWN clause so a no-register mention elsewhere can't stand in for it.
+  //
+  // Both pins are mutation-non-vacuous (Rule 7) — see the QA mutation log in the test summary.
+
+  // Locate a SKILL.md section by a predicate on its `##`/`###`/`####` heading, returning
+  // the text from that heading up to the next heading boundary (or EOF). Used to scope a
+  // per-branch assertion so a mention in a SIBLING branch cannot vacuously satisfy it.
+  function sectionByHeading(
+    skill: string,
+    pred: (heading: string) => boolean,
+  ): string | null {
+    const headings = [...skill.matchAll(/\n#{2,4} [^\n]*/g)];
+    const idx = headings.findIndex((h) => pred(h[0]));
+    if (idx === -1) return null;
+    const start = headings[idx].index as number;
+    const end =
+      idx + 1 < headings.length
+        ? (headings[idx + 1].index as number)
+        : skill.length;
+    return skill.slice(start, end);
+  }
+
+  it('reports the resulting room_id in EVERY branch (A reply / B --to / C own-board) — AC1/AC2', () => {
+    // AC1 ("reports the resulting room_id") and AC2 both require the room_id be surfaced.
+    // Pin it per branch, scoped to each branch's heading window so a report line in one
+    // branch cannot stand in for a missing one in another. A "report … room_id" phrasing
+    // (report/show/tell + the backticked `room_id`, allowing intervening words) must
+    // appear inside each branch section.
+    const skill = readSkill(POST_SKILL);
+    const reportsRoomId = /(report|show|tell)[^\n]*`room_id`/i;
+
+    const branchA = sectionByHeading(skill, (h) => /Branch A|--room/.test(h));
+    const branchB = sectionByHeading(skill, (h) => /Branch B|--to/.test(h));
+    const branchC = sectionByHeading(skill, (h) =>
+      /Branch C|own sub-board|Default/i.test(h),
+    );
+
+    expect(
+      branchA,
+      `${POST_SKILL}/SKILL.md must have a Branch A (--room reply) section`,
+    ).not.toBeNull();
+    expect(
+      branchB,
+      `${POST_SKILL}/SKILL.md must have a Branch B (--to cross-project) section`,
+    ).not.toBeNull();
+    expect(
+      branchC,
+      `${POST_SKILL}/SKILL.md must have a Branch C (own-board default) section`,
+    ).not.toBeNull();
+
+    expect(
+      reportsRoomId.test(branchA as string),
+      `${POST_SKILL}/SKILL.md Branch A (--room reply) must report the resulting \`room_id\` ` +
+        `(AC2). Branch was: ${JSON.stringify((branchA as string).trim().slice(0, 400))}`,
+    ).toBe(true);
+    expect(
+      reportsRoomId.test(branchB as string),
+      `${POST_SKILL}/SKILL.md Branch B (--to cross-project) must report the resulting proto-room ` +
+        `\`room_id\` (AC2). Branch was: ${JSON.stringify((branchB as string).trim().slice(0, 400))}`,
+    ).toBe(true);
+    expect(
+      reportsRoomId.test(branchC as string),
+      `${POST_SKILL}/SKILL.md Branch C (own-board default) must report the resulting proto-room ` +
+        `\`room_id\` (AC1). Branch was: ${JSON.stringify((branchC as string).trim().slice(0, 400))}`,
+    ).toBe(true);
+  });
+
+  it('handles LOGIN_UNKNOWN by pointing at install/bootstrap and does NOT register (AC3, bounded-write)', () => {
+    // Parity with the read skills' LOGIN_UNKNOWN degrade, applied to the WRITE skill: the
+    // recorded-but-unregistered case (login → LOGIN_UNKNOWN) must point the operator at the
+    // install/bootstrap and MUST NOT register — `register` is OUT of agentbbs-post's bounded
+    // write set (onboarding is the install/bootstrap's job), so registering here would both
+    // break the bounded-write contract and silently re-introduce a write tool. Scope to the
+    // LOGIN_UNKNOWN clause so a no-register / bootstrap mention from a DIFFERENT path (the
+    // missing-block degrade) cannot vacuously satisfy it.
+    const skill = readSkill(POST_SKILL);
+    expect(
+      skill.includes('LOGIN_UNKNOWN'),
+      `${POST_SKILL}/SKILL.md must handle the \`LOGIN_UNKNOWN\` case (handle recorded but never ` +
+        `registered) — AC3 graceful degrade`,
+    ).toBe(true);
+    const idx = skill.indexOf('LOGIN_UNKNOWN');
+    const tail = skill.slice(idx);
+    const para = tail.slice(0, tail.search(/\n\s*\n|\n#/) + 1 || tail.length);
+    expect(
+      /run the .*(install|bootstrap)/i.test(para),
+      `${POST_SKILL}/SKILL.md must point the operator at the install/bootstrap IN the LOGIN_UNKNOWN ` +
+        `clause itself (AC3) — clause was: ${JSON.stringify(para.trim())}`,
+    ).toBe(true);
+    // Match an explicit DIRECTIVE not to register — word-bounded so the explanatory prose
+    // "never registered" / "was never registered" does NOT vacuously satisfy it (that is a
+    // STATE description, not the do-not-register directive). The accepted forms are: "do not
+    // register", "never register" (verb, not "registered"), "not register it/here", or the
+    // bounded-set phrasing "register is out/not …".
+    expect(
+      /do \*?\*?not\*?\*? register\b(?!ed)|never register\b(?!ed)|not register (it|here)|register is (out|not)/i.test(
+        para,
+      ),
+      `${POST_SKILL}/SKILL.md must explicitly NOT register on the LOGIN_UNKNOWN path (register is ` +
+        `out of the bounded write set — onboarding is the install/bootstrap's job) — clause was: ` +
+        `${JSON.stringify(para.trim())}`,
+    ).toBe(true);
   });
 });
