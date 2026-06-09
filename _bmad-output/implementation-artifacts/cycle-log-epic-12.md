@@ -52,3 +52,4 @@ Append-only. TAB-separated, four fields: `<UTC> TAB <Story <id> | Epic N> TAB <s
 2026-06-09T02:11:00Z	Story 12.6	committed	sha=7897030 submodules=
 2026-06-09T02:20:00Z	Epic 12	integrated_smoke_complete	method=api result=pass scope=onboard+global-board+cross-project-play+operator-read+operator-post seams=5 defects_caught=0 model=claude-opus-4-8
 2026-06-09T02:30:00Z	Epic 12	retrospective_complete	rules_codified=22,23 reinforced=18,20 source=epic-12-retro-2026-06-09.md
+2026-06-09T02:40:00Z	Epic 12	epic_merged_to_feature	repos=. feature_sha=c202695 merge_sha=c202695 submodules=
