@@ -1,59 +1,65 @@
-# Test Automation Summary — Story 9.14 (View + respond to announced proto-rooms + operator-UI polish)
+# Test Automation Summary — Story 12.6 (Epic 12 CAPSTONE), QA stage
 
-QA stage of `/epic-cycle`. The dev stage already shipped strong coverage for all five ACs; the QA
-value-add is (1) two new HARDENING tests filling specific load-bearing gaps the dev's tests
-under-covered, and (2) three Rule-7 MUTATION proofs confirming the most load-bearing assertions are
-non-vacuous (all reverted byte-identical). Canonical gate is ROOT `pnpm test` (Rule 12).
+Install-kit integration + safety re-proof. QA strengthening over the dev's capstone coverage.
+NO board-engine change (Rule 13): only the two named test files differ in the frozen
+`packages/core` / `packages/data-access` / `packages/mcp-server/src` paths; the kit + helper are
+assets under `integration/bmad/`.
 
-## Generated / Hardened Tests
+## Generated / Strengthened Tests (all in the dev-touched files; discoverable by default `pnpm test`, Rule 8)
 
-### DOM (happy-dom, `ui-shared-dom` project — Rule 12)
-- [x] `apps/web/src/App.test.tsx` — **AC5 "the open room stays LEGIBLE"** (new `describe`). The dev's
-  exclusivity tests prove opening one panel CLOSES another; this pins AC5's *second* half they do not:
-  opening an initiate panel WHILE a room is open does NOT destroy/overlay the room view — `room-view`
-  AND `open-room-panel` coexist, and the room's message stays readable. Mutation-proven RED (gated the
-  room render on `!announceComposeOpen` → test failed) then reverted.
-- [x] `packages/ui-shared/src/chrome/A11yFloor.test.tsx` — **AC4 full pending→reconciled LIFECYCLE is
-  silent** (new test). The dev's AC4 test jumps to the reconciled steady-state; this models the ACTUAL
-  bug path: operator post appears PENDING (excluded as pending), THEN reconciles to a confirmed `ops`
-  post (excluded as operator) → NO "1 new post" at EITHER phase, while another actor's reply still
-  announces.
+### `packages/mcp-server/src/install-kit-doc.test.ts` (Rule 10 + Rule 21)
+- [x] **Rule-21 encoding-integrity guard** — reads RAW BYTES of the kit + all four canonical
+  operator-skill sources; asserts no UTF-8 BOM, no CRLF, no mojibake lead-byte sequences
+  (`0xC3 0xA2` em-dash/arrow, `0xC3 0xB0` emoji). This is the out-of-band check the token drift
+  pins are STRUCTURALLY BLIND to (a byte-compare of inlined-vs-canonical stays GREEN even if the
+  canonical source itself is mojibake-corrupted). Mutation-verified RED on an injected BOM and on
+  an injected em-dash mojibake double-encode.
+- [x] **Glyph-survival converse** — pins that the intended 👍 / em-dash / arrow glyphs are PRESENT
+  (decoded) in the kit, so the absence-of-mojibake guard is not vacuous on a glyph-stripped file.
+  Mutation-verified RED on stripping 👍.
 
-## Rule-7 mutation proofs (non-vacuity; all reverted byte-identical)
-- [x] **AC1 dedupe** (`api-client.ts` — removed the `!seenRoomIds.has` filter) → the dev's
-  proto-room/dedupe test went RED (duplicate `active-room` row). The QA-focus-requested discriminator
-  proof the dev did not run (dev mutated only the reply-flip).
-- [x] **AC4 self-post exclusion** (`MessageThread.tsx` — dropped the `m.actor === operatorHandle`
-  exclusion) → the dev's AC4 test went RED ("1 new post" for the operator's own post). Confirms the
-  exclusion is the load-bearing assertion (both sides — own-silent + other-announced — were pinned).
-- [x] **AC5 room legibility** (`App.tsx` — hid the room when the panel opens) → the new legibility test
-  went RED.
+### `packages/mcp-server/src/tools/install-kit-safety.integration.test.ts` (Rule 11, executable, EXTRACTS + EXECUTES the kit's OWN helper)
+- [x] **(ix) 8.4-helper-crlf RESOLUTION (executable proof)** — runs the kit's own `writeOwnedFile`
+  against a pre-existing CRLF owned file: proves it backs up the prior CRLF bytes FIRST, converges
+  the file to the kit's own LF content (no CRLF survives), then re-runs of the kit's LF output are
+  byte-stable no-ops. Turns the previously-prose-only documented-LF resolution into a regression
+  guard, pinning the PRECISE property (whole-file `content === original` compare → convergence +
+  byte-stable idempotency), not the loose "no-op regardless of newline" phrasing.
+- [x] **(x) END-TO-END coherent install** — drives ALL owned writers (AGENTS.md identity block via
+  applyBlock + a `.toml` overlay block + the `agentbbs` `.mcp.json` key via mergeMcpServer + all
+  four SKILL.md whole files via writeOwnedFile) into ONE temp project pre-seeded with foreign
+  assets: the project's `epic-cycle` kit, a foreign vendor `.claude/skills/<other>/` skill, a
+  foreign top-level file, a foreign block inside the kit-edited `.toml`, and a foreign `.mcp.json`
+  server + key. Asserts every foreign asset is BYTE-IDENTICAL + un-backed-up AND the full owned set
+  landed coherently. Crosses the seams BETWEEN the individual safety cases.
 
-## Drift-guards verified
-- [x] **Rule 13** — `git diff HEAD -- packages/core packages/mcp-server` is EMPTY (no core op, no MCP
-  wire change, no `BOARD_ERROR_CODES` change). The proto-room navigability is a CLIENT-layer
-  tree-model change; reply-to-activate reuses the EXISTING `reply` (Epic-4 min-seq activator). Verified
-  before AND after all QA work.
-- [x] No markdown code touched (the pre-existing transient Shiki-warmup flake is unrelated).
+## Rule-7 mutation runs (each reverted byte-identical; kit `cmp`-confirmed clean)
+- BOM injected -> encoding guard RED.
+- em-dash mojibake injected -> encoding guard RED.
+- 👍 stripped -> glyph-survival converse RED.
+- `writeOwnedFile` backup-before-overwrite defeated -> cases (vi) + (ix) RED.
+- `writeOwnedFile` idempotency short-circuit defeated -> cases (v) + (ix) RED.
+- `mergeMcpServer` drops foreign servers -> cases (iv) + (viii) + (x) RED.
 
-## Coverage (AC ↔ test tier)
-- **AC1** (proto-rooms navigable + dedupe + pending→active flip): api-client unit (dedupe, bucket
-  count), NavTree DOM (distinct pending row + still selectable), App DOM (navigable row + open + reply
-  flips pending→active live), host integration over REAL `createDataAccess` (Rule 3 — proto-room served
-  `active:false`, listed under /announcements not /rooms; reply activates → `active:true` + appears
-  under /rooms + real `room.replied` + grant-on-act participant). Dedupe mutation-proven.
-- **AC2** (join-first prominence): PostAnnouncementCompose DOM (labelled callout names project + "kept").
-- **AC3** (watching-only): App DOM — both states pinned (disabled+reason for watching-only; ENABLED for
-  a registered operator).
-- **AC4** (self-post not announced): A11yFloor DOM — both sides (own silent, other announced) + the new
-  full-lifecycle variant. Exclusion mutation-proven.
-- **AC5** (panel exclusivity): App DOM — two close-pairs (start→open-room, open-room→join-picker) + the
-  new "open room stays legible" hardening test. Legibility mutation-proven.
+## Coverage assessment vs the QA brief
+- Rule 11 executable safety proof — STRONG (dev cases v–viii + QA ix–x; extracts/executes the kit's
+  OWN writeOwnedFile; mutation-non-vacuous; end-to-end coherent-install angle added).
+- Rule 10 drift pins (4 inlined skills byte-exact + user-scope target) — present (dev), confirmed
+  non-vacuous; re-confirmed encoding-clean here.
+- AC1 install completeness — pinned (user-scope MCP §3.9 + user-scope skills §3.10 + project-scope
+  overlays/identity); the end-to-end (x) exercises every owned writer together.
+- 8.4-helper-crlf — documented-LF note present in kit §1; deferred item marked RESOLVED; the
+  resolution now has an EXECUTABLE regression guard (case ix). The dev's loose claim that
+  idempotency "holds regardless of the target's prevailing newline" is sharpened by (ix): a CRLF
+  target is correctly a CHANGE on first write (backed up); idempotency holds for the kit's OWN
+  converged LF output thereafter.
+- Rule 21 — automated encoding guard added (was prose-only / out-of-band before).
 
-## Honest gate
-- Root `pnpm test`: **1202 passed / 139 files / 0 failed / 0 skipped** (baseline 1200 → +2 QA tests).
-- `pnpm run typecheck`: exit 0. ESLint on both touched test files: 0. `prettier --check`: clean.
-- No `.only`/`.skip`/`.todo` (Rule 8 discoverability — both new tests run under the default `pnpm test`).
+## Gate (Rule 20 — full canonical ROOT gate, independently re-run)
+- lint 0 · typecheck 0 · build OK · `pnpm test` 1663 passed (184 files, 0 failed) · prettier --check clean.
+- NOTE (Rule-20 false-green class): `prettier --check` initially flagged BOTH modified test files;
+  fixed via `prettier --write`, then re-ran lint + format -> all green.
 
-## Next steps
-- Lead's real-Chrome smoke (per story §Smoke) is the separate downstream gate. Left UNCOMMITTED.
+## Next steps (lead)
+- Post-CR AC3 lead smoke: install end-to-end into a temp project; confirm global-board connection +
+  operator skills resolve. All changes left uncommitted (lead commits after the smoke gate).

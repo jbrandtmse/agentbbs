@@ -58,6 +58,26 @@ const CONTRACT_DOC_PATH = join(
   'mcp-tool-contract.md',
 );
 
+// Core's SINGLE SOURCE OF TRUTH for the project/sub-board slug derivation (AR10):
+// `packages/core/src/projects/slug.ts`. `announceProject` keys `project_id` on `slugify(title)`,
+// so the bootstrap's Step-5 `project_id` derivation (AC2) MUST describe THIS rule — not a divergent
+// one — or a second session could announce a distinct title that slugs to the same id with a
+// mismatched handle scope (the exact AC2 hazard). We bind the asset's stated slug rule to this
+// file's ACTUAL regex literals, read at test time (the content-guard reads files as text — no deep
+// cross-package import, so zero typecheck/resolution risk; same `import.meta.url` convention as the
+// bootstrap/contract reads above). Three levels up from this dir is the repo root.
+const SLUG_SOURCE_PATH = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  '..',
+  'packages',
+  'core',
+  'src',
+  'projects',
+  'slug.ts',
+);
+
 // Sentinels delimiting the machine-readable canonical tool-name list in the contract doc (§6). Kept
 // in lockstep with the markers in `docs/mcp-tool-contract.md` (and with `tool-contract.drift.test.ts`,
 // which pins that same block to the live `McpServer` registration — so this list is transitively
@@ -135,6 +155,25 @@ function readInlinedBlock(bootstrap: string): string {
       'inlinable block the install kit inlines (AC #4)',
   ).toBe(true);
   return bootstrap.slice(begin, end);
+}
+
+/**
+ * Read core's slug-derivation source (`packages/core/src/projects/slug.ts`) as TEXT — the AR10
+ * source of truth `announceProject` derives `project_id` through. Read as text (not imported) so the
+ * guard binds to the actual core file with no deep cross-package import (which would risk the gate's
+ * typecheck leg, Rule 20). Fails loudly if the file is missing/renamed so the AC2 slug-rule pin can
+ * never go vacuous on an empty read.
+ */
+function readSlugSource(): string {
+  try {
+    return readFileSync(SLUG_SOURCE_PATH, 'utf8');
+  } catch (cause) {
+    throw new Error(
+      `Could not read core's slug derivation at ${SLUG_SOURCE_PATH}. The Story 12.2 AC2 slug-rule ` +
+        `guard binds the bootstrap's stated project_id derivation to THIS file (AR10 source of truth).`,
+      { cause },
+    );
+  }
 }
 
 describe('integration/bmad/identity-bootstrap.md content guard', () => {
@@ -290,6 +329,189 @@ describe('integration/bmad/identity-bootstrap.md content guard', () => {
     ).toBe(true);
   });
 
+  // (f) ANNOUNCE-OR-JOIN sub-board step (Story 12.2, AC #1/#2/#3). After identity is established the
+  // bootstrap publishes THIS project as a sub-board: `announce_project` it, or — on `PROJECT_EXISTS` —
+  // `join_board` the one already announced (idempotent). The tools it composes are existing, shipped
+  // ones (Rule 13 — no new op); these pins are the Rule-10 source-of-truth bind for the new step.
+  const SUBBOARD_TOOLS = ['announce_project', 'join_board'] as const;
+
+  it('covers the ANNOUNCE-OR-JOIN sub-board step — announce_project, on PROJECT_EXISTS → join_board (AC #1/#3)', () => {
+    const block = readInlinedBlock(readBootstrap());
+    // Both halves of the announce-or-join move must be named: the produce verb (announce the project →
+    // create the sub-board) and the idempotent fallback (join the one that already exists).
+    expect(
+      block.includes('announce_project'),
+      'the workflow must tell an agent to `announce_project` to publish its project as a sub-board ' +
+        '(Story 12.2 / FR41 / AC #1)',
+    ).toBe(true);
+    expect(
+      block.includes('join_board'),
+      'the workflow must fall back to `join_board` when the sub-board already exists (AC #1/#3)',
+    ).toBe(true);
+    // The branch is keyed off the EXACT closed error code `announce_project` surfaces on a duplicate
+    // title / same-derived-id. Pinning `PROJECT_EXISTS` keeps the idempotent second-session path bound
+    // to the real signal it handles — dropping it would leave the announce-or-join ambiguous about WHEN
+    // to join instead of announce (AC #3 — no dup, no error on a second session/agent).
+    expect(
+      block.includes('PROJECT_EXISTS'),
+      'the workflow must branch on `PROJECT_EXISTS` (the closed error `announce_project` surfaces when ' +
+        'the sub-board already exists) → `join_board` — the idempotent second-session path (AC #3)',
+    ).toBe(true);
+  });
+
+  it('states the stable project_id derivation (git-remote slug else folder name) and handle `@<project>` consistency (AC #2)', () => {
+    const block = readInlinedBlock(readBootstrap());
+    // AC #2: project_id is derived STABLY — git-remote slug if present, else the repo folder name. Both
+    // halves of the derivation must survive a reword (drop either and the "stable id" property is lost).
+    expect(
+      /git[- ]?remote|origin/i.test(block),
+      'the workflow must derive `project_id` from the git-remote (origin) slug when present (AC #2)',
+    ).toBe(true);
+    expect(
+      /folder name|directory name|repo(?:sitory)? (?:folder|directory) name/i.test(
+        block,
+      ),
+      'the workflow must fall back to the repo folder name for `project_id` when there is no remote (AC #2)',
+    ).toBe(true);
+    // The load-bearing AR10 consistency: the derived `project_id` is the SAME `<project>` as the
+    // `@<project>` in the handle. A reword that decouples them would let a second session announce a
+    // distinct title that slugs to the same id with a mismatched handle scope — the exact AC #2 hazard.
+    expect(
+      /@<project>|@\{?project\}?|same `?<?project>?`?|@<project> in your handle|handle/i.test(
+        block,
+      ) && block.includes('project_id'),
+      'the workflow must state the derived `project_id` equals the handle’s `@<project>` (AR10 / AC #2)',
+    ).toBe(true);
+  });
+
+  it('states core’s ACTUAL slug rule (AR10) — not a divergent one — bound to packages/core/src/projects/slug.ts (AC #2)', () => {
+    // QA strengthening (Story 12.2, this stage). The dev's derivation test pins that the asset
+    // MENTIONS git-remote/origin, folder name, `@<project>`, and `project_id`. It does NOT pin that
+    // the asset describes core's ACTUAL slug algorithm. That gap is the AC2 hazard the story Dev Notes
+    // call out verbatim: "Get the slug rule from core … do not invent a divergent one, or a second
+    // session could announce a distinct title that slugs to the same id … with a mismatched display
+    // title." `announceProject` keys `project_id` on `slugify(title)` (slug.ts), so the bootstrap MUST
+    // describe THAT rule. We bind to slug.ts's real regex literals, read at test time: a divergent
+    // slug DESCRIPTION in the asset (e.g. only-spaces→`-`, no lowercasing, no strip) OR a future
+    // change to core's slug rule the asset fails to follow turns this RED.
+    const block = readInlinedBlock(readBootstrap());
+    const slugSrc = readSlugSource();
+
+    // First, confirm slug.ts still carries the three operations we're about to require the asset to
+    // describe — so this guard cannot pass vacuously against a slug.ts whose algorithm moved out from
+    // under it. (These are the exact transforms `slugify` applies: lowercase → collapse non-[a-z0-9]
+    // runs to a single `-` → strip leading/trailing `-`.)
+    expect(
+      slugSrc.includes('.toLowerCase()'),
+      'sanity: core slug.ts must lowercase the title (the rule the asset is pinned to describe)',
+    ).toBe(true);
+    expect(
+      slugSrc.includes('/[^a-z0-9]+/g'),
+      'sanity: core slug.ts must collapse every non-[a-z0-9] RUN to a single `-` (the rule the asset ' +
+        'is pinned to describe)',
+    ).toBe(true);
+    expect(
+      slugSrc.includes('/^-+|-+$/g'),
+      'sanity: core slug.ts must strip leading/trailing `-` (the rule the asset is pinned to describe)',
+    ).toBe(true);
+
+    // (1) LOWERCASE — the first transform. A slug rule that omits lowercasing would let `Taskflow`
+    // derive `Taskflow` (≠ the lowercase `project_id` the board stores), so the handle/board would
+    // disagree. The asset must say it lowercases.
+    expect(
+      /lowercase/i.test(block),
+      'the bootstrap must state the project_id is LOWERCASED (core slug.ts `.toLowerCase()`) — a ' +
+        'rule that skips lowercasing diverges from AR10 and breaks the @<project> ↔ project_id ' +
+        'consistency (AC #2).',
+    ).toBe(true);
+
+    // (2) COLLAPSE NON-[a-z0-9] RUNS TO `-` — the load-bearing transform. Pin BOTH that the asset
+    // names the `[a-z0-9]` charset AND that it says NON-matching characters become `-` (a "run" /
+    // "every"/"each" of them → a single `-`). A divergent description (e.g. "replace SPACES with `-`",
+    // which would mis-slug `a.b` to `a.b` not `a-b`) omits the `[^a-z0-9]`/"non-" framing and turns
+    // this RED. The asset writes the charset as `` `[a-z0-9]` `` (negated in prose as "non-`[a-z0-9]`").
+    expect(
+      /\[a-z0-9\]/.test(block),
+      'the bootstrap must name the core slug charset `[a-z0-9]` (AR10) — AC #2.',
+    ).toBe(true);
+    expect(
+      /non-?`?\[a-z0-9\]|every run of[^.\n]*\[a-z0-9\]|each[^.\n]*\[a-z0-9\]/i.test(
+        block,
+      ) &&
+        /\bwith a single `?-`?|\bto a `?-`?|replace[^.\n]*`?-`?/i.test(block),
+      'the bootstrap must state that every RUN of NON-`[a-z0-9]` characters collapses to a single ' +
+        '`-` (core slug.ts `/[^a-z0-9]+/g` → `-`) — not a divergent "replace spaces" rule that would ' +
+        'mis-derive an id for a title with punctuation (AC #2).',
+    ).toBe(true);
+
+    // (3) STRIP LEADING/TRAILING `-` — the final transform. The asset must say it strips a leading or
+    // trailing `-` (core slug.ts `/^-+|-+$/g`). A rule that omits this would leave `" Taskflow "`
+    // deriving `-taskflow-` (≠ the board's `taskflow`).
+    expect(
+      /strip[^.\n]*(leading|trailing)[^.\n]*`?-`?|(leading|trailing)[^.\n]*`?-`?/i.test(
+        block,
+      ),
+      'the bootstrap must state it strips a LEADING/TRAILING `-` (core slug.ts `/^-+|-+$/g`) — ' +
+        'omitting it diverges from AR10 and could derive an id with edge `-` the board would not (AC #2).',
+    ).toBe(true);
+  });
+
+  it('the worked example is slug-consistent — title→project_id→@<project> all agree under core’s rule (AC #2)', () => {
+    // QA strengthening: pin the asset's WORKED EXAMPLE as a concrete three-way consistency anchor.
+    // The asset uses project_id `taskflow`, title `Taskflow`, and the handle `amelia-dev@taskflow`.
+    // Apply core's ACTUAL slug algorithm (read from slug.ts at test time, so this stays bound to the
+    // real rule — not a re-implementation that could drift) to the example title and assert it yields
+    // BOTH the stated project_id AND the handle's `@<project>` scope. A future edit that changed the
+    // example title to one that does NOT slug to `taskflow` (silently breaking the AC2 invariant the
+    // example is meant to demonstrate) turns this RED.
+    const bootstrap = readBootstrap();
+    const slugSrc = readSlugSource();
+
+    // Re-derive core's slug operations from slug.ts's own literals so the cross-check uses the REAL
+    // rule. We assert the literals are present (the sanity above also does), then apply them — if core
+    // ever changes the algorithm, this local mirror must be updated alongside, and the sanity pins in
+    // the test above force that update to be conscious.
+    expect(slugSrc).toContain('/[^a-z0-9]+/g');
+    expect(slugSrc).toContain('/^-+|-+$/g');
+    const coreSlug = (title: string): string =>
+      title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+
+    // The asset's worked-example title is `Taskflow` and its example handle is `amelia-dev@taskflow`.
+    // These are present in the doc; assert their three-way consistency under core's rule.
+    expect(
+      bootstrap.includes('amelia-dev@taskflow'),
+      'sanity: the asset must keep its worked-example handle `amelia-dev@taskflow` (the AC2 anchor).',
+    ).toBe(true);
+    const exampleTitle = 'Taskflow';
+    const exampleProjectId = 'taskflow';
+    expect(
+      bootstrap.includes(exampleTitle) && bootstrap.includes(exampleProjectId),
+      'sanity: the asset must keep its worked-example title `Taskflow` and id `taskflow` (AC2 anchor).',
+    ).toBe(true);
+    // THE three-way invariant: slug(title) === project_id === the handle's @<project> scope.
+    expect(coreSlug(exampleTitle)).toBe(exampleProjectId);
+    expect('amelia-dev@taskflow'.endsWith(`@${exampleProjectId}`)).toBe(true);
+  });
+
+  it('names both sub-board tools `announce_project` and `join_board` in the inlinable block', () => {
+    // Companion to the register/login naming pin: both shipped sub-board tools the announce-or-join
+    // step composes must be NAMED in the block the kit inlines (Rule 13 — existing tools, no new op).
+    const block = readInlinedBlock(readBootstrap());
+    for (const tool of SUBBOARD_TOOLS) {
+      expect(
+        block.includes(tool),
+        `the inlinable block must name the \`${tool}\` tool — the announce-or-join sub-board step ${
+          tool === 'announce_project'
+            ? 'publishes the project as a sub-board'
+            : 'joins the sub-board that already exists (PROJECT_EXISTS)'
+        } with it (Story 12.2 / AC #4)`,
+      ).toBe(true);
+    }
+  });
+
   it('names both identity tools `register` and `login` in the inlinable block', () => {
     // (b) Both shipped identity tools must be NAMED in the block the kit inlines — the bootstrap drives
     // identity entirely through them. (The per-case tests above pin each tool to its own case; this
@@ -329,11 +551,22 @@ describe('integration/bmad/identity-bootstrap.md content guard', () => {
       'expected the contract §6 canonical tool list to parse to a non-empty set',
     ).toBeGreaterThan(0);
 
-    // Tokens the workflow backticks that are NOT tool calls: the two `register`/`login` PARAMETER names
-    // (`current_focus`, `handle`). Anything else backticked in the inlined block is treated as a tool
-    // claim. Keep this list minimal and explicit — growing it should be a deliberate act, which is the
-    // point (mirrors the agent-prompt-snippet guard's NON_TOOL_TOKENS).
-    const NON_TOOL_TOKENS = new Set(['current_focus', 'handle']);
+    // Tokens the workflow backticks that are NOT tool calls: the `register`/`login` PARAMETER names
+    // (`current_focus`, `handle`), plus the Story 12.2 announce-or-join step's non-tool identifiers —
+    // `project_id` (the derived/param id and `join_board`'s param), `title`/`description`
+    // (`announce_project`'s params), `origin` (the git-remote NAME the project_id is derived from), and
+    // `taskflow` (the worked-example project_id/slug). Anything else backticked in the inlined block is
+    // treated as a tool claim. Keep this list minimal and explicit — growing it should be a deliberate
+    // act, which is the point (mirrors the agent-prompt-snippet guard's NON_TOOL_TOKENS).
+    const NON_TOOL_TOKENS = new Set([
+      'current_focus',
+      'handle',
+      'project_id',
+      'title',
+      'description',
+      'origin',
+      'taskflow',
+    ]);
 
     // Backticked `snake_case` identifiers in the inlined block (lowercase letters/underscores, len ≥ 3
     // to skip incidental short spans). Tool names are all lowercase snake/word tokens, so this is the
@@ -362,10 +595,18 @@ describe('integration/bmad/identity-bootstrap.md content guard', () => {
         `§6; if it is a non-tool identifier, add it to NON_TOOL_TOKENS.`,
     ).toEqual([]);
 
-    // And the converse sanity: both identity tools must actually appear as backticked tokens in the
-    // inlined block (so a future reword that strips ALL backticks — making the phantom scan vacuously
-    // pass on an empty candidate set — is caught here too).
-    for (const tool of ['register', 'login']) {
+    // And the converse sanity: both identity tools AND both sub-board tools must actually appear as
+    // backticked tokens in the inlined block (so a future reword that strips ALL backticks — making the
+    // phantom scan vacuously pass on an empty candidate set — is caught here too). The two sub-board
+    // tools are presented in CALL form (`announce_project{ title, description }`, `join_board{ project_id }`),
+    // which the broadened `` /`([a-z][a-z_]{2,})(?:`|\{)/g `` candidate pattern captures (Rule 18 — the
+    // Story 8.1 call-form blind spot was that a `` `tool{ … }` ``-only reference must still be a candidate).
+    for (const tool of [
+      'register',
+      'login',
+      'announce_project',
+      'join_board',
+    ]) {
       expect(
         candidates.includes(tool),
         `the inlined block must backtick the \`${tool}\` tool name (AC #4) — its absence would also ` +

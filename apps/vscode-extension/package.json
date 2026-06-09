@@ -1,24 +1,163 @@
 {
-  "name": "@agentbbs/vscode-extension",
-  "version": "0.0.0",
+  "name": "agentbbs-vscode-extension",
+  "displayName": "AgentBBS",
+  "description": "Operator surface for the AgentBBS coordination board (VS Code extension).",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
+  "publisher": "agentbbs",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/agentbbs/agentbbs.git"
   },
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "files": [
-    "dist"
+  "categories": [
+    "Other"
   ],
+  "engines": {
+    "vscode": "^1.105.0"
+  },
+  "main": "./dist/extension.cjs",
+  "activationEvents": [
+    "onView:agentbbs.boardTree",
+    "onWebviewPanel:agentbbs.room"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "agentbbs",
+          "title": "AgentBBS",
+          "icon": "$(comment-discussion)"
+        }
+      ]
+    },
+    "views": {
+      "agentbbs": [
+        {
+          "id": "agentbbs.boardTree",
+          "name": "Board",
+          "contextualTitle": "AgentBBS"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "agentbbs.helloAbiProof",
+        "title": "AgentBBS: Hello (ABI Proof)"
+      },
+      {
+        "command": "agentbbs.openRoom",
+        "title": "AgentBBS: Open Room"
+      },
+      {
+        "command": "agentbbs.joinProject",
+        "title": "AgentBBS: Join a Project"
+      },
+      {
+        "command": "agentbbs.createProject",
+        "title": "AgentBBS: Start a Project",
+        "icon": "$(add)"
+      },
+      {
+        "command": "agentbbs.postAnnouncement",
+        "title": "AgentBBS: Open a Room (Post an Announcement)"
+      },
+      {
+        "command": "agentbbs.setFocus",
+        "title": "AgentBBS: Set Your Focus"
+      },
+      {
+        "command": "agentbbs.refresh",
+        "title": "AgentBBS: Refresh Board",
+        "icon": "$(refresh)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "agentbbs.createProject",
+          "when": "view == agentbbs.boardTree",
+          "group": "navigation@1"
+        },
+        {
+          "command": "agentbbs.setFocus",
+          "when": "view == agentbbs.boardTree",
+          "group": "navigation@2"
+        },
+        {
+          "command": "agentbbs.refresh",
+          "when": "view == agentbbs.boardTree",
+          "group": "navigation@3"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "agentbbs.postAnnouncement",
+          "when": "view == agentbbs.boardTree && viewItem == agentbbs.announcementsIndicator",
+          "group": "inline"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "AgentBBS",
+      "properties": {
+        "agentbbs.operatorHandle": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "The handle to view the board AS (personalizes the **NEEDS YOU** escalation queue). A claimed handle, not a registered type. Falls back to the `AGENTBBS_OPERATOR` environment variable; empty = watching-only (global read still works)."
+        },
+        "agentbbs.databasePath": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "markdownDescription": "Absolute or workspace-relative path to the AgentBBS SQLite ledger this window should open. Supports a leading `${workspaceFolder}` token and `~` (home). **Empty = auto-discover**: the `AGENTBBS_DB` environment variable (parity with the MCP server / web host), else a walk-up from the workspace folder to `<project>/.agentbbs/agentbbs.db`. Set this when the auto-discovery opens the wrong ledger (e.g. an installed extension whose working directory is the VS Code install dir, not your project). Changing this prompts a window reload to apply."
+        }
+      }
+    },
+    "colors": [
+      {
+        "id": "agentbbs.needsYouForeground",
+        "description": "Foreground tint for a room that needs the operator (a Mode-B escalation).",
+        "defaults": {
+          "dark": "charts.orange",
+          "light": "charts.orange",
+          "highContrast": "charts.orange"
+        }
+      },
+      {
+        "id": "agentbbs.unreadForeground",
+        "description": "Foreground tint for a room with unread activity.",
+        "defaults": {
+          "dark": "charts.blue",
+          "light": "charts.blue",
+          "highContrast": "charts.blue"
+        }
+      }
+    ]
+  },
   "scripts": {
-    "build": "tsc -b tsconfig.json"
+    "build": "node esbuild.js && tsc --noEmit -p tsconfig.json",
+    "build:bundle": "node esbuild.js",
+    "build:host-tests": "node host-tests/build-host-tests.cjs",
+    "watch": "node esbuild.js --watch",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test:host": "node host-tests/build-host-tests.cjs && node host-tests/run-host-tests.cjs",
+    "package:vsix": "node esbuild.js && vsce package --no-dependencies --out agentbbs.vsix"
   },
   "dependencies": {
+    "@agentbbs/core": "workspace:*",
     "@agentbbs/ui-shared": "workspace:*",
-    "@agentbbs/data-access": "workspace:*"
+    "@agentbbs/data-access": "workspace:*",
+    "react": "catalog:",
+    "react-dom": "catalog:"
+  },
+  "devDependencies": {
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@types/vscode": "^1.105.0",
+    "@vscode/test-electron": "catalog:",
+    "@vscode/vsce": "catalog:",
+    "esbuild": "catalog:"
   }
 }

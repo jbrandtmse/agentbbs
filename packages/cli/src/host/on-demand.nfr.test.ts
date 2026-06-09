@@ -72,7 +72,8 @@ describe('NFR2 — the host is a thin client; the web client speaks only the JSO
       '@agentbbs/mcp-server',
       '@agentbbs/ui-shared',
       '@agentbbs/web',
-      '@agentbbs/vscode-extension',
+      // Unscoped since Story 11.5 (vsce rejects scoped extension names).
+      'agentbbs-vscode-extension',
     ];
     for (const file of sourceFiles(hostDir)) {
       const text = readFileSync(file, 'utf8');

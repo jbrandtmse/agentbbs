@@ -141,6 +141,20 @@ describe('integration/bmad/agent-prompt-snippet.md content guard', () => {
     'read_contract', // Frozen (the computed contract)
   ] as const;
 
+  // The distinctive tools the Story-12.3 cross-project integration play (snippet §4, FR42) names ON
+  // TOP of the protocol/cadence set: discover (`list_projects`), read context (`list_members`), join
+  // the target to post into it (`join_board`), post the need (`post_announcement`), escalate
+  // (`add_participant`). (`read_room`/`reply`/`react`/`read_contract` are already pinned above.)
+  // Pinning these as REQUIRED, real tools means dropping a play step's tool — or renaming it to a
+  // phantom — turns the presence/phantom checks RED.
+  const PLAY_TOOLS = [
+    'list_projects',
+    'list_members',
+    'join_board',
+    'post_announcement',
+    'add_participant',
+  ] as const;
+
   it('covers identity bootstrap — names both `register` and `login`', () => {
     const snippet = readSnippet();
     for (const tool of IDENTITY_TOOLS) {
@@ -196,6 +210,26 @@ describe('integration/bmad/agent-prompt-snippet.md content guard', () => {
         snippet.includes(tool),
         `the snippet must reference the \`${tool}\` tool — the cadence/protocol recommendation must ` +
           `not drift from the shipped surface (AC #3)`,
+      ).toBe(true);
+    }
+  });
+
+  it('states the cross-project integration play (§4) — list_projects → list_members/read_room → post_announcement/reply → four moves → add_participant', () => {
+    const snippet = readSnippet();
+
+    // The play must be present, framed as reaching ANOTHER project's agent (FR42).
+    expect(
+      /another project|other project|peer project/i.test(snippet),
+      'the snippet must carry the cross-project integration play, framed as reaching ANOTHER ' +
+        'project’s agent to negotiate a shared boundary (Story 12.3, FR42)',
+    ).toBe(true);
+
+    // Each distinctive play tool must be named (the protocol/cadence tools are pinned elsewhere).
+    for (const tool of PLAY_TOOLS) {
+      expect(
+        snippet.includes(tool),
+        `the play must name the \`${tool}\` tool — a future edit must not silently drop a play step ` +
+          `(Story 12.3 AC1)`,
       ).toBe(true);
     }
   });
@@ -262,15 +296,22 @@ describe('integration/bmad/agent-prompt-snippet.md content guard', () => {
       'expected the contract §6 canonical tool list to parse to a non-empty set',
     ).toBeGreaterThan(0);
 
-    // Tokens the snippet backticks that are NOT tool calls: a register/update_focus PARAMETER and the
-    // message-ordering key. Anything else backticked in the inlined block is treated as a tool claim.
-    // Keep this list minimal and explicit — growing it should be a deliberate act, which is the point.
-    const NON_TOOL_TOKENS = new Set(['current_focus', 'seq']);
+    // Tokens the snippet backticks that are NOT tool calls: a register/update_focus PARAMETER, the
+    // message-ordering key, and the Story-12.3 Rule-C play's `project_id` PARAMETER (backticked in
+    // call-form: `list_members{ project_id }`, `post_announcement{ project_id }`). Anything else
+    // backticked in the inlined block is treated as a tool claim. Keep this list minimal and explicit
+    // — growing it should be a deliberate act, which is the point.
+    const NON_TOOL_TOKENS = new Set(['current_focus', 'seq', 'project_id']);
 
     // Backticked `snake_case` identifiers in the inlined block (lowercase letters/underscores, len ≥ 3
-    // to skip incidental short spans). Tool names are all lowercase snake/word tokens, so this is the
-    // candidate set of "things presented as a callable name".
-    const candidates = [...inlined.matchAll(/`([a-z][a-z_]{2,})`/g)].map(
+    // to skip incidental short spans). CALL-FORM-AWARE (Story 12.3 / Rule 18): the token may be
+    // followed by EITHER a closing backtick OR a `{` (a `tool{ args }` call). Story 12.3's play adds
+    // the first call-form tool references to this inlined block (e.g. `post_announcement{ project_id }`,
+    // `add_participant{ @operator }`), so the OLD closing-backtick-only regex (`` `tok` ``) would have
+    // let a call-form-only phantom slip GREEN — exactly the long-standing `7.3-snippet-callform-latent`
+    // gap. Broadening to `(?:`|\{)` (the Story 8.1 template, already used by the registry + kit guards)
+    // closes it: it still catches every shape the old regex caught AND now catches `tool{ … }` calls.
+    const candidates = [...inlined.matchAll(/`([a-z][a-z_]{2,})(?:`|\{)/g)].map(
       (m) => m[1],
     );
 
@@ -287,10 +328,18 @@ describe('integration/bmad/agent-prompt-snippet.md content guard', () => {
         `if it is a non-tool identifier, add it to NON_TOOL_TOKENS.`,
     ).toEqual([]);
 
-    // And the converse sanity: at least the four protocol/cadence tools must actually appear as
-    // backticked tokens in the inlined block (so a future reword that strips ALL backticks — making
-    // the phantom scan vacuously pass on an empty candidate set — is caught here too).
-    for (const tool of ['check', 'reply', 'react', 'read_contract']) {
+    // And the converse sanity: the four protocol/cadence tools AND the four Story-12.3 Rule-C play
+    // tools must actually appear as backticked tokens in the inlined block (so a future reword that
+    // strips ALL backticks — making the phantom scan vacuously pass on an empty candidate set — is
+    // caught here too). Including the play tools means a reword that drops the call-form `tool{ … }`
+    // references stays caught.
+    for (const tool of [
+      'check',
+      'reply',
+      'react',
+      'read_contract',
+      ...PLAY_TOOLS,
+    ]) {
       expect(
         candidates.includes(tool),
         `the inlined block must backtick the \`${tool}\` tool name (AC #3) — its absence would also ` +

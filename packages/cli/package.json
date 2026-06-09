@@ -1,8 +1,12 @@
 {
   "name": "@agentbbs/cli",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "AgentBBS operator CLI: the agentbbs bin. Serves the web control room (ui), and exports/imports the board ledger as a portable NDJSON archive. A thin client over the board core.",
+  "license": "MIT",
   "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -15,10 +19,13 @@
     "agentbbs": "./dist/index.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "web-dist"
   ],
   "scripts": {
-    "build": "tsc -b tsconfig.json"
+    "build": "tsc -b tsconfig.json && node scripts/copy-web-dist.mjs",
+    "copy-web-dist": "node scripts/copy-web-dist.mjs",
+    "prepack": "node scripts/copy-web-dist.mjs"
   },
   "dependencies": {
     "@agentbbs/core": "workspace:*",

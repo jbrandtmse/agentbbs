@@ -160,6 +160,20 @@ describe('integration/bmad/skill-rules.md registry content guard', () => {
     'read_contract',
   ] as const;
 
+  // The tools the Story-12.3 cross-project integration play (Rule C, FR42) names ON TOP of the
+  // review/protocol set above: discover (`list_projects`), read context (`list_members`), post the
+  // need (`post_announcement`), and escalate (`add_participant`). (`read_room`/`reply`/`react`/
+  // `read_contract` are already covered by REGISTRY_TOOLS.) Pinning these as REQUIRED, real tools
+  // means a future edit that drops a play step's tool — or renames it to a phantom — turns the
+  // presence/phantom checks RED.
+  const PLAY_TOOLS = [
+    'list_projects',
+    'list_members',
+    'join_board',
+    'post_announcement',
+    'add_participant',
+  ] as const;
+
   // The four moves of the Negotiation Protocol convention (AC #1). Dropping any name means the
   // registry silently lost a move.
   const FOUR_MOVES = ['Propose', 'Counter', 'Ratify', 'Frozen'] as const;
@@ -262,6 +276,36 @@ describe('integration/bmad/skill-rules.md registry content guard', () => {
     ).toBe(true);
   });
 
+  // (c2) THE CROSS-PROJECT INTEGRATION PLAY (Story 12.3, FR42) — Rule C: how an agent reaches
+  // ANOTHER project's agent to negotiate a shared boundary, composing the shipped surface. Pin the
+  // rule header is present AND each of the play's distinctive tools (discover → read context → post
+  // the need → escalate) is named, so a future edit cannot silently drop the play or one of its
+  // steps. The four moves it delegates to (Rule B) are covered by the FOUR_MOVES / read_contract
+  // checks above; here we pin the play-specific verbs.
+  it('states the cross-project integration play (Rule C) — list_projects → list_members/read_room → post_announcement/reply → four moves → add_participant', () => {
+    const registry = readRegistry();
+
+    // The rule must be present as a named rule (Rule C), tied to reaching ANOTHER project.
+    expect(
+      /Rule C/.test(registry),
+      'the registry must carry the "Rule C" cross-project integration play (Story 12.3, FR42)',
+    ).toBe(true);
+    expect(
+      /another project|other project|peer project/i.test(registry),
+      'the Rule C play must frame itself as reaching ANOTHER project’s agent to negotiate a shared ' +
+        'boundary (FR42)',
+    ).toBe(true);
+
+    // Each distinctive play tool must be named (the review/protocol tools are pinned elsewhere).
+    for (const tool of PLAY_TOOLS) {
+      expect(
+        registry.includes(tool),
+        `the Rule C play must name the \`${tool}\` tool — a future edit must not silently drop a ` +
+          `play step (Story 12.3 AC1)`,
+      ).toBe(true);
+    }
+  });
+
   // (d) THE DISAMBIGUATION HEADER (Rule 8) — the registry MUST state it is a DIFFERENT file from this
   // repo's own `_bmad/custom/skill-rules.md` (same basename, unrelated rules). Without this, a reader
   // (or a future dev) could conflate the board-behavior registry with AgentBBS's internal
@@ -333,7 +377,16 @@ describe('integration/bmad/skill-rules.md registry content guard', () => {
     // docs backtick it. Anything else backticked is treated as a tool claim. Keep this list minimal
     // and explicit — growing it should be a deliberate act (mirrors the cadence-hook guard's
     // NON_TOOL_TOKENS).
-    const NON_TOOL_TOKENS = new Set(['persistent_facts', 'on_complete', 'seq']);
+    // `project_id` (Story 12.3 Rule C) is a `list_members`/`join_board`/`post_announcement`
+    // PARAMETER the play backticks (`list_members{ project_id }`, `post_announcement{ project_id }`),
+    // not a tool — same status as `seq`. (The `@operator` in `add_participant{ @operator }` is not a
+    // backticked snake token, so it is not a candidate.) Keep this list minimal and explicit.
+    const NON_TOOL_TOKENS = new Set([
+      'persistent_facts',
+      'on_complete',
+      'seq',
+      'project_id',
+    ]);
 
     const candidates = backtickedTokens(registry);
     const phantom = candidates.filter(
@@ -349,10 +402,10 @@ describe('integration/bmad/skill-rules.md registry content guard', () => {
         `NON_TOOL_TOKENS.`,
     ).toEqual([]);
 
-    // Converse sanity: all five registry tools must actually appear as backticked tokens (so a
-    // future reword that strips ALL backticks — making the phantom scan vacuously pass on an empty
-    // candidate set — is caught here too).
-    for (const tool of REGISTRY_TOOLS) {
+    // Converse sanity: all five registry tools AND the four Rule-C play tools must actually appear
+    // as backticked tokens (so a future reword that strips ALL backticks — making the phantom scan
+    // vacuously pass on an empty candidate set — is caught here too).
+    for (const tool of [...REGISTRY_TOOLS, ...PLAY_TOOLS]) {
       expect(
         candidates.includes(tool),
         `the registry must backtick the \`${tool}\` tool name (AC #1) — its absence would also ` +

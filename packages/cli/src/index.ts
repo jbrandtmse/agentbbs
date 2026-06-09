@@ -6,8 +6,15 @@
 // Story 9.3 establishes the subcommand dispatch + the FIRST subcommand, `ui` (launch the
 // on-demand web control room — the HTTP host serving the JSON API + SSE + the built
 // apps/web client). The dispatch table is the extension seam for the FR32–34 operator
-// tools (`export`/`import`, Epic 11) — they slot in as new entries here later; this story
-// does NOT build them.
+// tools (`export`/`import`, Epic 11).
+//
+// Story 11.1 builds the `export`/`import` SCAFFOLD entries: each is a recognized
+// operator subcommand whose handler is an HONEST, explicitly-inert scaffold (a clear
+// "not yet implemented — arriving in Story 11.2/11.3" message to stderr + a non-zero
+// exit code) and a minimal hand-rolled arg-parse seam (mirroring `parseUiArgs`). The
+// real NDJSON dump (11.2) / replay (11.3) fill the bodies later. All three commands
+// (`export`/`import`/`ui`) are OPERATOR-ONLY — never exposed as MCP tools to agents
+// (architecture.md:294).
 //
 // As a barrel, this module re-exports the subcommand entry points (so they are importable
 // + testable). As the `agentbbs` bin, the `main()` at the bottom runs when the file is
@@ -15,6 +22,8 @@
 
 import { pathToFileURL } from 'node:url';
 
+import { exportCommand } from './export.js';
+import { importCommand } from './import.js';
 import { uiCommand } from './ui.js';
 
 /** Package name marker; retained as a stable barrel anchor. */
@@ -22,6 +31,10 @@ export const CLI_PACKAGE = '@agentbbs/cli';
 
 export { uiCommand, parseUiArgs, runUi } from './ui.js';
 export type { UiOptions, RunUiDeps } from './ui.js';
+export { exportCommand, parseExportArgs } from './export.js';
+export type { ExportOptions } from './export.js';
+export { importCommand, parseImportArgs, runImport } from './import.js';
+export type { ImportOptions, ImportResult, RunImportDeps } from './import.js';
 
 /** A registered subcommand: a name + its handler over the post-name argv. */
 interface Subcommand {
@@ -30,8 +43,19 @@ interface Subcommand {
   run: (argv: readonly string[]) => Promise<void>;
 }
 
-/** The subcommand table — the extension seam (Epic 11 export/import slot in here). */
+/** The subcommand table — the operator-only command surface (never MCP tools). */
 const SUBCOMMANDS: Subcommand[] = [
+  {
+    name: 'export',
+    describe:
+      'Export the board ledger to a portable, logical NDJSON archive (or stdout).',
+    run: exportCommand,
+  },
+  {
+    name: 'import',
+    describe: 'Import an NDJSON archive by replaying it into an empty board.',
+    run: importCommand,
+  },
   {
     name: 'ui',
     describe:
@@ -39,6 +63,16 @@ const SUBCOMMANDS: Subcommand[] = [
     run: uiCommand,
   },
 ];
+
+/**
+ * The names of the recognized operator subcommands, derived from the dispatch table — the
+ * single source of truth for the CLI's command surface. Exported so the README content-guard
+ * (Story 11.5, AC6) can pin the documented subcommands to the actual dispatch table rather than
+ * a hand-copied list. Adding a subcommand above automatically surfaces it here.
+ */
+export const SUBCOMMAND_NAMES: readonly string[] = SUBCOMMANDS.map(
+  (c) => c.name,
+);
 
 /** Print the top-level usage (no/unknown subcommand). */
 function usage(write: (line: string) => void): void {
