@@ -210,7 +210,7 @@ development_status:
 
   # Epic 12: Global-board topology, cross-project onboarding & operator board skills
   # (added 2026-06-02 via Sprint Change Proposal; schedulable independently of Epics 9-11)
-  epic-12: in-progress
+  epic-12: done
   # story 12-0 (retro-review gate, Epic 11 deferred-triage): TRIAGE-ONLY, lead-side, no code/test/pipeline. included=0, deferred=18, awareness-carries=3 (8.4-helper-crlf→12.6; 7.3-snippet-callform→12.2/12.3; operator-handle-canon→12.4), resolved-confirmations=6, new=0. Epic 12 = install-kit + onboarding asset + operator slash-skills; NO board-engine/UI/CLI/data-access change → no open item has a standalone Epic-12 trigger. See 12-0-epic-11-deferred-cleanup.md.
   12-0-epic-11-deferred-cleanup: done
   12-1-global-board-default-and-framing-reconciliation: done
@@ -219,4 +219,4 @@ development_status:
   12-4-operator-read-skills: done
   12-5-operator-post-skill: done
   12-6-install-kit-integration-and-safety-re-proof: done
-  epic-12-retrospective: optional
+  epic-12-retrospective: done
