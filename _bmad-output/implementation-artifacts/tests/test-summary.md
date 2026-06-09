@@ -1,41 +1,65 @@
-# Test Automation Summary — Story 11.5 (Distribution & OSS stand-up docs)
+# Test Automation Summary — Story 12.6 (Epic 12 CAPSTONE), QA stage
 
-QA stage: `qa-generate-e2e-tests`. Harden the GUARDS (this is a packaging + agent/operator-consumed-docs story, not a feature suite).
+Install-kit integration + safety re-proof. QA strengthening over the dev's capstone coverage.
+NO board-engine change (Rule 13): only the two named test files differ in the frozen
+`packages/core` / `packages/data-access` / `packages/mcp-server/src` paths; the kit + helper are
+assets under `integration/bmad/`.
 
-## Generated / strengthened tests
+## Generated / Strengthened Tests (all in the dev-touched files; discoverable by default `pnpm test`, Rule 8)
 
-### AC6 — README Rule-10 content-guard (load-bearing) — STRENGTHENED
-`packages/mcp-server/src/readme-content-guard.test.ts`
+### `packages/mcp-server/src/install-kit-doc.test.ts` (Rule 10 + Rule 21)
+- [x] **Rule-21 encoding-integrity guard** — reads RAW BYTES of the kit + all four canonical
+  operator-skill sources; asserts no UTF-8 BOM, no CRLF, no mojibake lead-byte sequences
+  (`0xC3 0xA2` em-dash/arrow, `0xC3 0xB0` emoji). This is the out-of-band check the token drift
+  pins are STRUCTURALLY BLIND to (a byte-compare of inlined-vs-canonical stays GREEN even if the
+  canonical source itself is mojibake-corrupted). Mutation-verified RED on an injected BOM and on
+  an injected em-dash mojibake double-encode.
+- [x] **Glyph-survival converse** — pins that the intended 👍 / em-dash / arrow glyphs are PRESENT
+  (decoded) in the kit, so the absence-of-mojibake guard is not vacuous on a glyph-stripped file.
+  Mutation-verified RED on stripping 👍.
 
-- The dev's guard pinned only the **sentinel block** (`AGENTBBS-README:BEGIN/END`) values to code (bins, `AGENTBBS_DB`, subcommands, live `listTools()` count = 17). QA found a real **call-form blind spot** (Rule 18 / Epic-8 class): the sentinel is the machine MIRROR, but an outside developer copy-pastes the VISIBLE prose/code-fences. A prose-only drift (e.g. the MCP-client config fence `"command": "agentbbs-mcp-server"` renamed to a non-existent bin) left the sentinel-only guard GREEN — **empirically proven**: renaming the visible config command to `agentbbs-server` passed all 6 original tests.
-- Added 4 visible-surface assertions (run against the README with the sentinel comment stripped):
-  1. The MCP-client config fence `"command"` value IS the mcp-server bin, and no `agentbbs-*` command value is anything other than the real bin (pins the literal copy-pasted invocation).
-  2. The visible README invokes the `agentbbs` cli bin in call form (`agentbbs <sub>`).
-  3. The visible README shows the `AGENTBBS_DB` env var.
-  4. The visible README invokes EVERY `SUBCOMMAND_NAMES` entry as `agentbbs <sub>` (drift in any one -> RED).
-- **Mutation-tested non-vacuous (Rule 7):** config-fence command rename (-> `agentbbs-server`) -> RED; visible `agentbbs export` -> `agentbbs dump` (sentinel kept) -> RED; visible `AGENTBBS_DB` -> `AGENTBBS_PATH` (sentinel kept) -> RED. README restored byte-identical each time (verified no leak).
+### `packages/mcp-server/src/tools/install-kit-safety.integration.test.ts` (Rule 11, executable, EXTRACTS + EXECUTES the kit's OWN helper)
+- [x] **(ix) 8.4-helper-crlf RESOLUTION (executable proof)** — runs the kit's own `writeOwnedFile`
+  against a pre-existing CRLF owned file: proves it backs up the prior CRLF bytes FIRST, converges
+  the file to the kit's own LF content (no CRLF survives), then re-runs of the kit's LF output are
+  byte-stable no-ops. Turns the previously-prose-only documented-LF resolution into a regression
+  guard, pinning the PRECISE property (whole-file `content === original` compare → convergence +
+  byte-stable idempotency), not the loose "no-op regardless of newline" phrasing.
+- [x] **(x) END-TO-END coherent install** — drives ALL owned writers (AGENTS.md identity block via
+  applyBlock + a `.toml` overlay block + the `agentbbs` `.mcp.json` key via mergeMcpServer + all
+  four SKILL.md whole files via writeOwnedFile) into ONE temp project pre-seeded with foreign
+  assets: the project's `epic-cycle` kit, a foreign vendor `.claude/skills/<other>/` skill, a
+  foreign top-level file, a foreign block inside the kit-edited `.toml`, and a foreign `.mcp.json`
+  server + key. Asserts every foreign asset is BYTE-IDENTICAL + un-backed-up AND the full owned set
+  landed coherently. Crosses the seams BETWEEN the individual safety cases.
 
-### AC2 — packaged-web-dist resolution — STRENGTHENED
-`packages/cli/src/host/static-assets.test.ts`
+## Rule-7 mutation runs (each reverted byte-identical; kit `cmp`-confirmed clean)
+- BOM injected -> encoding guard RED.
+- em-dash mojibake injected -> encoding guard RED.
+- 👍 stripped -> glyph-survival converse RED.
+- `writeOwnedFile` backup-before-overwrite defeated -> cases (vi) + (ix) RED.
+- `writeOwnedFile` idempotency short-circuit defeated -> cases (v) + (ix) RED.
+- `mergeMcpServer` drops foreign servers -> cases (iv) + (viii) + (x) RED.
 
-- The dev's 4 cases (override / monorepo walk-up / packaged-no-marker / fallback) over real temp dirs were complete. QA added 2 **precedence** pins:
-  1. `AGENTBBS_WEB_DIST` override wins even when a packaged web-dist exists (escape hatch is unconditional).
-  2. The monorepo dev path wins over a packaged web-dist when a workspace marker is present (the packaged branch does not shadow the dev experience — no regression).
+## Coverage assessment vs the QA brief
+- Rule 11 executable safety proof — STRONG (dev cases v–viii + QA ix–x; extracts/executes the kit's
+  OWN writeOwnedFile; mutation-non-vacuous; end-to-end coherent-install angle added).
+- Rule 10 drift pins (4 inlined skills byte-exact + user-scope target) — present (dev), confirmed
+  non-vacuous; re-confirmed encoding-clean here.
+- AC1 install completeness — pinned (user-scope MCP §3.9 + user-scope skills §3.10 + project-scope
+  overlays/identity); the end-to-end (x) exercises every owned writer together.
+- 8.4-helper-crlf — documented-LF note present in kit §1; deferred item marked RESOLVED; the
+  resolution now has an EXECUTABLE regression guard (case ix). The dev's loose claim that
+  idempotency "holds regardless of the target's prevailing newline" is sharpened by (ix): a CRLF
+  target is correctly a CHANGE on first write (backed up); idempotency holds for the kit's OWN
+  converged LF output thereafter.
+- Rule 21 — automated encoding guard added (was prose-only / out-of-band before).
 
-## Intentionally NOT changed (sufficient as shipped)
+## Gate (Rule 20 — full canonical ROOT gate, independently re-run)
+- lint 0 · typecheck 0 · build OK · `pnpm test` 1663 passed (184 files, 0 failed) · prettier --check clean.
+- NOTE (Rule-20 false-green class): `prettier --check` initially flagged BOTH modified test files;
+  fixed via `prettier --write`, then re-ran lint + format -> all green.
 
-- **AC1 real pack** — the dev's `distribution.packaging.test.ts` pins the static manifest; the actual `pnpm pack` tarball production (workspace:/catalog: rewrite, 304 web-dist assets) was dev-verified and is the lead's smoke (heavy/environment-coupled in-suite). Left to the lead smoke per the test's own documented rationale.
-- **AC3 VSIX node:sqlite-only bundle** — already proven against the BUILT artifact by `apps/vscode-extension/src/bundle-and-activation.test.ts` (`dist/extension.cjs` has `require("node:sqlite")`, 0 live `require("better-sqlite3")`, no `*.node`; plus a synthetic-import test exercising the `external` rule). The VSIX config guard (`vsix-packaging.test.ts`) pins the marketplace-valid manifest. A config-level `external` assertion would be redundant + weaker than the artifact proof — not added. Real `vsce package` `.vsix` production is the lead's smoke.
-
-## Discoverability (Rule 8)
-All touched test files are collected by ROOT `pnpm test`: the README guard + static-assets are node-project `*.test.ts`; `vsix-packaging.test.ts` is `apps/vscode-extension/src/*.test.ts` (node project, not the `*-dom` project). Confirmed via root run.
-
-## Canonical gate (ROOT, Rule 12)
-- `pnpm run lint` — exit 0, clean
-- `pnpm run typecheck` — exit 0, clean
-- `pnpm run build` — exit 0 (web-dist copy ran)
-- `pnpm test` — **182 files, 1588 passed** (was 1582; +6 QA assertions)
-- `pnpm run format` — exit 0, clean
-
-## Rule 13
-`git diff HEAD -- packages/core/src` empty; only mcp-server/src change is the new test file; agent-facing source byte-identical. The 17-tool drift-guard stays green.
+## Next steps (lead)
+- Post-CR AC3 lead smoke: install end-to-end into a temp project; confirm global-board connection +
+  operator skills resolve. All changes left uncommitted (lead commits after the smoke gate).
