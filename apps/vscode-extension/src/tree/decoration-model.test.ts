@@ -13,6 +13,7 @@ import {
   UNREAD_COLOR_ID,
   roomDecoration,
   unreadBadge,
+  unreadDescription,
 } from './decoration-model.js';
 
 describe('unreadBadge — the 2-char cap boundary (mutation target)', () => {
@@ -36,6 +37,19 @@ describe('unreadBadge — the 2-char cap boundary (mutation target)', () => {
     for (const n of [1, 9, 10, 99, 100, 1234]) {
       expect(unreadBadge(n).length).toBeLessThanOrEqual(BADGE_MAX_LENGTH);
     }
+  });
+});
+
+describe('unreadDescription — the UNCAPPED exact count (Story 13.6, closes 10.3-unread-count-test-gap)', () => {
+  it('formats a small count verbatim', () => {
+    expect(unreadDescription(1)).toBe('1 new');
+    expect(unreadDescription(7)).toBe('7 new');
+  });
+
+  it('has NO 2-char cap — a large count is shown in full (unlike the badge)', () => {
+    // The badge collapses 150 → '•' (3 chars exceed the API cap); the description does NOT.
+    expect(unreadDescription(150)).toBe('150 new');
+    expect(unreadBadge(150)).toBe(UNREAD_BADGE);
   });
 });
 

@@ -42,3 +42,10 @@ Append-only. TAB-separated: `<UTC>` TAB `<Story <id> | Epic <N>>` TAB `<stage>` 
 2026-06-10T16:55:00Z	Story 13.5	qa_complete	spawn_at=2026-06-10T16:48:30Z model=claude-opus-4-8 tests=packages/core/src/identity/operator-handle.test.ts,packages/cli/src/ui.test.ts,apps/vscode-extension/src/tree/operator-handle.test.ts tests_added=42 first_run_failures=0 closing_sections_present=true
 2026-06-10T17:05:00Z	Story 13.5	cr_complete	spawn_at=2026-06-10T16:55:30Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=0 high=0 med=0 low=0 clarifications=0 closing_sections_present=true
 2026-06-10T17:08:00Z	Story 13.5	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=built-core-canonicalizeOperatorHandle-trim+lower+null-on-empty-correct model=claude-opus-4-8
+2026-06-10T17:09:00Z	Story 13.5	committed	sha=d1b32d9 submodules=
+2026-06-10T17:18:00Z	Story 13.6	story_created	path=_bmad-output/implementation-artifacts/13-6-cosmetic-doc-coverage-batch.md
+2026-06-10T17:28:00Z	Story 13.6	dev_complete	spawn_at=2026-06-10T17:18:30Z model=claude-opus-4-8 files=apps/vscode-extension/src/tree/decoration-model.ts,apps/vscode-extension/src/tree/BoardTreeProvider.ts,packages/ui-shared/src/tree/SidebarTreeItem.tsx,apps/web/src/App.test.tsx,DESIGN.md loc_added=~40 clarifications=0 nfr_tripwires=0 adr_violations_surfaced=0 cycle_iteration=1 closing_sections_present=true
+2026-06-10T17:28:05Z	Story 13.6	adr_verifications_complete	result=none_required
+2026-06-10T17:36:00Z	Story 13.6	qa_complete	spawn_at=2026-06-10T17:28:30Z model=claude-opus-4-8 tests=apps/web/src/App.test.tsx,apps/vscode-extension/src/tree/decoration-model.test.ts tests_added=2 first_run_failures=0 closing_sections_present=true
+2026-06-10T17:45:00Z	Story 13.6	cr_complete	spawn_at=2026-06-10T17:36:30Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=1 high=0 med=0 low=0 clarifications=0 closing_sections_present=true
+2026-06-10T17:47:00Z	Story 13.6	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=DESIGN-16.7+SidebarTreeItem-chrome.css+decoration-model.test+App.test-72pass model=claude-opus-4-8

@@ -231,5 +231,5 @@ development_status:
   13-3-import-replay-atomicity-db-open-failure-coverage: done
   13-4-data-access-malformed-payload-validation-append-invariant-lint-guard: review
   13-5-operator-handle-canonicalization-de-duplication: done
-  13-6-cosmetic-doc-coverage-batch: backlog
+  13-6-cosmetic-doc-coverage-batch: done
   epic-13-retrospective: optional
