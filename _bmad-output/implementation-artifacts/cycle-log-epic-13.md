@@ -21,3 +21,10 @@ Append-only. TAB-separated: `<UTC>` TAB `<Story <id> | Epic <N>>` TAB `<stage>` 
 2026-06-10T14:12:00Z	Story 13.2	qa_complete	spawn_at=2026-06-10T13:55:30Z model=claude-opus-4-8 tests=packages/ui-shared/src/markdown/highlighter-serialization.guard.test.ts tests_added=4 first_run_failures=0 closing_sections_present=true
 2026-06-10T14:30:00Z	Story 13.2	cr_complete	spawn_at=2026-06-10T14:12:30Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=0 high=0 med=0 low=0 clarifications=0 closing_sections_present=true
 2026-06-10T14:33:00Z	Story 13.2	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=root-pnpm-test-186files-1672passed-0failed-no-shiki-fault model=claude-opus-4-8
+2026-06-10T14:34:00Z	Story 13.2	committed	sha=ad9b30f submodules=
+2026-06-10T14:40:00Z	Story 13.3	story_created	path=_bmad-output/implementation-artifacts/13-3-import-replay-atomicity-db-open-failure-coverage.md
+2026-06-10T15:00:00Z	Story 13.3	dev_complete	spawn_at=2026-06-10T14:40:30Z model=claude-opus-4-8 files=packages/cli/src/import.ts,packages/cli/src/import.test.ts,packages/cli/src/index.test.ts loc_added=~60 clarifications=0 nfr_tripwires=0 adr_violations_surfaced=0 cycle_iteration=1 closing_sections_present=true
+2026-06-10T15:00:05Z	Story 13.3	adr_verifications_complete	result=none_required
+2026-06-10T15:12:00Z	Story 13.3	qa_complete	spawn_at=2026-06-10T15:00:30Z model=claude-opus-4-8 tests=packages/cli/src/import.test.ts tests_added=6 first_run_failures=0 closing_sections_present=true
+2026-06-10T15:25:00Z	Story 13.3	cr_complete	spawn_at=2026-06-10T15:12:30Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=1 high=0 med=0 low=0 clarifications=0 closing_sections_present=true
+2026-06-10T15:28:00Z	Story 13.3	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=real-spawn-noncontiguous-import-exit1-ledger-empty+export-dbopen-fail-exit1 model=claude-opus-4-8

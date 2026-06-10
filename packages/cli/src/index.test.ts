@@ -5,6 +5,7 @@
 // an exit code captures + RESETS `process.exitCode` to avoid bleeding into sibling cases
 // (and into the rest of the suite). Nothing is mocked beyond the injected sinks.
 
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -209,6 +210,67 @@ describe('dispatch — export (real, Story 11.2) / import scaffold (recognized s
       });
       expect(process.exitCode).toBe(1);
       expect(log.join('\n')).toMatch(/failed/i);
+    } finally {
+      removeTempDir(dir);
+    }
+  });
+
+  // Story 13.3 (AC2) — DB-OPEN-failure coverage on BOTH commands. The AC5 error matrix had only
+  // the unwritable-OUT-PATH trigger of the export/import command catch asserted; this closes the
+  // other half — the unopenable `--db` trigger — directly, on both commands. An existing
+  // DIRECTORY (or a non-SQLite junk file) cannot be opened as a SQLite DB: better-sqlite3 throws
+  // at `createDataAccess` (open / first-SQL), which flows through the command's try/catch →
+  // `agentbbs <cmd>: failed — …` on the (injected) log + a non-zero exit. No production change is
+  // needed for AC2; these are direct assertions of the already-handled path.
+  it('exportCommand reports a clear error + non-zero exit when --db cannot be opened (directory / non-SQLite file)', async () => {
+    const dir = makeTempDir('agentbbs-export-baddb-');
+    try {
+      // (a) --db pointed at an existing DIRECTORY → cannot open as a SQLite DB.
+      const log: string[] = [];
+      await exportCommand([dir], { log: (line) => log.push(line) });
+      expect(process.exitCode).toBe(1);
+      expect(log.join('\n')).toMatch(/agentbbs export: failed —/);
+
+      // (b) --db pointed at a non-SQLite JUNK file → cannot open as a SQLite DB.
+      process.exitCode = undefined;
+      const junk = join(dir, 'not-a-db.txt');
+      writeFileSync(junk, 'this is not a sqlite database file\n', 'utf8');
+      const log2: string[] = [];
+      await exportCommand(['--db', junk], { log: (line) => log2.push(line) });
+      expect(process.exitCode).toBe(1);
+      expect(log2.join('\n')).toMatch(/agentbbs export: failed —/);
+    } finally {
+      removeTempDir(dir);
+    }
+  });
+
+  it('importCommand reports a clear error + non-zero exit when --db cannot be opened (directory / non-SQLite file)', async () => {
+    const dir = makeTempDir('agentbbs-import-baddb-');
+    try {
+      // A minimal VALID archive (header-only, empty board) so the parse + pre-replay contiguity
+      // checks PASS — isolating the DB-open failure as the sole cause of the rejection.
+      const validEmptyArchive = JSON.stringify({ agentbbs_archive: 1 }) + '\n';
+
+      // (a) --db pointed at an existing DIRECTORY → cannot open as a SQLite DB.
+      const log: string[] = [];
+      await importCommand([dir], {
+        log: (line) => log.push(line),
+        readStdin: () => validEmptyArchive,
+      });
+      expect(process.exitCode).toBe(1);
+      expect(log.join('\n')).toMatch(/agentbbs import: failed —/);
+
+      // (b) --db pointed at a non-SQLite JUNK file → cannot open as a SQLite DB.
+      process.exitCode = undefined;
+      const junk = join(dir, 'not-a-db.txt');
+      writeFileSync(junk, 'this is not a sqlite database file\n', 'utf8');
+      const log2: string[] = [];
+      await importCommand(['--db', junk], {
+        log: (line) => log2.push(line),
+        readStdin: () => validEmptyArchive,
+      });
+      expect(process.exitCode).toBe(1);
+      expect(log2.join('\n')).toMatch(/agentbbs import: failed —/);
     } finally {
       removeTempDir(dir);
     }

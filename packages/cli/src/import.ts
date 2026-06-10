@@ -12,11 +12,24 @@
 //      (`parseAndValidateArchive` — header version + every event `type` ∈ EVENT_TYPES +
 //      read-state shape) BEFORE any append. Malformed → clear error + non-zero exit, nothing
 //      appended (AC5; closes the Story-11.2-deferred "parse has no shape validation" item).
-//   3. REPLAYS every event in ascending archive-`seq` order through the EXISTING
-//      `DataAccess.append` (stripped to the `NewEvent` shape — `type`/`actor`/`payload`),
-//      reconstructing ALL derived state by re-running the same projections. Into a fresh empty
-//      board, the AUTOINCREMENT `seq` reproduces the archive's `seq` 1..N exactly — the import
-//      VERIFIES this and fails loudly otherwise (AC4).
+//   3. REPLAYS every event ATOMICALLY (Story 13.3) — three layers:
+//        (a) PRE-REPLAY CONTIGUITY CHECK (the NOTHING-APPENDED phase, BEFORE opening the
+//            ledger): after sorting by `seq`, assert the archived seqs are EXACTLY 1..N. A
+//            mangled / non-contiguous archive is REJECTED here, before any append — so a corrupt
+//            restore appends NOTHING (atomic). This is the LOAD-BEARING layer for atomicity: a
+//            batched `append` COMMITS before any post-append seq check can run, so only a
+//            pre-replay check guarantees nothing is written on a bad archive.
+//        (b) SINGLE BATCHED APPEND: build the `NewEvent[]` (stripped to `type`/`actor`/`payload`)
+//            and call `append(orderedNewEvents)` ONCE — the EXISTING `BEGIN IMMEDIATE`
+//            transaction (ports.ts:55-64; proven atomic since Story 1.7) makes the WHOLE valid
+//            replay all-or-nothing against any OTHER mid-batch failure (e.g. a DB error).
+//        (c) POST-APPEND ASSERTION (defense-in-depth): assert each assigned `seq` reproduces the
+//            archived `seq` 1:1. On a fresh empty board the AUTOINCREMENT yields 1..N, so the
+//            pre-replay contiguity check already guarantees this — it is retained belt-and-braces
+//            and fails loudly (AC4) if the invariant is ever violated.
+//      An EMPTY archive (N=0) is valid (vacuously contiguous → header-only restore). A normal
+//      `agentbbs export` archive is ALWAYS contiguous from seq 1, so the contiguity check is a
+//      no-op on every real archive — only the corruption path changes (was: partial; now: empty).
 //   4. RESTORES each read-state cursor via the EXISTING `DataAccess.setCursor(handle, seq)` (AC1).
 //
 // It carries NO board logic (NFR2 / Rule 13): it reads/writes through the `DataAccess` port
@@ -105,18 +118,20 @@ function readStdinSync(): string {
 }
 
 /**
- * Run the import: open the ledger, guard that it is empty, parse + validate the archive, replay
- * every event in ascending `seq` order via `append`, verify the reproduced `seq` matches the
- * archive, and restore each read-state cursor via `setCursor`. Closes the ledger before
- * returning.
+ * Run the import: parse + validate the archive, assert it is contiguous (1..N) BEFORE opening
+ * the ledger, open the ledger, guard that it is empty, replay every event in ascending `seq`
+ * order via a SINGLE batched atomic `append`, verify the reproduced `seq` matches the archive,
+ * and restore each read-state cursor via `setCursor`. Closes the ledger before returning.
  *
  * The DB path is resolved the same way the MCP server resolves it: an explicit `--db` wins, else
  * AGENTBBS_DB, else the project-root `.agentbbs/agentbbs.db` walk-up (`resolveDbPath`).
  *
- * REJECTS (throws) — appending NOTHING — when: the target board is NON-EMPTY (AC2), the archive
- * is malformed / has an unknown event `type` / an incompatible version (AC5), or the replayed
- * `seq` does not reproduce the archive's `seq` (AC4). The caller ({@link importCommand}) maps a
- * rejection to a clear stderr message + a non-zero exit.
+ * REJECTS (throws) — appending NOTHING — when: the archive is malformed / has an unknown event
+ * `type` / an incompatible version (AC5) or is NON-CONTIGUOUS (Story 13.3 — seqs not exactly
+ * 1..N), BOTH of which are caught BEFORE any append; or the target board is NON-EMPTY (AC2). The
+ * valid replay runs as a single atomic transaction, so a mid-batch failure also leaves the board
+ * untouched; the post-append `seq` assertion (AC4) is retained defense-in-depth. The caller
+ * ({@link importCommand}) maps a rejection to a clear stderr message + a non-zero exit.
  *
  * @param options Parsed {@link ImportOptions}.
  * @param deps Injection seam (logger / stdin reader).
@@ -138,6 +153,24 @@ export async function runImport(
   // Parse + validate the archive BEFORE touching the ledger (AC5: malformed → nothing appended).
   const archive = parseAndValidateArchive(text);
 
+  // Story 13.3 — PRE-REPLAY CONTIGUITY CHECK (the NOTHING-APPENDED phase, BEFORE opening the
+  // ledger). Sort by `seq`, then assert the archived seqs are EXACTLY 1..N. A mangled /
+  // non-contiguous archive is rejected HERE — before any append — so a corrupt restore writes
+  // NOTHING. This is the load-bearing layer for atomicity: the batched `append` below COMMITS the
+  // whole transaction before the post-append seq check can run, so only a pre-replay check makes
+  // the bad-archive rejection atomic. An EMPTY archive (N=0) is vacuously contiguous (valid —
+  // header-only restore). A normal `agentbbs export` archive is always contiguous from 1, so this
+  // is a no-op on every real archive (only the corruption path changes: was partial, now empty).
+  const ordered = [...archive.events].sort((a, b) => a.seq - b.seq);
+  for (let i = 0; i < ordered.length; i++) {
+    if (ordered[i].seq !== i + 1) {
+      throw new Error(
+        `archive is not contiguous: expected seq ${i + 1}, found ${ordered[i].seq} — a normal ` +
+          `export is contiguous from 1; nothing was appended.`,
+      );
+    }
+  }
+
   const dbPath = options.dbPath ?? resolveDbPath();
   const dataAccess: DataAccessHandle = createDataAccess({ dbPath });
   try {
@@ -152,24 +185,32 @@ export async function runImport(
       );
     }
 
-    // AC1/AC4 — replay every event in ascending archive-`seq` order through the EXISTING
-    // `append`, stripped to the `NewEvent` shape (type/actor/payload). `seq`/`createdAt` are
-    // re-assigned at append; into a fresh empty board the AUTOINCREMENT reproduces `seq` 1..N.
-    const ordered = [...archive.events].sort((a, b) => a.seq - b.seq);
-    for (const event of ordered) {
-      const newEvent = {
-        type: event.type,
-        actor: event.actor,
-        payload: event.payload,
-      } as NewEvent;
-      const [assignedSeq] = await dataAccess.append([newEvent]);
-      // AC4 — verify the replayed `seq` reproduces the archived `seq` 1:1. An append-only
-      // ledger's `seq` is contiguous from 1, so ordered replay into an empty board yields
-      // identical `seq`. If not, FAIL LOUDLY (the board would no longer faithfully match).
-      if (assignedSeq !== event.seq) {
+    // AC1/AC4 (Story 13.3) — replay the WHOLE ordered stream in a SINGLE BATCHED atomic
+    // `append`, stripped to the `NewEvent` shape (type/actor/payload). The existing
+    // `BEGIN IMMEDIATE` transaction (ports.ts:55-64) makes the entire replay all-or-nothing: a
+    // mid-batch failure rolls back, leaving the board untouched. `seq`/`createdAt` are re-assigned
+    // at append; into a fresh empty board the AUTOINCREMENT reproduces `seq` 1..N.
+    const orderedNewEvents: NewEvent[] = ordered.map(
+      (event) =>
+        ({
+          type: event.type,
+          actor: event.actor,
+          payload: event.payload,
+        }) as NewEvent,
+    );
+    const assignedSeqs = await dataAccess.append(orderedNewEvents);
+
+    // AC4 — POST-APPEND defense-in-depth: verify each assigned `seq` reproduces the archived
+    // `seq` 1:1. The pre-replay contiguity check (above) already guarantees this on a fresh empty
+    // board, so this is belt-and-braces; if the invariant is ever violated it FAILS LOUDLY (the
+    // restored board would no longer faithfully match the archive). The single batched append
+    // having committed, this check runs AFTER the transaction — which is exactly why the
+    // pre-replay contiguity check, not this one, is what makes a bad-archive rejection atomic.
+    for (let i = 0; i < ordered.length; i++) {
+      if (assignedSeqs[i] !== ordered[i].seq) {
         throw new Error(
-          `import seq mismatch: archived event seq ${event.seq} replayed as seq ` +
-            `${String(assignedSeq)} — the target board was not empty/contiguous as required.`,
+          `import seq mismatch: archived event seq ${ordered[i].seq} replayed as seq ` +
+            `${String(assignedSeqs[i])} — the target board was not empty/contiguous as required.`,
         );
       }
     }
