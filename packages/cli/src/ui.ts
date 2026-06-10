@@ -10,6 +10,7 @@
 // Agents are unaffected by whether this runs: they keep their own stdio MCP processes
 // over the same SQLite file. The host is a SEPARATE, operator-launched process.
 
+import { canonicalizeOperatorHandle } from '@agentbbs/core';
 import { createDataAccess, resolveDbPath } from '@agentbbs/data-access';
 
 import { startHost } from './host/index.js';
@@ -33,19 +34,19 @@ export interface UiOptions {
 }
 
 /**
- * Canonicalize an operator handle to the form stored in the ledger: lowercased + trimmed
- * (the same case-folding core applies on registration — `register.ts#canonicalize`). The
- * `room.participant_added` payload `handle` is stored canonical, so the operator handle
+ * Resolve an operator handle for the web host to its ledger form. Delegates to the SHARED
+ * `canonicalizeOperatorHandle` in `@agentbbs/core` (Story 13.5) — the ONE trim+lowercase→null
+ * rule both operator surfaces import (no longer duplicated; closes `10.3-operator-handle-dup`).
+ * The `room.participant_added` payload `handle` is stored canonical, so the operator handle
  * must be canonical for the NEEDS YOU match to land. An empty/whitespace-only value yields
- * `null` (watching-only). This is thin-client normalization, NOT board logic.
+ * `null` (watching-only). This is the cli wrapper's single-`raw` signature; the caller passes
+ * `--as ?? AGENTBBS_OPERATOR` (precedence handled at the call site, `ui.ts`).
  *
  * @param raw The raw handle from `--as` / `AGENTBBS_OPERATOR`, or `undefined`.
  * @returns The canonical handle, or `null` if none/blank.
  */
 export function resolveOperatorHandle(raw: string | undefined): string | null {
-  if (raw === undefined) return null;
-  const canonical = raw.trim().toLowerCase();
-  return canonical === '' ? null : canonical;
+  return canonicalizeOperatorHandle(raw);
 }
 
 /**

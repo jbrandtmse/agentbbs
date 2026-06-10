@@ -35,3 +35,10 @@ Append-only. TAB-separated: `<UTC>` TAB `<Story <id> | Epic <N>>` TAB `<stage>` 
 2026-06-10T16:14:00Z	Story 13.4	qa_complete	spawn_at=2026-06-10T16:00:30Z model=claude-opus-4-8 tests=packages/data-access/src/append-invariant-guard.test.ts,packages/data-access/src/mapping.test.ts tests_added=~89 first_run_failures=0 closing_sections_present=true
 2026-06-10T16:25:00Z	Story 13.4	cr_complete	spawn_at=2026-06-10T16:14:30Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=1 high=0 med=0 low=1 clarifications=0 closing_sections_present=true
 2026-06-10T16:30:00Z	Story 13.4	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=lint-green-on-real-code+planted-UPDATE-flagged-RED-then-reverted+mapping-malformed-tests-86pass model=claude-opus-4-8
+2026-06-10T16:31:00Z	Story 13.4	committed	sha=21eb763 submodules=
+2026-06-10T16:38:00Z	Story 13.5	story_created	path=_bmad-output/implementation-artifacts/13-5-operator-handle-canonicalization-de-duplication.md
+2026-06-10T16:48:00Z	Story 13.5	dev_complete	spawn_at=2026-06-10T16:38:30Z model=claude-opus-4-8 files=packages/core/src/identity/operator-handle.ts,packages/core/src/index.ts,packages/cli/src/ui.ts,apps/vscode-extension/src/tree/operator-handle.ts loc_added=~25 clarifications=0 nfr_tripwires=0 adr_violations_surfaced=0 cycle_iteration=1 closing_sections_present=true
+2026-06-10T16:48:05Z	Story 13.5	adr_verifications_complete	result=none_required
+2026-06-10T16:55:00Z	Story 13.5	qa_complete	spawn_at=2026-06-10T16:48:30Z model=claude-opus-4-8 tests=packages/core/src/identity/operator-handle.test.ts,packages/cli/src/ui.test.ts,apps/vscode-extension/src/tree/operator-handle.test.ts tests_added=42 first_run_failures=0 closing_sections_present=true
+2026-06-10T17:05:00Z	Story 13.5	cr_complete	spawn_at=2026-06-10T16:55:30Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=0 high=0 med=0 low=0 clarifications=0 closing_sections_present=true
+2026-06-10T17:08:00Z	Story 13.5	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=built-core-canonicalizeOperatorHandle-trim+lower+null-on-empty-correct model=claude-opus-4-8

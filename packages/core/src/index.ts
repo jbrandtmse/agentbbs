@@ -47,6 +47,13 @@ export { login } from './identity/login.js';
 export { updateFocus } from './identity/update-focus.js';
 export { recordSeen } from './identity/record-seen.js';
 
+// --- Shared OPERATOR-handle canonicalization (Story 13.5) — the ONE trim+lowercase→null rule
+// both operator surfaces (the web host `@agentbbs/cli` and the `agentbbs-vscode-extension`
+// app) import, closing the Story-10.3 duplication (`10.3-operator-handle-dup`). A pure
+// CLIENT-layer string normalization (Rule 13), NOT an agent-facing tool/event/error — distinct
+// from register/login `canonicalize` (toLowerCase only, pre-validated input). ---
+export { canonicalizeOperatorHandle } from './identity/operator-handle.js';
+
 // --- Projects directory projection (Story 3.1) ---
 export { findProject, foldProjects } from './projects/projection.js';
 export type { Project } from './projects/projection.js';
