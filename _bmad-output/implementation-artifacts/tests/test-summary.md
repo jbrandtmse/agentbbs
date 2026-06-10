@@ -1,65 +1,43 @@
-# Test Automation Summary — Story 12.6 (Epic 12 CAPSTONE), QA stage
+# Test Automation Summary — Story 13.1 (Windows temp-dir teardown flake hardening)
 
-Install-kit integration + safety re-proof. QA strengthening over the dev's capstone coverage.
-NO board-engine change (Rule 13): only the two named test files differ in the frozen
-`packages/core` / `packages/data-access` / `packages/mcp-server/src` paths; the kit + helper are
-assets under `integration/bmad/`.
+QA stage: `qa-generate-e2e-tests`. Date: 2026-06-10. Epic 13 (deferred-work cleanup & hardening), TEST-INFRA-ONLY story.
 
-## Generated / Strengthened Tests (all in the dev-touched files; discoverable by default `pnpm test`, Rule 8)
+## Generated Tests
 
-### `packages/mcp-server/src/install-kit-doc.test.ts` (Rule 10 + Rule 21)
-- [x] **Rule-21 encoding-integrity guard** — reads RAW BYTES of the kit + all four canonical
-  operator-skill sources; asserts no UTF-8 BOM, no CRLF, no mojibake lead-byte sequences
-  (`0xC3 0xA2` em-dash/arrow, `0xC3 0xB0` emoji). This is the out-of-band check the token drift
-  pins are STRUCTURALLY BLIND to (a byte-compare of inlined-vs-canonical stays GREEN even if the
-  canonical source itself is mojibake-corrupted). Mutation-verified RED on an injected BOM and on
-  an injected em-dash mojibake double-encode.
-- [x] **Glyph-survival converse** — pins that the intended 👍 / em-dash / arrow glyphs are PRESENT
-  (decoded) in the kit, so the absence-of-mojibake guard is not vacuous on a glyph-stripped file.
-  Mutation-verified RED on stripping 👍.
+### Helper-contract test (discoverable by default ROOT `pnpm test`, Rule 8)
+- [x] `packages/data-access/src/temp-dir.test.ts` — direct, discoverable contract test of the shared test-only helper `test/support/temp-dir.ts` (the Story 13.1 deliverable). 5 tests:
+  - `makeTempDir` creates a real directory under `os.tmpdir()` (hermetic — never the repo tree).
+  - `makeTempDir` preserves the requested prefix and is unique per call (the per-test no-collision guarantee).
+  - `removeTempDir` removes a real, non-empty tree (nested dirs + files).
+  - `removeTempDir` is idempotent on an already-removed dir (no throw).
+  - `removeTempDir` SWALLOWS a residual removal error instead of throwing — the load-bearing teardown-must-never-fail-the-gate property.
 
-### `packages/mcp-server/src/tools/install-kit-safety.integration.test.ts` (Rule 11, executable, EXTRACTS + EXECUTES the kit's OWN helper)
-- [x] **(ix) 8.4-helper-crlf RESOLUTION (executable proof)** — runs the kit's own `writeOwnedFile`
-  against a pre-existing CRLF owned file: proves it backs up the prior CRLF bytes FIRST, converges
-  the file to the kit's own LF content (no CRLF survives), then re-runs of the kit's LF output are
-  byte-stable no-ops. Turns the previously-prose-only documented-LF resolution into a regression
-  guard, pinning the PRECISE property (whole-file `content === original` compare → convergence +
-  byte-stable idempotency), not the loose "no-op regardless of newline" phrasing.
-- [x] **(x) END-TO-END coherent install** — drives ALL owned writers (AGENTS.md identity block via
-  applyBlock + a `.toml` overlay block + the `agentbbs` `.mcp.json` key via mergeMcpServer + all
-  four SKILL.md whole files via writeOwnedFile) into ONE temp project pre-seeded with foreign
-  assets: the project's `epic-cycle` kit, a foreign vendor `.claude/skills/<other>/` skill, a
-  foreign top-level file, a foreign block inside the kit-edited `.toml`, and a foreign `.mcp.json`
-  server + key. Asserts every foreign asset is BYTE-IDENTICAL + un-backed-up AND the full owned set
-  landed coherently. Crosses the seams BETWEEN the individual safety cases.
+## Why this test
 
-## Rule-7 mutation runs (each reverted byte-identical; kit `cmp`-confirmed clean)
-- BOM injected -> encoding guard RED.
-- em-dash mojibake injected -> encoding guard RED.
-- 👍 stripped -> glyph-survival converse RED.
-- `writeOwnedFile` backup-before-overwrite defeated -> cases (vi) + (ix) RED.
-- `writeOwnedFile` idempotency short-circuit defeated -> cases (v) + (ix) RED.
-- `mergeMcpServer` drops foreign servers -> cases (iv) + (viii) + (x) RED.
+The deliverable is a shared test-support helper whose robustness IS the fix for the two recorded Windows temp-dir teardown flakes (`E10-baseline-seedrace-eperm`, `E12-postmerge`). The two consumer suites exercise the helper's create/teardown seam only as a side effect of their own assertions — they prove the SUITES are green, not that the helper's contract holds. This QA test pins the helper's two load-bearing properties (hermetic-unique create; best-effort error-swallowing teardown) DIRECTLY and discoverably.
 
-## Coverage assessment vs the QA brief
-- Rule 11 executable safety proof — STRONG (dev cases v–viii + QA ix–x; extracts/executes the kit's
-  OWN writeOwnedFile; mutation-non-vacuous; end-to-end coherent-install angle added).
-- Rule 10 drift pins (4 inlined skills byte-exact + user-scope target) — present (dev), confirmed
-  non-vacuous; re-confirmed encoding-clean here.
-- AC1 install completeness — pinned (user-scope MCP §3.9 + user-scope skills §3.10 + project-scope
-  overlays/identity); the end-to-end (x) exercises every owned writer together.
-- 8.4-helper-crlf — documented-LF note present in kit §1; deferred item marked RESOLVED; the
-  resolution now has an EXECUTABLE regression guard (case ix). The dev's loose claim that
-  idempotency "holds regardless of the target's prevailing newline" is sharpened by (ix): a CRLF
-  target is correctly a CHANGE on first write (backed up); idempotency holds for the kit's OWN
-  converged LF output thereafter.
-- Rule 21 — automated encoding guard added (was prose-only / out-of-band before).
+## Discoverability (Rule 8)
 
-## Gate (Rule 20 — full canonical ROOT gate, independently re-run)
-- lint 0 · typecheck 0 · build OK · `pnpm test` 1663 passed (184 files, 0 failed) · prettier --check clean.
-- NOTE (Rule-20 false-green class): `prettier --check` initially flagged BOTH modified test files;
-  fixed via `prettier --write`, then re-ran lint + format -> all green.
+Co-located at `packages/data-access/src/temp-dir.test.ts`, named `*.test.ts`, so the ROOT `pnpm test` collects it via the `packages/*/src/**/*.test.{ts,tsx}` node project glob. A test under `test/support/` would NOT have been collected — the root globs only cover `packages/*/src` and `apps/*/src`; that placement was rejected. The helper import uses the same relative path (`../../../test/support/temp-dir.js`) as the two consumer suites.
 
-## Next steps (lead)
-- Post-CR AC3 lead smoke: install end-to-end into a temp project; confirm global-board connection +
-  operator skills resolve. All changes left uncommitted (lead commits after the smoke gate).
+## Non-vacuity (Rule 7)
+
+Mutation-tested: temporarily replaced the helper's `catch {}` swallow with `catch (e) { throw e }` → the SWALLOWS test went RED (`expected [Function] to not throw … TypeError [ERR_INVALID_ARG_TYPE]`), the other 4 stayed green. Reverted the helper byte-identical → 5/5 green. The swallow assertion discriminates.
+
+## Gate (Rule 20 — full canonical gate, ROOT commands, independently re-run)
+
+- lint (`eslint .`): 0
+- typecheck (`tsc -p tsconfig.typecheck.json`): 0
+- build (`pnpm -r build`): clean (required — seed-protocol-race forks a built worker dist)
+- test (ROOT `vitest run`): 185 files / 1668 passed / 0 failed (was 184/1663; +1 file, +5 tests)
+- format (`prettier --check .`): clean
+
+## Contract / scope discipline
+
+- Production-source diff EMPTY: `git diff HEAD -- packages/core packages/data-access/src packages/mcp-server/src packages/cli/src` excluding `*.test.ts(x)` shows nothing. 17-tool agent contract byte-identical.
+- Did NOT weaken or duplicate the two consumer suites' assertions (`seed-protocol-race.test.ts`, `cli/index.test.ts` left exactly as the dev shipped them).
+- The shared helper `test/support/temp-dir.ts` is byte-unchanged (mutation reverted; confirmed via the test going green again on the original catch block).
+
+## Next Steps (lead)
+
+- Lead per-story smoke + commit. All changes left uncommitted (QA does not commit).

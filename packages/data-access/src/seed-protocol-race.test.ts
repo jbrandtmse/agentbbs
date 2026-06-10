@@ -42,8 +42,7 @@
 
 import { fork, type ChildProcess } from 'node:child_process';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, statSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -55,6 +54,12 @@ import {
   findRoom,
 } from '@agentbbs/core';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+
+// Shared test-only temp-dir helper (Story 13.1). Relative import — NOT a published
+// barrel export, so nothing ships in any package's public dist/exports (Rule 13). This
+// factors out the proven Story-11.0 retry/swallow removal that previously lived here as a
+// local `removeTempTree`; the SAME robustness now also covers the CLI suite.
+import { makeTempDir, removeTempDir } from '../../../test/support/temp-dir.js';
 
 import { createDataAccess } from './data-access.js';
 
@@ -166,34 +171,10 @@ async function reapChildren(): Promise<void> {
   liveChildren.clear();
 }
 
-/**
- * Remove the temp DB tree, robust to the Windows handle-release race (see 1.7).
- *
- * Story 11.0 AC1 — BEST-EFFORT / NON-FATAL teardown: this runs in `finally` AFTER the
- * race assertions have already passed, so a failure to remove the tree is a cleanup
- * nuisance, NOT a test failure. On Windows, a just-SIGKILL'd worker (the defensive
- * `reapChildren` path) or an AV/indexer can momentarily still hold the `.db`/`-wal`/
- * `-shm` handle, and Windows then reports `EPERM` (not `EBUSY`) on the directory
- * removal — which previously intermittently RED'd the gate even though the test's
- * guarantee was fully proven. We keep the wide retry budget (≈1s of handle-release
- * grace) and then SWALLOW a residual removal error rather than let teardown fail the
- * gate. The `os.tmpdir()` discipline is preserved: the worst case is a stray temp dir
- * under the OS temp root (which the OS reclaims), never an orphan in the repo.
- */
-function removeTempTree(dir: string): void {
-  try {
-    rmSync(dir, {
-      recursive: true,
-      force: true,
-      maxRetries: 20,
-      retryDelay: 50,
-    });
-  } catch {
-    // Best-effort: a lingering Windows handle on a temp-only DB sidecar must not fail a
-    // test whose assertions already passed. The dir lives under os.tmpdir(); leave it
-    // for the OS to reclaim rather than red the gate.
-  }
-}
+// Story 11.0 AC1's best-effort/non-fatal temp-tree removal (the Windows handle-release
+// swallow) is now the SHARED `removeTempDir` helper, imported above (Story 13.1 — one
+// source of truth, no duplication). The `reapChildren()`-before-removal ordering below is
+// what releases the worker's `.db`/`-wal`/`-shm` handles before the removal attempt.
 
 /**
  * Run the N-way seed race against a fresh DB and return both the per-worker results and the
@@ -313,7 +294,7 @@ describe('cross-process protocol-seed race (AC #2 — idempotent under genuine m
     'N processes seeding concurrently → EXACTLY ONE protocol announcement / main project / system identity, every seed resolves (no error escapes)',
     { timeout: TEST_TIMEOUT_MS },
     async () => {
-      const dir = mkdtempSync(join(tmpdir(), 'agentbbs-seed-protocol-race-'));
+      const dir = makeTempDir('agentbbs-seed-protocol-race-');
       const dbPath = join(dir, '.agentbbs', 'agentbbs.db');
       try {
         const {
@@ -348,7 +329,7 @@ describe('cross-process protocol-seed race (AC #2 — idempotent under genuine m
         // Await child exit (handles released) BEFORE the best-effort tree removal, so a
         // just-killed worker's lingering handle does not EPERM the cleanup (AC1).
         await reapChildren();
-        removeTempTree(dir);
+        removeTempDir(dir);
       }
     },
   );
