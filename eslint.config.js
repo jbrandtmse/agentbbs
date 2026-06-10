@@ -114,6 +114,70 @@ const APPEND_INVARIANT_RESTRICTED_SYNTAX = [
   },
 ];
 
+/**
+ * THE APPEND INVARIANT — test-file half (Story 13.4, AC2; closes deferred-work 1.5).
+ *
+ * The PRODUCTION guard above (blocks 4/5) is a bare-LITERAL regex: it flags any
+ * string/template literal containing forbidden SQL — correct for production source,
+ * where every such literal IS an executed query. It cannot run in `*.test.ts` (block
+ * 6 was `no-restricted-syntax: 'off'`) for two reasons the bare-literal regex cannot
+ * tell apart from a real violation:
+ *   1. `packages/core/src/boundary-enforcement.test.ts` embeds forbidden SQL as bare
+ *      ASSERTION STRINGS (`const sql = 'UPDATE events …'`) — never executed; they are
+ *      the inputs that PROVE the production rule fires. A literal regex flags them.
+ *   2. `packages/data-access/src/sqlite/append.qa.test.ts` runs a documented PROOF
+ *      `SELECT … ORDER BY created_at` to demonstrate seq-ordering ≠ created_at-ordering
+ *      — load-bearing; it cannot move to `append` (which stamps created_at).
+ *
+ * Reconciliation (Rule 8): the SHIPPED invariant is append-only = NO UPDATE/DELETE of
+ * the ledger + never ORDER BY created_at AS AN ORDER KEY. A raw INSERT is exactly how
+ * `append` writes, so INSERT is NOT a violation (the production guard never flagged it).
+ * So instead of the literal regex, the test-file guard is AST-BASED: it flags forbidden
+ * SQL ONLY when that SQL is an ARGUMENT to an EXECUTED query call
+ * (`db.prepare/.exec/.run/.pragma(...)`). This:
+ *   - FIRES on a genuine ledger-mutation bypass in a test (a real `.prepare('UPDATE
+ *     events …').run()`), so the invariant is enforced in tests too;
+ *   - PERMITS the boundary-enforcement assertion STRINGS (bare `const sql = '…'`, not a
+ *     query-call argument) — they are not executed;
+ *   - PERMITS the one documented ordering-PROOF SELECT via a narrow, JUSTIFIED
+ *     `eslint-disable-next-line` carve-out on that exact line (the only legitimately
+ *     executed `ORDER BY created_at` in the whole repo).
+ *
+ * Selectors VERIFIED against installed eslint@10 + typescript-eslint@8 (esquery
+ * descendant + regex-attribute matching), 2026-06-10. The Literal forms use the `>`
+ * direct-child combinator (the SQL string is the call's direct argument); the
+ * TemplateElement form uses the descendant combinator (the template literal nests a
+ * TemplateLiteral between the call and its TemplateElements).
+ */
+const APPEND_INVARIANT_TEST_FILE_SYNTAX = [
+  {
+    // EXECUTED UPDATE/DELETE: a forbidden SQL string passed directly to a
+    // better-sqlite3 / node:sqlite query call. A bare `const sql = 'UPDATE …'`
+    // (the boundary-enforcement fixture's assertion strings) is NOT a call
+    // argument, so it is permitted.
+    selector:
+      'CallExpression[callee.property.name=/^(?:prepare|exec|run|pragma)$/] > Literal[value=/(?:UPDATE\\s+events|DELETE\\s+FROM\\s+events)/i]',
+    message:
+      'THE APPEND INVARIANT (tests): no EXECUTED UPDATE/DELETE against the events ledger — append every state change via dataAccess.append.',
+  },
+  {
+    // EXECUTED ORDER BY created_at: created_at is display-only, never an order key.
+    // The one documented proof SELECT (append.qa.test.ts) carries a justified
+    // scoped disable directive (see that file).
+    selector:
+      'CallExpression[callee.property.name=/^(?:prepare|exec|run|pragma)$/] > Literal[value=/ORDER\\s+BY\\s+created_at/i]',
+    message:
+      'THE APPEND INVARIANT (tests): order by seq, never created_at (display-only). The one documented seq≠created_at proof SELECT carries a justified eslint-disable.',
+  },
+  {
+    // Template-literal SQL equivalents passed to an executed query call.
+    selector:
+      'CallExpression[callee.property.name=/^(?:prepare|exec|run|pragma)$/] TemplateElement[value.cooked=/(?:UPDATE\\s+events|DELETE\\s+FROM\\s+events|ORDER\\s+BY\\s+created_at)/i]',
+    message:
+      'THE APPEND INVARIANT (tests): no EXECUTED UPDATE/DELETE against events and never ORDER BY created_at (use seq). See docs/append-invariant-checklist.md.',
+  },
+];
+
 export default tseslint.config(
   // 0. Global ignores (flat-config: a config object with only `ignores`).
   {
@@ -230,17 +294,26 @@ export default tseslint.config(
     },
   },
 
-  // 6. Test files. The boundary-enforcement fixture test embeds forbidden SQL
-  //    and import specifiers AS STRING LITERALS to assert the rules fire. The
-  //    no-restricted-imports rule only matches real import statements, so it
-  //    needs no relaxation — but the append-invariant no-restricted-syntax guard
-  //    matches string/template literals by design, so it WOULD flag the fixture
-  //    strings. Disable that guard in test files only; the rule's real coverage
-  //    is over production core/data-access source, which tests are not.
+  // 6. Test files. The append invariant is now ENFORCED in tests too (Story 13.4,
+  //    AC2; closes deferred-work 1.5) — but via the AST-based
+  //    APPEND_INVARIANT_TEST_FILE_SYNTAX guard, NOT the production bare-literal
+  //    regex. The AST guard flags forbidden SQL only when it is an ARGUMENT to an
+  //    EXECUTED query call (db.prepare/.exec/.run/.pragma), so it:
+  //      - FIRES on a real ledger-mutation bypass in a test;
+  //      - PERMITS boundary-enforcement.test.ts's bare ASSERTION STRINGS
+  //        (`const sql = 'UPDATE events …'`, never executed — the inputs that
+  //        prove the PRODUCTION rule in blocks 4/5 fires);
+  //      - PERMITS the one documented ordering-PROOF `ORDER BY created_at` SELECT
+  //        in append.qa.test.ts via a narrow justified eslint-disable on that line.
+  //    The no-restricted-imports rule only matches real import statements, so the
+  //    boundary fixture's import-specifier strings still need no relaxation.
+  //    (Previously this block disabled no-restricted-syntax entirely, because the
+  //    production literal regex could not tell the fixture/proof strings from a
+  //    real violation; the AST guard resolves exactly that.)
   {
     files: ['**/*.test.{ts,tsx}'],
     rules: {
-      'no-restricted-syntax': 'off',
+      'no-restricted-syntax': ['error', ...APPEND_INVARIANT_TEST_FILE_SYNTAX],
     },
   },
 

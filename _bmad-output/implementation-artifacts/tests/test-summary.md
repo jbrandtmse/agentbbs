@@ -98,3 +98,82 @@ correct as the codebase grows.
 ## Next Steps (lead)
 
 - Lead per-story smoke + commit. All changes left uncommitted (QA does not commit).
+
+---
+
+# Story 13.4 — data-access malformed-payload validation + append-invariant test-file lint guard (QA stage)
+
+## Generated / Extended Tests
+
+### 1.6 — malformed-payload validation (`packages/data-access/src/mapping.test.ts`, EXTENDED)
+- [x] **Systematic malformed-payload matrix across all 10 closed event types** — a single
+  source-of-truth `cases` table drives, per type: a well-formed round-trip (validation does
+  NOT fire) + every required STRING key dropped / wrong-typed (number) / NULL + every required
+  INTEGER key missing / string-`"x"` / non-integer-`1.5`. Hardens the dev's representative
+  subset to EVERY field of EVERY branch (project.announced title/description, announcement.posted
+  room_id/subject/body, board.joined project_id, room.participant_added handle, identity.seen
+  handle, identity.focus_updated, etc. — all previously unsampled).
+- [x] **rowToEvent propagation widened** to a second multi-key type (announcement.posted,
+  4-key) so the on-disk JSON → `JSON.parse` → `wireToPayload` chain is proven beyond the dev's
+  project.announced case.
+- [x] **QA OBSERVATION pinned** — `message_seq` positivity is NOT validated (only integer-ness):
+  a negative (`-5`) and zero (`0`) seq currently PASS `requireInt`. Two tests pin this current
+  behavior so it is a documented choice, not an unstated gap. **LOW** (see Findings).
+
+### 1.5 — append-invariant test-file lint guard (`packages/data-access/src/append-invariant-guard.test.ts`, NEW)
+A durable regression test for `eslint.config.js` block 6 (`APPEND_INVARIANT_TEST_FILE_SYNTAX`),
+replacing the dev's throwaway empirical probe. Runs the repo's REAL flat config via the ESLint
+Node API (`ESLint.lintText` against a virtual `*.test.ts` path), mirroring
+`packages/core/src/boundary-enforcement.test.ts`.
+- [x] FIRES on executed `db.prepare('UPDATE events …').run()` (string literal)
+- [x] FIRES on executed `db.exec('DELETE FROM events …')`
+- [x] FIRES on executed `db.prepare('… ORDER BY created_at …').all()`
+- [x] FIRES on UPDATE **and** DELETE inside a **TEMPLATE literal** passed to `.prepare` (Rule-18
+  call-form blind spot — both literal forms covered)
+- [x] FIRES repo-wide (also under a `packages/core/src/*.test.ts` path, not just data-access)
+- [x] PERMITS bare `const sql = 'UPDATE/DELETE/ORDER BY created_at …'` assertion strings
+  (boundary-enforcement.test.ts fixture style — never executed)
+- [x] PERMITS executed `INSERT INTO events` (append-only permits inserts — the Rule-8 reconciliation)
+- [x] PERMITS executed `ORDER BY seq`
+- [x] PERMITS the documented `ORDER BY created_at` proof SELECT under its scoped
+  `/* eslint-disable no-restricted-syntax */` carve-out (mirrors append.qa.test.ts)
+
+## Mutation Testing (Rule 7) — both halves proven non-vacuous
+
+- **1.6 matrix:** reverted `announcement.posted` `body` from `requireString` → bare `String(wire.body)`
+  → EXACTLY the 4 body cases (missing / wrong-typed / null / rowToEvent-propagation) went RED, the
+  other 82 stayed GREEN; restored byte-identical → 86/86 GREEN. (Complements the dev's own
+  `String/Number` revert that reddened his block.)
+- **1.5 guard (direction A — guard active vs off):** reverted block 6 to `no-restricted-syntax: 'off'`
+  → all 6 FIRES cases RED, all 6 PERMITS cases GREEN; restored → 12/12 GREEN.
+- **1.5 guard (direction B — AST precision vs bare regex):** swapped block 6 to the production
+  bare-literal `APPEND_INVARIANT_RESTRICTED_SYNTAX` → EXACTLY the 3 bare-assertion-string PERMITS
+  cases went RED (the bare regex wrongly flags fixture strings), INSERT/seq/carve-out PERMITS stayed
+  GREEN; restored → 12/12 GREEN. Proves the AST-precision (boundary-fixture-strings-survive) property
+  specifically.
+
+## Verification Evidence
+
+- **Contract frozen (AC3 / Rule 13):** `git diff HEAD -- packages/core/src/errors.ts packages/mcp-server/src`
+  EMPTY; `MalformedPayloadError` is data-access-local, NOT a `BOARD_ERROR_CODE`. `mapping.ts` has zero
+  bare-coercion residue (all branches use `requireString`/`requireInt`).
+- **Discoverability (Rule 8):** the new `append-invariant-guard.test.ts` is co-located `*.test.ts`,
+  in no ignore list; ran in the default ROOT suite (187 files) and standalone (12 tests).
+- **Full gate (Rule 20), every leg:** `pnpm lint` 0 (the re-enabled guard green on all legit code,
+  incl. this guard test's own fixture strings — they are args to the local `lint()` helper, not to
+  `prepare/exec/run/pragma`, so the AST guard correctly does not self-trip) / `pnpm typecheck` exit 0 /
+  `pnpm format` (`prettier --check .`) clean / ROOT `pnpm test` 187 files **1769 passed** 0 failed
+  (was 186 / 1687 at dev hand-off; +1 file +82 cases).
+
+## Findings (handed to lead/CR)
+
+- **LOW — `message_seq` positivity unvalidated.** `requireInt` rejects non-numbers/NaN/non-integers
+  but accepts negative and zero integers. No AC requires positivity (the AC asks for "missing/wrong-typed",
+  not "out-of-range"), and the upstream write path only ever stamps real positive AUTOINCREMENT seq values,
+  so a ≤ 0 seq cannot arise except from a hand-corrupted ledger that already failed other invariants.
+  Pinned as current behavior, not changed (production untouched by QA). Surfaced for the lead/CR to
+  decide whether a positivity guard is worth adding — judged out of scope for this story.
+
+## Next Steps (lead)
+
+- Lead per-story smoke + commit. All changes left UNCOMMITTED (QA does not commit).

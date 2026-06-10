@@ -193,9 +193,18 @@ export function rowToEvent(row: StoredEventRow): Event {
  * (mirror of {@link payloadToWire}); adding an `EventType` without a branch here
  * is a compile error via the `assertNever` default.
  *
- * The `wire` record is read positionally per known key; values are coerced to the
- * payload field types (`messageSeq` is an integer on the wire). Returns the
- * payload typed as the matching `PayloadOf<T>` — the dispatch in
+ * Story 1.6 (completed in Story 13.4): every required wire key is shape-VALIDATED
+ * per branch via {@link requireString}/{@link requireInt} BEFORE it is read, so a
+ * known-type-but-MALFORMED row (a missing/wrong-typed payload key — e.g. a
+ * corrupt or foreign row, or a hand-edited ledger) fails LOUDLY at this seam with
+ * a clear data-access error instead of silently coercing `undefined → "undefined"`
+ * / `undefined → NaN` and leaking a structurally-wrong Event into core. This is
+ * the exact loud-failure stance {@link asEventType} already takes for the `type`
+ * column, now extended to the payload shape (NFR10 ledger integrity). The thrown
+ * error is a plain data-access {@link MalformedPayloadError}, NOT a
+ * `BoardError`/`BOARD_ERROR_CODE` — the closed agent-facing error set is unchanged.
+ *
+ * Returns the payload typed as the matching `PayloadOf<T>` — the dispatch in
  * {@link rowToEvent} keeps the discriminated-union relationship intact.
  */
 export function wireToPayload(
@@ -205,58 +214,124 @@ export function wireToPayload(
   switch (type) {
     case 'identity.registered':
       return {
-        handle: String(wire.handle),
-        currentFocus: String(wire.current_focus),
+        handle: requireString(wire, 'handle', type),
+        currentFocus: requireString(wire, 'current_focus', type),
       } satisfies PayloadOf<'identity.registered'>;
     case 'identity.focus_updated':
       return {
-        handle: String(wire.handle),
-        currentFocus: String(wire.current_focus),
+        handle: requireString(wire, 'handle', type),
+        currentFocus: requireString(wire, 'current_focus', type),
       } satisfies PayloadOf<'identity.focus_updated'>;
     case 'identity.seen':
       return {
-        handle: String(wire.handle),
+        handle: requireString(wire, 'handle', type),
       } satisfies PayloadOf<'identity.seen'>;
     case 'project.announced':
       return {
-        projectId: String(wire.project_id),
-        title: String(wire.title),
-        description: String(wire.description),
+        projectId: requireString(wire, 'project_id', type),
+        title: requireString(wire, 'title', type),
+        description: requireString(wire, 'description', type),
       } satisfies PayloadOf<'project.announced'>;
     case 'board.joined':
       return {
-        projectId: String(wire.project_id),
+        projectId: requireString(wire, 'project_id', type),
       } satisfies PayloadOf<'board.joined'>;
     case 'announcement.posted':
       return {
-        projectId: String(wire.project_id),
-        roomId: String(wire.room_id),
-        subject: String(wire.subject),
-        body: String(wire.body),
+        projectId: requireString(wire, 'project_id', type),
+        roomId: requireString(wire, 'room_id', type),
+        subject: requireString(wire, 'subject', type),
+        body: requireString(wire, 'body', type),
       } satisfies PayloadOf<'announcement.posted'>;
     case 'room.replied':
       return {
-        roomId: String(wire.room_id),
-        body: String(wire.body),
+        roomId: requireString(wire, 'room_id', type),
+        body: requireString(wire, 'body', type),
       } satisfies PayloadOf<'room.replied'>;
     case 'room.participant_added':
       return {
-        roomId: String(wire.room_id),
-        handle: String(wire.handle),
+        roomId: requireString(wire, 'room_id', type),
+        handle: requireString(wire, 'handle', type),
       } satisfies PayloadOf<'room.participant_added'>;
     case 'message.reacted':
       return {
-        messageSeq: Number(wire.message_seq),
+        messageSeq: requireInt(wire, 'message_seq', type),
       } satisfies PayloadOf<'message.reacted'>;
     case 'message.unreacted':
       return {
-        messageSeq: Number(wire.message_seq),
+        messageSeq: requireInt(wire, 'message_seq', type),
       } satisfies PayloadOf<'message.unreacted'>;
     default:
       // Exhaustiveness guard: a new EventType without a branch leaves `type`
       // non-`never` here and this fails to compile.
       return assertNever(type);
   }
+}
+
+/**
+ * A corrupt/foreign/hand-edited ledger row whose `type` is KNOWN but whose stored
+ * payload does not match that type's shape (a missing or wrong-typed key). This is
+ * a data-access-LOCAL failure of the read seam — it is deliberately NOT a
+ * `BoardError`/`BOARD_ERROR_CODE` (the closed agent-facing error vocabulary stays
+ * byte-identical; Story 13.4 AC3). The mirror of {@link asEventType}'s loud failure
+ * for the `type` column, extended to the payload shape.
+ */
+export class MalformedPayloadError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'MalformedPayloadError';
+  }
+}
+
+/**
+ * Read a required STRING payload key from the parsed wire object, throwing a clear
+ * {@link MalformedPayloadError} if it is absent or not a string — instead of the
+ * old `String(undefined) === "undefined"` silent coercion. `key` is the snake_case
+ * wire key; `type` is the event type, included in the message for diagnosis.
+ */
+function requireString(
+  wire: Record<string, unknown>,
+  key: string,
+  type: EventType,
+): string {
+  const value = wire[key];
+  if (typeof value !== 'string') {
+    throw new MalformedPayloadError(
+      `malformed ${type} payload: expected string for "${key}", got ${describe(value)}`,
+    );
+  }
+  return value;
+}
+
+/**
+ * Read a required INTEGER payload key from the parsed wire object, throwing a clear
+ * {@link MalformedPayloadError} if it is absent or not a finite integer — instead of
+ * the old `Number(undefined) === NaN` / `Number("x") === NaN` silent coercion.
+ * (`message_seq` is the only integer payload key; it must be a real seq value.)
+ */
+function requireInt(
+  wire: Record<string, unknown>,
+  key: string,
+  type: EventType,
+): number {
+  const value = wire[key];
+  if (typeof value !== 'number' || !Number.isInteger(value)) {
+    throw new MalformedPayloadError(
+      `malformed ${type} payload: expected integer for "${key}", got ${describe(value)}`,
+    );
+  }
+  return value;
+}
+
+/** Compact, safe description of an unexpected wire value for error messages. */
+function describe(value: unknown): string {
+  if (value === undefined) {
+    return 'undefined';
+  }
+  if (typeof value === 'string') {
+    return `string ${JSON.stringify(value)}`;
+  }
+  return `${typeof value} ${JSON.stringify(value)}`;
 }
 
 /** SCREAMING set used only to re-narrow the bare DB `type` column to EventType. */

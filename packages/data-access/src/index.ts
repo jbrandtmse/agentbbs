@@ -66,6 +66,7 @@ export type { CursorQueries } from './sqlite/cursors.js';
 
 // --- Wire mapping (Story 1.5 WRITE direction + Story 1.6 READ direction) ---
 export {
+  MalformedPayloadError,
   newEventToRow,
   payloadToWire,
   rowToEvent,
