@@ -256,7 +256,7 @@ Every requirement maps to at least one epic. Primary epic listed first; `(+En)` 
 
 ## Epic List
 
-**Sequencing rationale.** Epic 1 is foundational infrastructure (the append-only ledger + `seq` total order behind the data-access seam) because every projection in the system folds over it — the architecture mandates building it before anything that reads. Epics 2–6 then deliver agent-facing value sliced by PRD capability group, each verifiable end-to-end through the MCP surface; Epic 6 closes the complete zero-relay loop (SM1). Epics 7–8 drive unprompted adoption (the Negotiation Protocol convention + BMad cadence/bootstrap → SM4). Epics 9–10 deliver the operator's two surfaces — web first (canonical brand, `ui-shared` built once), then the VS Code extension at behavioral parity. Epic 11 makes the institutional-memory ledger durable and the project open-source-ready. Epic 12 (added 2026-06-02, post-Epic-8 via Sprint Change Proposal) corrects the installation kit to the intended **global single-machine board** topology and adds cross-project onboarding + operator board commands; it depends only on Epic 8 (done), so it is schedulable independently of Epics 9–11. Dependencies flow strictly forward; there are no cycles.
+**Sequencing rationale.** Epic 1 is foundational infrastructure (the append-only ledger + `seq` total order behind the data-access seam) because every projection in the system folds over it — the architecture mandates building it before anything that reads. Epics 2–6 then deliver agent-facing value sliced by PRD capability group, each verifiable end-to-end through the MCP surface; Epic 6 closes the complete zero-relay loop (SM1). Epics 7–8 drive unprompted adoption (the Negotiation Protocol convention + BMad cadence/bootstrap → SM4). Epics 9–10 deliver the operator's two surfaces — web first (canonical brand, `ui-shared` built once), then the VS Code extension at behavioral parity. Epic 11 makes the institutional-memory ledger durable and the project open-source-ready. Epic 12 (added 2026-06-02, post-Epic-8 via Sprint Change Proposal) corrects the installation kit to the intended **global single-machine board** topology and adds cross-project onboarding + operator board commands; it depends only on Epic 8 (done), so it is schedulable independently of Epics 9–11. Epic 13 (added 2026-06-09 via Sprint Change Proposal, post-MVP) is a **hardening epic** that retires the prioritized P1–P4 `deferred-work.md` backlog (test-gate flake fixes, import atomicity + corruption-path coverage, operator-handle de-dup, the append-invariant lint guard, and doc/coverage nits); it depends on nothing unshipped and keeps the 17-tool agent contract byte-identical. Dependencies flow strictly forward; there are no cycles.
 
 | Epic | Title | Depends on | Est. stories |
 |---|---|---|---|
@@ -1604,3 +1604,126 @@ So that everything installs idempotently and safely.
 **Given** the kit,
 **When** tested,
 **Then** the content-guards (Rule 10) pin every inlined asset to its canonical source, the executable safety test (Rule 11) runs the kit's OWN helper over real fixtures covering the new targets, and a lead smoke installs end-to-end into a temp project and confirms the global-board connection + that the operator skills resolve.
+
+### Epic 13: Deferred-work cleanup & hardening
+
+_Added 2026-06-09 via Sprint Change Proposal (`sprint-change-proposal-2026-06-09.md`), post-Epic-12, after the MVP (Epics 1–12) merged to `main`. A hardening epic that retires the prioritized P1–P4 `deferred-work.md` backlog. **The 17-tool agent contract stays byte-identical** (no new MCP tool / event / error code; `packages/core/src/errors.ts` + the MCP wire untouched) — but unlike Epic 12 this epic DOES modify board-engine internals (`packages/cli`, `packages/data-access`, lint config, the VS Code/web shared util). P5 items (`9.4-mention`, `9.13-trim`, `10.5-retain-context`) are explicitly OUT (they need a product decision)._
+
+**Goal:** Retire the 13 prioritized P1–P4 open `deferred-work.md` items in one focused hardening pass — making the test gate reliably green (no Windows-temp-dir / Shiki flakes), closing the corruption-path correctness gaps (import atomicity, malformed-payload validation, DB-open-failure coverage), removing the operator-handle drift risk, re-enabling the append-invariant lint guard, and clearing the cosmetic/doc/coverage nits — each closed with evidence, the agent contract frozen.
+
+**Requirements covered:** no new FR/NFR — reinforces **NFR3** (resilience/retry), **NFR10** (ledger integrity), and test-suite reliability. **Depends on:** nothing unshipped (every item references Epics 1–12 code); schedulable immediately.
+
+**Success criteria:**
+- The canonical `pnpm test` gate is reliably green across REPEATED full-suite runs on Windows — no `seed-protocol-race` EPERM, no CLI import-dispatch ENOENT, no Shiki tokenizer flake recurrence (proven by N≥3 consecutive clean full-suite runs, not a single pass).
+- `agentbbs import` of a non-contiguous / hand-mangled archive appends NOTHING (atomic all-or-nothing), and the DB-open-failure path is directly asserted on both `export` and `import`.
+- `data-access` rejects a known-type-but-malformed payload row; the append-invariant lint guard is enforced in `*.test.ts` (no raw-SQL append bypass).
+- Operator-handle canonicalization lives in ONE shared util consumed by both the web host and the VS Code extension (no duplicated copy to drift).
+- Each closed item carries a `deferred-work.md` status-update with evidence; the 17-tool agent contract + closed error/event sets are byte-identical (drift guards green); P5 (3 items) remains open with rationale.
+
+#### Story 13.1: Windows temp-dir teardown flake hardening (P1)
+
+As a developer relying on the CI gate,
+I want the full test suite to stop flaking on Windows temp-dir teardown,
+So that a red gate always means a real regression.
+
+**Acceptance Criteria:**
+
+**Given** the `data-access` `seed-protocol-race.test.ts` and the `cli` `index.test.ts` import-dispatch negative path (the two recorded Windows temp-dir flakes — `E10-baseline-seedrace-eperm`, `E12-postmerge`),
+**When** the test infra is hardened,
+**Then** a shared temp-dir helper creates a hermetic per-test directory and removes it with retry/backoff (or a swallow-on-EPERM best-effort, since temp dirs are OS-reclaimed), and the assertion-bearing logic is unchanged.
+
+**Given** the hardened suites,
+**When** the full ROOT `pnpm test` is run **N≥3 consecutive times on Windows under full parallel load**,
+**Then** neither flake recurs (the fix ELIMINATES the race, it does not mask the assertion — verify the assertions still fire by a Rule-7 mutation).
+
+**Given** the change,
+**When** inspected,
+**Then** it is test-infra only (no production-source behavior change), and the `deferred-work.md` entries `E10-baseline-seedrace-eperm` + `E12-postmerge` are closed with evidence.
+
+#### Story 13.2: Shiki full-suite tokenizer flake hardening (P1)
+
+As a developer relying on the CI gate,
+I want the Shiki markdown-render tests to stop flaking under full-suite parallel load,
+So that the `ui-shared` render suite is trustworthy.
+
+**Acceptance Criteria:**
+
+**Given** the Shiki full-suite tokenizer flake (`highlight.test.ts` / markdown-render DOM tests RED under parallel load, GREEN in isolation — `9.5-shiki-warmup`, `10.5-shiki-flake`, `10.6-shiki-flake`; both the alias-miss and `@shikijs/primitive startIndex` signatures),
+**When** the warmup is hardened,
+**Then** the highlighter is reliably warm before any parallel test tokenizes (e.g. a global/project-level `beforeAll(prewarmHighlighter)` + the `isHighlighterWarm()` guard applied suite-wide, or the markdown-render tests serialized), with the rendered-output assertions unchanged.
+
+**Given** the hardened suite,
+**When** the full ROOT `pnpm test` is run N≥3 consecutive times,
+**Then** no Shiki tokenizer flake recurs, and the three `deferred-work.md` Shiki entries are closed with evidence (consolidated — one fix, three entries).
+
+#### Story 13.3: Import replay atomicity + DB-open-failure coverage (P2)
+
+As an operator restoring a backup,
+I want a corrupt/non-contiguous archive to append NOTHING rather than leave a partial ledger,
+So that a failed `import` never half-writes my board.
+
+**Acceptance Criteria:**
+
+**Given** `agentbbs import` and a NON-CONTIGUOUS / hand-mangled archive (`11.3-replay-nonatomicity`),
+**When** the replay runs,
+**Then** the import is fully atomic — a pre-replay contiguity check (archived seqs are exactly 1..N) rejects a bad archive in the nothing-appended phase, the valid replay runs as a SINGLE batched `await dataAccess.append(orderedNewEvents)` (the existing atomic `.immediate()` transaction), and a post-append `assignedSeqs[i] === ordered[i].seq` assertion remains as defense-in-depth. The QA non-atomicity characterization test is updated to assert an EMPTY ledger on the now-pre-replay rejection. **No core/MCP/port change** (the batched-atomic `append` already exists).
+
+**Given** the DB-OPEN-failure path of AC5 (`11.2-dbopen-trigger`),
+**When** `export` and `import` are pointed at an unopenable `--db` (an existing directory / a non-SQLite file),
+**Then** each reports `agentbbs <cmd>: failed …` on stderr + a non-zero exit, asserted directly by a test (closing the second half of the AC5 error matrix on BOTH commands).
+
+**Given** the changes,
+**When** tested,
+**Then** Rule-7 mutation confirms atomicity is non-vacuous (a planted mid-replay throw must leave an EMPTY ledger, not a partial one), and `deferred-work.md` `11.3-replay-nonatomicity` + `11.2-dbopen-trigger` are closed with evidence.
+
+#### Story 13.4: data-access malformed-payload validation + append-invariant lint guard (P2/P3)
+
+As a maintainer of the append-only ledger,
+I want corrupt rows rejected at the read seam and the append-invariant enforced even in tests,
+So that the ledger's integrity guarantees hold end-to-end.
+
+**Acceptance Criteria:**
+
+**Given** `wireToPayload` / the data-access mapping (`packages/data-access/src/mapping.ts`, `1.6`),
+**When** it reads a known-type-but-MALFORMED payload row,
+**Then** it validates the payload shape and rejects/surfaces the malformed row (a clear data-access-local error) rather than returning a structurally-wrong object — with a test driving a planted malformed row.
+
+**Given** the append-invariant ESLint guard (`eslint.config.js`, `1.5`) currently disabled in `*.test.ts`,
+**When** it is re-enabled (AST-based where practical, not a string-literal regex),
+**Then** the append-only invariant (all writes via `dataAccess.append`; no raw `INSERT/UPDATE/DELETE`; order by `seq` never `created_at`) is enforced in test files too, any genuine test-only bypass is migrated to `append`, and the gate stays green.
+
+**Given** the changes,
+**When** tested,
+**Then** the 17-tool agent contract + closed `BOARD_ERROR_CODES` are byte-identical (no new error code — the malformed-row rejection is a data-access-local error, NOT added to the closed set), and `deferred-work.md` `1.6` + `1.5` are closed with evidence.
+
+#### Story 13.5: Operator-handle canonicalization de-duplication (P3)
+
+As a maintainer of the two operator surfaces,
+I want one shared handle-canonicalization util,
+So that the trim+lowercase rule cannot drift between the web host and the VS Code extension.
+
+**Acceptance Criteria:**
+
+**Given** `resolveOperatorHandle` / `canonicalizeOperatorHandle` duplicated in `packages/cli/src/ui.ts` and `apps/vscode-extension/src/tree/operator-handle.ts` (`10.3-operator-handle-dup`),
+**When** the duplication is removed,
+**Then** the canonicalization (trim + lowercase, mirroring `register.ts#canonicalize`) lives in ONE shared location both surfaces import — neither carries its own copy — and the behavior is byte-identical to today (a test pins the shared util's output for the canonical cases).
+
+**Given** the refactor,
+**When** tested,
+**Then** both surfaces' existing tests stay green, the 17-tool contract is untouched, and `deferred-work.md` `10.3-operator-handle-dup` is closed with evidence.
+
+#### Story 13.6: Cosmetic / doc / coverage batch (P4)
+
+As a maintainer,
+I want the small recorded nits cleared in one pass,
+So that the backlog reflects only items that genuinely need a decision.
+
+**Acceptance Criteria:**
+
+**Given** the four P4 items,
+**When** each is addressed,
+**Then**: (a) `10.3-unread-count-test-gap` — the uncapped `"N new"` unread count in `TreeItem.description` gains a direct test assertion; (b) `9.1-L2` — DESIGN.md's text-body-light contrast reference is corrected `17.4` → `~16.7` (the true WCAG value); (c) `9.10-tree.css-comment` — the `SidebarTreeItem.tsx` header comment is corrected to say the focus-ring rule ships in `chrome.css` (not `tree.css`); (d) `9.10-no-modal-substring` — the brittle raw-substring no-modal sweep in `App.test.tsx` is made precise-token (or its role-based assertions confirmed authoritative and the substring narrowing documented as belt-and-suspenders), mutation-tested non-vacuous.
+
+**Given** the batch,
+**When** tested,
+**Then** the full ROOT gate is green and `deferred-work.md` items `10.3-unread-count-test-gap`, `9.1-L2`, `9.10-tree.css-comment`, `9.10-no-modal-substring` are closed with evidence.
