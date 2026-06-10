@@ -14,3 +14,10 @@ Append-only. TAB-separated: `<UTC>` TAB `<Story <id> | Epic <N>>` TAB `<stage>` 
 2026-06-10T13:18:00Z	Story 13.1	qa_complete	spawn_at=2026-06-10T13:12:30Z model=claude-opus-4-8 tests=packages/data-access/src/temp-dir.test.ts tests_added=5 first_run_failures=0 closing_sections_present=true
 2026-06-10T13:25:00Z	Story 13.1	cr_complete	spawn_at=2026-06-10T13:18:30Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=3 high=0 med=0 low=0 clarifications=0 closing_sections_present=true
 2026-06-10T13:27:00Z	Story 13.1	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=root-pnpm-test-185files-1668passed-0failed-no-eperm model=claude-opus-4-8
+2026-06-10T13:28:00Z	Story 13.1	committed	sha=38fa4ba submodules=
+2026-06-10T13:32:00Z	Story 13.2	story_created	path=_bmad-output/implementation-artifacts/13-2-shiki-full-suite-tokenizer-flake-hardening.md
+2026-06-10T13:55:00Z	Story 13.2	dev_complete	spawn_at=2026-06-10T13:32:30Z model=claude-opus-4-8 files=vitest.config.ts loc_added=~30 clarifications=0 nfr_tripwires=0 adr_violations_surfaced=0 cycle_iteration=1 closing_sections_present=true
+2026-06-10T13:55:05Z	Story 13.2	adr_verifications_complete	result=none_required
+2026-06-10T14:12:00Z	Story 13.2	qa_complete	spawn_at=2026-06-10T13:55:30Z model=claude-opus-4-8 tests=packages/ui-shared/src/markdown/highlighter-serialization.guard.test.ts tests_added=4 first_run_failures=0 closing_sections_present=true
+2026-06-10T14:30:00Z	Story 13.2	cr_complete	spawn_at=2026-06-10T14:12:30Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=0 high=0 med=0 low=0 clarifications=0 closing_sections_present=true
+2026-06-10T14:33:00Z	Story 13.2	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=root-pnpm-test-186files-1672passed-0failed-no-shiki-fault model=claude-opus-4-8

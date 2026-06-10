@@ -41,6 +41,12 @@ import path from 'node:path';
 
 import { defineConfig } from 'vitest/config';
 
+// Story 13.2 — the serialized Shiki-highlighter suite list lives in its own tiny
+// module (no `vitest` types) so the Rule-8 drift guard can import it as the single
+// source of truth WITHOUT dragging this config (and its non-project `passWithNoTests`
+// typings) into the typecheck program. See vitest.highlighter-suites.ts.
+import { highlighterSuites } from './vitest.highlighter-suites.js';
+
 // Absolute repo root (this config file's directory), ESM-safe.
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -58,6 +64,54 @@ const workspaceSrcAlias: Record<string, string> = {
   '@agentbbs/cli': pkgSrc('cli'),
   '@agentbbs/ui-shared': pkgSrc('ui-shared'),
 };
+
+// --- Shiki highlighter-using suites: serialized to kill the tokenizer flake ---
+// (Story 13.2 — consolidates deferred-work 9.5-shiki-warmup + 10.5-shiki-flake +
+// 10.6-shiki-flake.)
+//
+// ROOT CAUSE (verified against the INSTALLED `@shikijs/primitive@4.1.0` source —
+// `dist/index.mjs` `_tokenizeWithTheme`, line 691): the production renderer
+// (`packages/ui-shared/src/markdown/highlight.ts`) tokenizes with
+// `codeToTokens(..., { includeExplanation: true })`. That path runs TWO grammar
+// passes per line — `tokenizeLine` (for the explanation/scopes) and `tokenizeLine2`
+// (for the encoded color metadata) — and indexes the explanation tokens by a running
+// counter (`tokensWithScopes[tokensWithScopesIndex]`). Under FULL-SUITE CONCURRENCY
+// (many Vitest worker processes each tokenizing simultaneously, under memory
+// pressure) those two passes intermittently DESYNC, the explanation array runs
+// short, and `tokenWithScopes` is `undefined` → `TypeError: Cannot read properties
+// of undefined (reading 'startIndex')`. RED-under-parallel-load / GREEN-in-isolation
+// — exactly the 10.5/10.6 signature.
+//
+// WHY NOT "more prewarm": per-file `beforeAll(prewarmHighlighter)` is ALREADY in
+// every highlighter-using file; it guarantees the singleton is LOADED, but the fault
+// is a concurrency/memory-pressure bug INSIDE the library's dual-pass tokenizer, not
+// a cold-highlighter miss. More prewarm cannot fix it.
+//
+// WHY NOT "bump @shikijs/*" (Option B): Research-First (2026-06-10, Perplexity)
+// found NO documented 4.x patch fixing this `_tokenizeWithTheme`/`startIndex` fault;
+// `@shikijs/core@4.2.0` exists but is NOT documented as addressing it. A blind,
+// undocumented bump risks silently changing the inert CSS-class-span OUTPUT, which
+// AC3 freezes byte-for-byte. Rejected.
+//
+// THE FIX (Option A — remove the concurrency): collect EVERY highlighter-using test
+// file into ONE dedicated project that runs with `fileParallelism: false` (a
+// supported Vitest 4.1.7 top-level option — verified in the installed
+// `vitest/dist/chunks/reporters.d.CtLUhkkA.d.ts`: "Should all test files run in
+// parallel … Setting this to `false` will override `maxWorkers` to `1`"). Within
+// this project the files run ONE AT A TIME, so the tokenizer is never invoked
+// concurrently; and because NO file OUTSIDE this project uses the highlighter, there
+// is no concurrent tokenization anywhere in the run. Other projects stay fully
+// parallel (fileParallelism is per-project — verified via Research-First). These
+// files are EXCLUDED from the two existing projects so they run in exactly one place.
+// Single-root-config invariant (Story 1.2) preserved — this third project lives in
+// the ONE root config. The serial project uses happy-dom + the DOM act() setup so the
+// `.tsx` React renders work (and the pure-node `highlight.test.ts` runs fine under
+// happy-dom — verified); the two `render-markdown*.ts` files' own
+// `@vitest-environment happy-dom` docblocks are now redundant-but-harmless.
+//
+// The list itself (`highlighterSuites`) is imported from `vitest.highlighter-suites.ts`
+// (a types-free module) so the Story-13.2 QA discoverability drift-guard can pin it as
+// the single source of truth without dragging this config into the typecheck program.
 
 export default defineConfig({
   // Top-level alias (applies to the root run / config resolution).
@@ -99,6 +153,11 @@ export default defineConfig({
             // canonical gate is ROOT `pnpm test`, which maps it; a per-package `vitest` run does
             // NOT and would falsely report `document is not defined`).
             'apps/vscode-extension/src/**/*.test.tsx',
+            // Story 13.2 — the highlighter-using `.ts` suites move to the serialized
+            // `markdown-serial` project (below) so they never tokenize concurrently. Excluded
+            // here so each runs in exactly one project (the `.tsx` ones are already excluded by
+            // the `.test.tsx` globs above).
+            ...highlighterSuites,
           ],
           passWithNoTests: true,
         },
@@ -128,9 +187,47 @@ export default defineConfig({
             'apps/web/src/**/*.test.tsx',
             'apps/vscode-extension/src/**/*.test.tsx',
           ],
+          // Story 13.2 — the highlighter-using `.tsx` suites move to the serialized
+          // `markdown-serial` project (below). Excluded here so each runs in exactly one
+          // project. The DOM-mapping for every OTHER `.test.tsx` is unchanged (Rule 12: the
+          // canonical gate is ROOT `pnpm test`; this keeps non-highlighter `.tsx` on happy-dom).
+          exclude: [...highlighterSuites],
           // Story 9.2 / 9.1-L1: set IS_REACT_ACT_ENVIRONMENT=true so React act()
           // semantics are correct and the act(...) stderr warning is silenced for
           // every DOM-project component test.
+          setupFiles: ['packages/ui-shared/src/test-setup-dom.ts'],
+          passWithNoTests: true,
+        },
+      },
+      {
+        // Story 13.2 — the SERIALIZED Shiki-highlighter project. Every test file that
+        // tokenizes via the `ui-shared` markdown renderer (`highlight.ts` →
+        // `codeToTokens({ includeExplanation: true })`) runs HERE, ONE AT A TIME
+        // (`fileParallelism: false`), so the `@shikijs/primitive@4.1.0`
+        // `_tokenizeWithTheme` dual-pass tokenizer is never invoked concurrently across
+        // worker processes — which is the documented full-suite flake (deferred-work
+        // 9.5/10.5/10.6: `TypeError: …reading 'startIndex'`, RED-under-parallel-load /
+        // GREEN-in-isolation). Because NO file outside this project uses the highlighter,
+        // serializing this project alone removes ALL concurrent tokenization in the run;
+        // every other project stays fully parallel (fileParallelism is per-project).
+        //
+        // Environment: happy-dom + the DOM act() setup so the `.tsx` React renders work;
+        // the pure-node `highlight.test.ts` runs fine under happy-dom too (verified). The
+        // alias + setup mirror the `ui-shared-dom` project so behavior is identical apart
+        // from serialization. Single-root-config invariant (Story 1.2) preserved.
+        resolve: {
+          alias: workspaceSrcAlias,
+        },
+        extends: true,
+        test: {
+          name: 'markdown-serial',
+          environment: 'happy-dom',
+          include: [...highlighterSuites],
+          // Serialize: run these files one at a time (overrides maxWorkers to 1 for this
+          // project only — verified against the installed vitest@4.1.7 types). This is the
+          // load-bearing line: it removes the concurrent tokenization that triggers the
+          // library fault.
+          fileParallelism: false,
           setupFiles: ['packages/ui-shared/src/test-setup-dom.ts'],
           passWithNoTests: true,
         },
