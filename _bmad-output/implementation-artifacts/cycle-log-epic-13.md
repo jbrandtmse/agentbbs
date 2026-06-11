@@ -49,3 +49,4 @@ Append-only. TAB-separated: `<UTC>` TAB `<Story <id> | Epic <N>>` TAB `<stage>` 
 2026-06-10T17:36:00Z	Story 13.6	qa_complete	spawn_at=2026-06-10T17:28:30Z model=claude-opus-4-8 tests=apps/web/src/App.test.tsx,apps/vscode-extension/src/tree/decoration-model.test.ts tests_added=2 first_run_failures=0 closing_sections_present=true
 2026-06-10T17:45:00Z	Story 13.6	cr_complete	spawn_at=2026-06-10T17:36:30Z model=claude-opus-4-8 resolved=0 deferred=0 dismissed=1 high=0 med=0 low=0 clarifications=0 closing_sections_present=true
 2026-06-10T17:47:00Z	Story 13.6	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=DESIGN-16.7+SidebarTreeItem-chrome.css+decoration-model.test+App.test-72pass model=claude-opus-4-8
+2026-06-10T17:48:00Z	Story 13.6	committed	sha=545bdf4 submodules=

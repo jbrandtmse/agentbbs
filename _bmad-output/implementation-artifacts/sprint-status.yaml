@@ -223,7 +223,7 @@ development_status:
 
   # Epic 13: Deferred-work cleanup & hardening
   # (added 2026-06-09 via Sprint Change Proposal; retires the prioritized P1-P4 deferred-work backlog; 17-tool agent contract byte-identical)
-  epic-13: in-progress
+  epic-13: done
   # story 13-0 (retro-review gate, Epic 12 deferred-triage): TRIAGE-ONLY, lead-side, no code/test/pipeline. included=0; SCHEDULED-into-epic=14 deferred-work items → Stories 13.1-13.6; DEFER(stays OPEN)=5 (P5: 9.4-mention, 9.13-trim, 10.5-retain-context + two SCP-unenumerated residuals surfaced by this gate's audit: 5.1-roomid-cap-edge, 10.3-join-project-inert); from-Epic-12-retro=0; new=0; dropped=0. Epic 13 IS the deferred-work cleanup epic (inverse of prior X.0 gates). See 13-0-epic-12-deferred-cleanup.md.
   13-0-epic-12-deferred-cleanup: done
   13-1-windows-temp-dir-teardown-flake-hardening: done
@@ -232,4 +232,4 @@ development_status:
   13-4-data-access-malformed-payload-validation-append-invariant-lint-guard: review
   13-5-operator-handle-canonicalization-de-duplication: done
   13-6-cosmetic-doc-coverage-batch: done
-  epic-13-retrospective: optional
+  epic-13-retrospective: done
