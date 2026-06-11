@@ -56,6 +56,19 @@ export function unreadBadge(count: number): string {
 }
 
 /**
+ * Render the EXACT unread count for the `TreeItem.description` — the UNCAPPED companion to
+ * {@link unreadBadge}. Unlike the badge (which collapses past {@link BADGE_MAX_LENGTH} chars to
+ * the `•` glyph because of the `FileDecoration.badge` API cap), the description has NO length
+ * limit, so the count is shown verbatim at any size (`7 new`, `150 new`). Kept vscode-free here
+ * so the format is unit-testable; `BoardTreeProvider` sets `item.description` from it.
+ *
+ * @param count The unread message count (the caller only sets a description when count > 0).
+ */
+export function unreadDescription(count: number): string {
+  return `${count} new`;
+}
+
+/**
  * Map a room's state to its decoration, or `undefined` for a CALM (read, no escalation) room —
  * which renders with no badge. NEEDS YOU outranks plain unread (precedence). The returned
  * `badge` is ALWAYS ≤{@link BADGE_MAX_LENGTH} chars (the API cap is honored here, not at the

@@ -2067,22 +2067,80 @@ describe('App shell — calm states + connection footer (Story 9.10)', () => {
 // across the full state matrix the app can enter: empty, cold-load-in-flight, disconnected, and
 // post-failure. Disconnection + failure surface INLINE only; reading stays unobstructed. ---
 describe('App shell — NO MODAL ANYWHERE, in any state (Story 9.10 calm-posture invariant)', () => {
+  // The forbidden modal/scrim class WORDS — matched as EXACT class tokens (not raw substrings)
+  // per Rule 18, so a legit longer class containing the word (`overlay-none`, `modal-dismissed`)
+  // does NOT false-positive while a real `class="modal"`/`"backdrop"`/`"scrim"`/`"overlay"` trips.
+  const forbiddenClassTokens = new Set([
+    'modal',
+    'backdrop',
+    'scrim',
+    'overlay',
+  ]);
+
+  /**
+   * Collect every class TOKEN under `subtree` that EXACTLY equals a forbidden word. Splits each
+   * element's class list on whitespace (so `-`/`_`-joined superstrings are distinct tokens) and
+   * matches by exact `Set` membership — NOT a substring scan. Returns the offending tokens (empty
+   * = clean). Shared by the live no-modal sweep and the durable discrimination test below, so
+   * there is ONE implementation to keep precise-token.
+   */
+  function offendingModalTokens(subtree: ParentNode): string[] {
+    const offending: string[] = [];
+    for (const el of subtree.querySelectorAll<HTMLElement>('[class]')) {
+      const classAttr = el.getAttribute('class') ?? '';
+      for (const token of classAttr.toLowerCase().split(/\s+/)) {
+        if (token && forbiddenClassTokens.has(token)) offending.push(token);
+      }
+    }
+    return offending;
+  }
+
   /** Assert the WHOLE rendered app contains no modal/blocking-alert affordance of any kind. */
   function assertNoModalAnywhere(): void {
     const root = container; // the entire mounted app subtree
-    // No dialog/alertdialog role, no aria-modal, no `alert` (the blocking live-alarm role).
+    // AUTHORITATIVE no-modal proof — the role/element checks are the load-bearing, non-vacuity-
+    // proven assertions: no dialog/alertdialog role, no aria-modal, no `alert` (the blocking
+    // live-alarm role), no native <dialog>.
     expect(root.querySelector('[role="dialog"]')).toBeNull();
     expect(root.querySelector('[role="alertdialog"]')).toBeNull();
     expect(root.querySelector('[aria-modal="true"]')).toBeNull();
     expect(root.querySelector('[role="alert"]')).toBeNull();
-    // No <dialog> element (the native modal). No backdrop/scrim overlay class.
     expect(root.querySelector('dialog')).toBeNull();
-    const html = root.innerHTML.toLowerCase();
-    expect(html).not.toContain('modal');
-    expect(html).not.toContain('backdrop');
-    expect(html).not.toContain('scrim');
-    expect(html).not.toContain('overlay');
+    // BELT-AND-SUSPENDERS — no backdrop/scrim/overlay CLASS, precise-token (Rule 18).
+    expect(offendingModalTokens(root)).toEqual([]);
   }
+
+  // DURABLE discrimination of the precise-token scan (Rule 18 + Rule 7 baked in, not transient):
+  // pins BOTH directions permanently against a synthetic subtree, so a future regression that
+  // weakens the scan back to a raw substring (or breaks the whitespace token split) turns this
+  // RED in the default suite — the live `assertNoModalAnywhere` sweeps are non-vacuous only if
+  // the underlying scan actually discriminates, which THIS test proves once and for all.
+  it('the precise-token scan FIRES on a real modal/scrim class, in any case', () => {
+    const tpl = document.createElement('div');
+    // A real scrim class — bare, combined-with-other-classes, and upper-case — must all trip.
+    tpl.innerHTML =
+      '<div class="modal"></div>' +
+      '<div class="app backdrop"></div>' +
+      '<span class="SCRIM"></span>' +
+      '<i class="overlay"></i>';
+    expect(offendingModalTokens(tpl).sort()).toEqual([
+      'backdrop',
+      'modal',
+      'overlay',
+      'scrim',
+    ]);
+  });
+
+  it('the precise-token scan does NOT false-positive on a legit superstring class', () => {
+    const tpl = document.createElement('div');
+    // Legit classes that merely CONTAIN a forbidden word as a substring — must stay clean
+    // (the raw-substring scan this replaced would have wrongly flagged every one of these).
+    tpl.innerHTML =
+      '<div class="overlay-none scrim-free modal-dismissed"></div>' +
+      '<div class="backdropper unmodal nonoverlay"></div>' +
+      '<span class="modalless"></span>';
+    expect(offendingModalTokens(tpl)).toEqual([]);
+  });
 
   it('EMPTY board → no modal; the calm tree is the whole UI', async () => {
     vi.stubGlobal(

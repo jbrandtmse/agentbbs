@@ -24,6 +24,7 @@
 import * as vscode from 'vscode';
 
 import { buildTreeModel } from './tree-model.js';
+import { unreadDescription } from './decoration-model.js';
 import { roomUriString } from './room-uri.js';
 
 import type { BoardTreeModel, TreeRoomRow } from './tree-model.js';
@@ -158,9 +159,10 @@ export class BoardTreeProvider implements vscode.TreeDataProvider<BoardTreeNode>
         item.contextValue = row.pending
           ? 'agentbbs.protoRoom'
           : 'agentbbs.room';
-        // The exact unread count rides in `description` (no 2-char cap, unlike the badge).
+        // The exact unread count rides in `description` (no 2-char cap, unlike the badge) —
+        // formatted by the vscode-free `unreadDescription` so the string is unit-testable.
         if (row.unreadCount > 0) {
-          item.description = `${row.unreadCount} new`;
+          item.description = unreadDescription(row.unreadCount);
         }
         // RULE 15: EVERY room row — pending proto-room INCLUDED — is selectable + carries the
         // open command, so it is navigable now (the seam Story 10.4 fills with the webview).

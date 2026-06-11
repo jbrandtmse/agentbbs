@@ -5,11 +5,16 @@
 // an exit code captures + RESETS `process.exitCode` to avoid bleeding into sibling cases
 // (and into the rest of the suite). Nothing is mocked beyond the injected sinks.
 
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+// Shared test-only temp-dir helper (Story 13.1). Relative import — NOT a published barrel
+// export, so nothing ships in any package's public dist/exports (Rule 13). The robust
+// retry/swallow removal (vs the prior naive `rmSync` with no maxRetries) is the
+// `E12-postmerge` Windows temp-dir teardown-flake fix.
+import { makeTempDir, removeTempDir } from '../../../test/support/temp-dir.js';
 
 import { parseArchive } from './archive.js';
 import { dispatch } from './index.js';
@@ -106,7 +111,7 @@ describe('dispatch — export (real, Story 11.2) / import scaffold (recognized s
   it('export is recognized (NOT "Unknown command")', async () => {
     // Point at a fresh temp DB (an empty board → header-only archive) so the dispatch test
     // never touches the repo's real ledger; capture the NDJSON via an injected `out` sink.
-    const dir = mkdtempSync(join(tmpdir(), 'agentbbs-export-dispatch-'));
+    const dir = makeTempDir('agentbbs-export-dispatch-');
     try {
       const sink = makeSink();
       // `export` is dispatch-reachable: it routes to exportCommand (NOT the unknown-command
@@ -117,7 +122,7 @@ describe('dispatch — export (real, Story 11.2) / import scaffold (recognized s
       // The dispatch sink (stdout) must NOT carry the unknown-command path.
       expect(sink.lines.join('\n')).not.toContain('Unknown command');
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      removeTempDir(dir);
     }
   });
 
@@ -129,7 +134,7 @@ describe('dispatch — export (real, Story 11.2) / import scaffold (recognized s
     // asserts dispatch routing + the error contract. Note: importCommand writes to its own
     // stderr default (process.stderr), so the dispatch `write` sink stays empty here — the
     // routing proof is that the unknown-command path was NOT taken and exitCode is 1.
-    const dir = mkdtempSync(join(tmpdir(), 'agentbbs-import-dispatch-'));
+    const dir = makeTempDir('agentbbs-import-dispatch-');
     try {
       const sink = makeSink();
       await dispatch(
@@ -145,12 +150,12 @@ describe('dispatch — export (real, Story 11.2) / import scaffold (recognized s
       expect(sink.lines.join('\n')).not.toContain('Unknown command');
       expect(process.exitCode).toBe(1);
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      removeTempDir(dir);
     }
   });
 
   it('exportCommand writes a header-first NDJSON archive (empty board) + exits 0', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'agentbbs-export-empty-'));
+    const dir = makeTempDir('agentbbs-export-empty-');
     try {
       const log: string[] = [];
       const out: string[] = [];
@@ -167,12 +172,12 @@ describe('dispatch — export (real, Story 11.2) / import scaffold (recognized s
       expect(archive.readState).toEqual([]);
       expect(log.join('\n')).toMatch(/wrote 0 event/i);
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      removeTempDir(dir);
     }
   });
 
   it('exportCommand reports a clear error + non-zero exit when the out-path is unwritable', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'agentbbs-export-badpath-'));
+    const dir = makeTempDir('agentbbs-export-badpath-');
     try {
       const log: string[] = [];
       // An out-path inside a non-existent directory → writeFileSync fails (ENOENT).
@@ -187,7 +192,7 @@ describe('dispatch — export (real, Story 11.2) / import scaffold (recognized s
       expect(process.exitCode).toBe(1);
       expect(log.join('\n')).toMatch(/failed/i);
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      removeTempDir(dir);
     }
   });
 
@@ -196,7 +201,7 @@ describe('dispatch — export (real, Story 11.2) / import scaffold (recognized s
     // gate rejects BEFORE any ledger work. The error contract: a clear "failed" message on the
     // (injected) log sink + exitCode 1. The DB is a fresh temp path that is never created
     // because the parse fails first.
-    const dir = mkdtempSync(join(tmpdir(), 'agentbbs-import-malformed-'));
+    const dir = makeTempDir('agentbbs-import-malformed-');
     try {
       const log: string[] = [];
       await importCommand(['-', '--db', join(dir, 'agentbbs.db')], {
@@ -206,7 +211,68 @@ describe('dispatch — export (real, Story 11.2) / import scaffold (recognized s
       expect(process.exitCode).toBe(1);
       expect(log.join('\n')).toMatch(/failed/i);
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      removeTempDir(dir);
+    }
+  });
+
+  // Story 13.3 (AC2) — DB-OPEN-failure coverage on BOTH commands. The AC5 error matrix had only
+  // the unwritable-OUT-PATH trigger of the export/import command catch asserted; this closes the
+  // other half — the unopenable `--db` trigger — directly, on both commands. An existing
+  // DIRECTORY (or a non-SQLite junk file) cannot be opened as a SQLite DB: better-sqlite3 throws
+  // at `createDataAccess` (open / first-SQL), which flows through the command's try/catch →
+  // `agentbbs <cmd>: failed — …` on the (injected) log + a non-zero exit. No production change is
+  // needed for AC2; these are direct assertions of the already-handled path.
+  it('exportCommand reports a clear error + non-zero exit when --db cannot be opened (directory / non-SQLite file)', async () => {
+    const dir = makeTempDir('agentbbs-export-baddb-');
+    try {
+      // (a) --db pointed at an existing DIRECTORY → cannot open as a SQLite DB.
+      const log: string[] = [];
+      await exportCommand([dir], { log: (line) => log.push(line) });
+      expect(process.exitCode).toBe(1);
+      expect(log.join('\n')).toMatch(/agentbbs export: failed —/);
+
+      // (b) --db pointed at a non-SQLite JUNK file → cannot open as a SQLite DB.
+      process.exitCode = undefined;
+      const junk = join(dir, 'not-a-db.txt');
+      writeFileSync(junk, 'this is not a sqlite database file\n', 'utf8');
+      const log2: string[] = [];
+      await exportCommand(['--db', junk], { log: (line) => log2.push(line) });
+      expect(process.exitCode).toBe(1);
+      expect(log2.join('\n')).toMatch(/agentbbs export: failed —/);
+    } finally {
+      removeTempDir(dir);
+    }
+  });
+
+  it('importCommand reports a clear error + non-zero exit when --db cannot be opened (directory / non-SQLite file)', async () => {
+    const dir = makeTempDir('agentbbs-import-baddb-');
+    try {
+      // A minimal VALID archive (header-only, empty board) so the parse + pre-replay contiguity
+      // checks PASS — isolating the DB-open failure as the sole cause of the rejection.
+      const validEmptyArchive = JSON.stringify({ agentbbs_archive: 1 }) + '\n';
+
+      // (a) --db pointed at an existing DIRECTORY → cannot open as a SQLite DB.
+      const log: string[] = [];
+      await importCommand([dir], {
+        log: (line) => log.push(line),
+        readStdin: () => validEmptyArchive,
+      });
+      expect(process.exitCode).toBe(1);
+      expect(log.join('\n')).toMatch(/agentbbs import: failed —/);
+
+      // (b) --db pointed at a non-SQLite JUNK file → cannot open as a SQLite DB.
+      process.exitCode = undefined;
+      const junk = join(dir, 'not-a-db.txt');
+      writeFileSync(junk, 'this is not a sqlite database file\n', 'utf8');
+      const log2: string[] = [];
+      await importCommand(['--db', junk], {
+        log: (line) => log2.push(line),
+        readStdin: () => validEmptyArchive,
+      });
+      expect(process.exitCode).toBe(1);
+      expect(log2.join('\n')).toMatch(/agentbbs import: failed —/);
+    } finally {
+      removeTempDir(dir);
     }
   });
 });

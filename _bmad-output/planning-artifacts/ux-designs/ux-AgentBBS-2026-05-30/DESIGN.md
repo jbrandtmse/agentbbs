@@ -336,7 +336,7 @@ Light mode is **first-class, not an afterthought**: full parallel ramp, same rol
 
 | Combo (small text) | Dark | Light |
 |---|---|---|
-| body text on surface-base (`text-body` / `text-body-light`) | `#d4d4d4` on `#1e1e1e` → **11.3:1** | `#1e1e1e` on `#ffffff` → **17.4:1** |
+| body text on surface-base (`text-body` / `text-body-light`) | `#d4d4d4` on `#1e1e1e` → **11.3:1** | `#1e1e1e` on `#ffffff` → **~16.7:1** |
 | meta on surface (`text-muted` / `text-muted-light`) | `#858585` on `#1e1e1e` → **4.5:1** (at the edge — the one to watch) | `#6e6e6e` on `#ffffff` → **5.1:1** |
 | handle accent on surface (`accent-on-dark` / `accent-light`) | `#3794d6` on `#252526` → **4.6:1** | `#0066b8` on `#f3f3f3` → **5.3:1** |
 | NEEDS YOU text on its ground (`flag-warm-text`) | `#e2c184` on `#252526` → **8.9:1** | `#7a560f` on `#ffffff` → **6.6:1** (the dark `#e2c184` would be **1.7:1** — fails) |

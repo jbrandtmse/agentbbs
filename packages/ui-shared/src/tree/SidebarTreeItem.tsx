@@ -15,7 +15,7 @@
 // floor: a ROVING TABINDEX (`tabIndex` is 0 for the one active row, -1 otherwise), an
 // `onKeyDown` for APG arrow-key traversal, an `aria-label` so a screen reader announces the
 // row meaningfully, and a `data-tree-id` for the roving-focus DOM lookup. The visible focus
-// ring (AA, ≥3:1) is the `.nav-row:focus-visible` rule in tree.css. React 19 automatic JSX
+// ring (AA, ≥3:1) is the `.nav-row:focus-visible` rule in chrome.css. React 19 automatic JSX
 // runtime.
 
 import { UnreadBadge } from './UnreadBadge.js';

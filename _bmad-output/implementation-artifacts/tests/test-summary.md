@@ -1,65 +1,61 @@
-# Test Automation Summary — Story 12.6 (Epic 12 CAPSTONE), QA stage
+# Test Automation Summary — Story 13.5 (operator-handle canonicalization de-duplication)
 
-Install-kit integration + safety re-proof. QA strengthening over the dev's capstone coverage.
-NO board-engine change (Rule 13): only the two named test files differ in the frozen
-`packages/core` / `packages/data-access` / `packages/mcp-server/src` paths; the kit + helper are
-assets under `integration/bmad/`.
+QA stage: `qa-generate-e2e-tests`. Date: 2026-06-10. Epic 13 (deferred-work cleanup & hardening).
 
-## Generated / Strengthened Tests (all in the dev-touched files; discoverable by default `pnpm test`, Rule 8)
+Pure refactor (Rule 13 thin-client). The duplicated operator-handle canonicalization
+(trim + lowercase → `null` on empty) is now ONE shared `@agentbbs/core` util
+(`canonicalizeOperatorHandle`), imported by both the cli web host (`packages/cli/src/ui.ts`)
+and the VS Code extension (`apps/vscode-extension/src/tree/operator-handle.ts`). Marquee risk =
+BEHAVIORAL DRIFT from the extract-and-share. QA added a pre-refactor **equivalence matrix** on
+all three surfaces.
 
-### `packages/mcp-server/src/install-kit-doc.test.ts` (Rule 10 + Rule 21)
-- [x] **Rule-21 encoding-integrity guard** — reads RAW BYTES of the kit + all four canonical
-  operator-skill sources; asserts no UTF-8 BOM, no CRLF, no mojibake lead-byte sequences
-  (`0xC3 0xA2` em-dash/arrow, `0xC3 0xB0` emoji). This is the out-of-band check the token drift
-  pins are STRUCTURALLY BLIND to (a byte-compare of inlined-vs-canonical stays GREEN even if the
-  canonical source itself is mojibake-corrupted). Mutation-verified RED on an injected BOM and on
-  an injected em-dash mojibake double-encode.
-- [x] **Glyph-survival converse** — pins that the intended 👍 / em-dash / arrow glyphs are PRESENT
-  (decoded) in the kit, so the absence-of-mojibake guard is not vacuous on a glyph-stripped file.
-  Mutation-verified RED on stripping 👍.
+## Generated Tests (QA additions — extensions to existing co-located test files)
 
-### `packages/mcp-server/src/tools/install-kit-safety.integration.test.ts` (Rule 11, executable, EXTRACTS + EXECUTES the kit's OWN helper)
-- [x] **(ix) 8.4-helper-crlf RESOLUTION (executable proof)** — runs the kit's own `writeOwnedFile`
-  against a pre-existing CRLF owned file: proves it backs up the prior CRLF bytes FIRST, converges
-  the file to the kit's own LF content (no CRLF survives), then re-runs of the kit's LF output are
-  byte-stable no-ops. Turns the previously-prose-only documented-LF resolution into a regression
-  guard, pinning the PRECISE property (whole-file `content === original` compare → convergence +
-  byte-stable idempotency), not the loose "no-op regardless of newline" phrasing.
-- [x] **(x) END-TO-END coherent install** — drives ALL owned writers (AGENTS.md identity block via
-  applyBlock + a `.toml` overlay block + the `agentbbs` `.mcp.json` key via mergeMcpServer + all
-  four SKILL.md whole files via writeOwnedFile) into ONE temp project pre-seeded with foreign
-  assets: the project's `epic-cycle` kit, a foreign vendor `.claude/skills/<other>/` skill, a
-  foreign top-level file, a foreign block inside the kit-edited `.toml`, and a foreign `.mcp.json`
-  server + key. Asserts every foreign asset is BYTE-IDENTICAL + un-backed-up AND the full owned set
-  landed coherently. Crosses the seams BETWEEN the individual safety cases.
+### Equivalence matrix (documented pre-refactor behavior spec, pinned on each surface)
+- [x] `packages/core/src/identity/operator-handle.test.ts` — `OPERATOR_HANDLE_EQUIVALENCE_MATRIX`
+  (12 rows) + internal-whitespace-preservation case. The single source-of-truth behavior spec.
+- [x] `packages/cli/src/ui.test.ts` — cli wrapper (`resolveOperatorHandle(raw)`) asserted against
+  the same matrix (11 rows; the `null`-input row is omitted — the cli signature is
+  `string | undefined`, matching the call site `--as ?? AGENTBBS_OPERATOR`).
+- [x] `apps/vscode-extension/src/tree/operator-handle.test.ts` — extension `canonicalizeOperatorHandle`
+  import asserted against the matrix (12 rows) + 4 precedence edges (tab/newline-only setting falls
+  through to `AGENTBBS_OPERATOR`; env value canonicalized; whitespace-only env → null; setting wins).
 
-## Rule-7 mutation runs (each reverted byte-identical; kit `cmp`-confirmed clean)
-- BOM injected -> encoding guard RED.
-- em-dash mojibake injected -> encoding guard RED.
-- 👍 stripped -> glyph-survival converse RED.
-- `writeOwnedFile` backup-before-overwrite defeated -> cases (vi) + (ix) RED.
-- `writeOwnedFile` idempotency short-circuit defeated -> cases (v) + (ix) RED.
-- `mergeMcpServer` drops foreign servers -> cases (iv) + (viii) + (x) RED.
+The matrix is duplicated as a behavior SPEC (not a shared symbol) in each surface's discoverable
+test because the eslint leaf-app / `NO_CLIENT_FROM_CORE` boundary forbids one file importing all
+three wrappers. Drift on either surface goes red against the same table.
 
-## Coverage assessment vs the QA brief
-- Rule 11 executable safety proof — STRONG (dev cases v–viii + QA ix–x; extracts/executes the kit's
-  OWN writeOwnedFile; mutation-non-vacuous; end-to-end coherent-install angle added).
-- Rule 10 drift pins (4 inlined skills byte-exact + user-scope target) — present (dev), confirmed
-  non-vacuous; re-confirmed encoding-clean here.
-- AC1 install completeness — pinned (user-scope MCP §3.9 + user-scope skills §3.10 + project-scope
-  overlays/identity); the end-to-end (x) exercises every owned writer together.
-- 8.4-helper-crlf — documented-LF note present in kit §1; deferred item marked RESOLVED; the
-  resolution now has an EXECUTABLE regression guard (case ix). The dev's loose claim that
-  idempotency "holds regardless of the target's prevailing newline" is sharpened by (ix): a CRLF
-  target is correctly a CHANGE on first write (backed up); idempotency holds for the kit's OWN
-  converged LF output thereafter.
-- Rule 21 — automated encoding guard added (was prose-only / out-of-band before).
+### Edge coverage beyond the dev's existing tests
+- Tab / newline / mixed whitespace trimmed (`'\tAlice\n'`, `' \t \n MixedCase \r\n '`).
+- INTERNAL whitespace PRESERVED (`'  Two   Words  '` → `'two   words'`, `'a\tb'`) — core canonicalize
+  trims ends only, does NOT collapse/strip interior.
+- Mixed-whitespace-only → null (`'\t\n\r '`).
+- Extension precedence: a whitespace-only (tab/newline, not just spaces) setting canonicalizes to
+  null and falls through to the env.
 
-## Gate (Rule 20 — full canonical ROOT gate, independently re-run)
-- lint 0 · typecheck 0 · build OK · `pnpm test` 1663 passed (184 files, 0 failed) · prettier --check clean.
-- NOTE (Rule-20 false-green class): `prettier --check` initially flagged BOTH modified test files;
-  fixed via `prettier --write`, then re-ran lint + format -> all green.
+## Mutation testing (Rule 7 — non-vacuous confirmed)
+- Mutation A (break trim → `raw.toLowerCase()`): 32 matrix/edge tests RED across all 3 surfaces.
+  Reverted.
+- Mutation B (break lowercase + null-on-empty → `return raw.trim()`): 41 tests RED. Reverted
+  byte-identical; suite GREEN.
 
-## Next steps (lead)
-- Post-CR AC3 lead smoke: install end-to-end into a temp project; confirm global-board connection +
-  operator skills resolve. All changes left uncommitted (lead commits after the smoke gate).
+## De-dup verified (AC1)
+- The ONLY `canonicalizeOperatorHandle` definition / operator-handle `raw.trim().toLowerCase()` is
+  in `packages/core/src/identity/operator-handle.ts`. The extension surface has NO local canonicalize
+  body (imports the shared util); the cli wrapper delegates. Genuinely ONE definition.
+
+## Contract freeze verified (AC2)
+- `git diff HEAD -- packages/mcp-server/src` EMPTY. 36/36 drift-guard tests green (tool / error /
+  event vocab unchanged). The new core export is an additive internal helper, not a tool/error/event.
+
+## Gate (Rule 20 — full ROOT)
+- lint 0 / typecheck 0 / prettier --check clean (fixed one prettier warning on the extension test
+  file via `prettier --write`) / `vitest run` 188 files / **1814 passed, 0 failed**
+  (dev baseline 1772; +42 QA tests).
+
+## Discoverability (Rule 8)
+- All additions are in co-located `*.test.ts` files already in the default `vitest run` suite; the
+  new rows ran in the full-suite invocation above. Nothing excluded or opted out.
+
+## Next Steps
+- Lead per-story smoke gate, then commit (QA left all changes uncommitted per stage instruction).

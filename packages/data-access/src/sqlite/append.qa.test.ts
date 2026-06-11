@@ -172,11 +172,22 @@ describe('append — total order is seq, never created_at (THE APPEND INVARIANT)
 
     // ORDER BY created_at would be the OPPOSITE — proving the two orders genuinely
     // differ, so "order by seq" is a real, load-bearing choice (not coincidence).
+    //
+    // DOCUMENTED PROOF (Story 13.4 / Rule-8 carve-out): the disabled block below is
+    // the ONE legitimately-executed `ORDER BY created_at` in the repo. It exists
+    // PRECISELY to demonstrate that seq-ordering ≠ created_at-ordering (the append
+    // invariant). It cannot be migrated to `append` (which stamps created_at) —
+    // doing so would destroy the proof. The test-file append-invariant guard
+    // otherwise correctly forbids executed `ORDER BY created_at`. A position-stable
+    // block disable/enable pair is used (not -next-line) so Prettier reflow of the
+    // long SQL literal cannot move the directive off the reported node.
+    /* eslint-disable no-restricted-syntax */
     const byCreatedAt = (
       db.prepare('SELECT actor FROM events ORDER BY created_at ASC').all() as {
         actor: string;
       }[]
     ).map((r) => r.actor);
+    /* eslint-enable no-restricted-syntax */
     expect(byCreatedAt).toEqual(['third', 'second', 'first']);
     expect(byCreatedAt).not.toEqual(bySeq);
   });

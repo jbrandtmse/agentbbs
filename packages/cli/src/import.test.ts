@@ -584,40 +584,49 @@ describe('import — file input path + summary (AC1)', () => {
   });
 });
 
-describe('import — seq-reproduction guard (AC4)', () => {
-  it('FAILS LOUDLY if ordered replay does not reproduce the archived seq (board not empty/contiguous)', async () => {
-    // Pre-seed the destination with one event, then DIRECTLY call runImport's replay-path
-    // precondition by importing into it — but the AC2 guard catches a non-empty board first.
-    // To isolate the AC4 seq-reproduction check itself, craft an archive whose first event has a
-    // seq that does NOT equal 1: ordered replay into an empty board assigns seq 1, so seq!=1 in
-    // the archive trips the loud failure. This proves the seq-reproduction assertion is wired.
+describe('import — bad-seq archive is loudly rejected, nothing appended (AC4 / Story 13.3)', () => {
+  it('FAILS LOUDLY on a bad-seq archive (first event seq≠1) — rejected pre-replay (contiguity), nothing appended', async () => {
+    // Craft an archive whose only event has seq≠1. Under Story 13.3 this is caught by the
+    // PRE-REPLAY contiguity check (archived seqs must be exactly 1..N) BEFORE any append — a
+    // strictly stronger guarantee than the previous post-append seq-mismatch (which committed the
+    // event first). The error is a clear "not contiguous" rejection and the ledger stays EMPTY.
+    // (The post-append `assignedSeqs[i] === ordered[i].seq` assertion is retained in the
+    // production code as defense-in-depth; on a fresh empty board the contiguity check fires first.)
     const header = JSON.stringify(buildHeader(1, 0));
     const eventWithWrongSeq = JSON.stringify({
-      seq: 5, // an empty-board replay will assign seq 1, not 5 → mismatch → loud failure
+      seq: 5, // not 1 → pre-replay contiguity check rejects → loud failure, nothing appended
       type: 'identity.registered',
       actor: 'alice',
       createdAt: '2026-06-05T00:00:00.000Z',
       payload: { handle: 'alice', currentFocus: 'kickoff' },
     });
+    const destDb = join(dir, 'restored.db');
     await expect(
       runImport(
-        { dbPath: join(dir, 'restored.db'), inPath: '-' },
+        { dbPath: destDb, inPath: '-' },
         { readStdin: () => [header, eventWithWrongSeq].join('\n') + '\n' },
       ),
-    ).rejects.toThrow(/seq mismatch/i);
+    ).rejects.toThrow(/not contiguous/i);
+
+    // Nothing appended: the rejection fired before the ledger was even opened.
+    const dest = createDataAccess({ dbPath: destDb });
+    try {
+      expect(await dest.eventsSince(0)).toEqual([]);
+    } finally {
+      dest.close();
+    }
   });
 
-  // QA-added (skill goal 2/3 boundary): the seq-reproduction check fires MID-REPLAY, so unlike
-  // the AC2 empty-board guard and the AC5 pre-replay validation (both of which append NOTHING
-  // because they run BEFORE any `append`), a seq-mismatch on a LATER event leaves the EARLIER
-  // events already committed — the import is NOT transactional. This pins that documented
-  // behavior so it is visible + regression-guarded: a non-contiguous archive (seq 1 ok, seq 5
-  // wrong) throws AND leaves a partial ledger (the seq-1 + seq-2 events that replayed before the
-  // throw). The "nothing appended" guarantee is therefore scoped to the empty-guard + malformed
-  // (pre-replay) cases — NOT to the AC4 seq-mismatch case. A seq-mismatch only arises from a
-  // hand-mangled / non-contiguous archive (a normal export is always contiguous from 1), so this
-  // is an operator-error/corruption path, not a normal-flow concern; flagged to the lead/reviewer.
-  it('seq-mismatch on a LATER event throws but leaves the EARLIER replayed events (NOT atomic — characterization)', async () => {
+  // Story 13.3 — import replay is now ATOMIC. A non-contiguous archive (seq 1 ok, then seq 5 —
+  // hand-mangled / corrupt) is rejected by the PRE-REPLAY contiguity check, which runs BEFORE any
+  // append (indeed before the ledger is even opened). So the rejection appends NOTHING and leaves
+  // the ledger EMPTY — a failed restore can never half-write the board (NFR10 / NFR3). This
+  // supersedes the prior characterization (which documented a PARTIAL ledger from the old
+  // per-event loop that committed each event before checking the next seq). The "nothing
+  // appended" guarantee now covers the corruption path too, not just the empty-board + malformed
+  // (pre-replay) cases. A normal export is always contiguous from 1, so this never fires on a
+  // real archive — only on a hand-mangled / corrupt one.
+  it('a non-contiguous archive is rejected pre-replay → EMPTY ledger (atomic, nothing appended)', async () => {
     const header = JSON.stringify(buildHeader(2, 0));
     const ok = JSON.stringify({
       seq: 1,
@@ -626,7 +635,7 @@ describe('import — seq-reproduction guard (AC4)', () => {
       createdAt: '2026-06-05T00:00:00.000Z',
       payload: { handle: 'alice', currentFocus: 'kickoff' },
     });
-    // seq 5 will be assigned seq 2 on an empty-board replay → mismatch AFTER the seq-1 append.
+    // seq 5 (not 2) → the archive is non-contiguous → pre-replay contiguity check rejects it.
     const wrong = JSON.stringify({
       seq: 5,
       type: 'identity.registered',
@@ -640,16 +649,182 @@ describe('import — seq-reproduction guard (AC4)', () => {
         { dbPath: destDb, inPath: '-' },
         { readStdin: () => [header, ok, wrong].join('\n') + '\n' },
       ),
-    ).rejects.toThrow(/seq mismatch/i);
+    ).rejects.toThrow(/not contiguous/i);
 
-    // Both events that ran through `append` BEFORE the throw are committed (the replay is not
-    // wrapped in a transaction). This documents the non-atomicity rather than asserting an empty
-    // ledger — the import contract guarantees atomicity only for the pre-replay rejection paths.
+    // ATOMIC: the rejection fired pre-replay, so NOTHING was appended — the ledger is EMPTY.
     const dest = createDataAccess({ dbPath: destDb });
     try {
-      const events = await dest.eventsSince(0);
-      expect(events).toHaveLength(2);
-      expect(events.map((e) => e.actor)).toEqual(['alice', 'bob']);
+      expect(await dest.eventsSince(0)).toEqual([]);
+    } finally {
+      dest.close();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// QA-added (Story 13.3) — ATOMICITY EDGE COVERAGE.
+//
+// The marquee atomicity guarantee is "a corrupt / non-contiguous archive appends NOTHING".
+// The dev's two characterization tests prove the SHORT cases (a single seq≠1, and a 2-event
+// gap at position 2). These QA tests HARDEN the pre-replay contiguity guard's edges that no
+// existing test exercises:
+//   - a gap DEEP in a LONGER stream (1,2,3,5 — gap at position 4) → rejected, EMPTY ledger;
+//   - a DUPLICATE seq (1,2,2,3) → rejected, EMPTY ledger (the ascending 1..N invariant fails
+//     at the dup);
+//   - seqs that do NOT start at 1 (a CONTIGUOUS-but-offset run 2,3,4) → rejected, EMPTY;
+//   - a SHUFFLED-but-complete set {1,2,3} is VALID (the guard sorts first → keys on the seq
+//     SET, not line order) and imports fully;
+//   - the N=0 header-only archive imports CLEANLY (0 events, 0 cursors) — vacuously contiguous;
+//   - a genuine ≥8-event CONTIGUOUS archive imports FULLY + the cursor restores AFTER the single
+//     batched append (the contiguity check is a no-op on a real archive — the happy path is
+//     unchanged by the atomicity rework).
+//
+// Every rejection test ALSO asserts the destination ledger is EMPTY (the atomic "nothing
+// appended" contract), reading back through a fresh `createDataAccess`. These complement (not
+// replace) the dev's tests above.
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a valid-shaped NDJSON archive from an explicit list of event `seq` values (each a
+ * minimal `identity.registered` event), with a header declaring `seqs.length` events + 0
+ * cursors. The events are emitted in the GIVEN order (so a caller can plant a shuffled /
+ * duplicate / offset sequence); the production contiguity check sorts by `seq` first, so the
+ * 1..N assertion keys on the seq MULTISET, not file order.
+ */
+function archiveFromSeqs(seqs: readonly number[]): string {
+  const header = JSON.stringify(buildHeader(seqs.length, 0));
+  const lines = seqs.map((seq, i) =>
+    JSON.stringify({
+      seq,
+      type: 'identity.registered',
+      actor: `actor${i}`,
+      createdAt: '2026-06-05T00:00:00.000Z',
+      payload: { handle: `actor${i}`, currentFocus: 'x' },
+    }),
+  );
+  return [header, ...lines].join('\n') + '\n';
+}
+
+/** Read back a ledger's events through a fresh open (asserts the on-disk state, not a cache). */
+async function readBack(dbPath: string): Promise<Event[]> {
+  const da = createDataAccess({ dbPath });
+  try {
+    return await da.eventsSince(0);
+  } finally {
+    da.close();
+  }
+}
+
+describe('import — atomicity edge coverage (Story 13.3 / AC1 / AC3)', () => {
+  it('rejects a gap DEEP in a longer stream (1,2,3,5 — gap at position 4) → EMPTY ledger', async () => {
+    const destDb = join(dir, 'restored.db');
+    await expect(
+      runImport(
+        { dbPath: destDb, inPath: '-' },
+        { readStdin: () => archiveFromSeqs([1, 2, 3, 5]) },
+      ),
+    ).rejects.toThrow(/not contiguous/i);
+    // The error names the FIRST offending position (expected seq 4, found 5).
+    await expect(
+      runImport(
+        { dbPath: destDb, inPath: '-' },
+        { readStdin: () => archiveFromSeqs([1, 2, 3, 5]) },
+      ),
+    ).rejects.toThrow(/expected seq 4, found 5/i);
+    expect(await readBack(destDb)).toEqual([]);
+  });
+
+  it('rejects a DUPLICATE seq (1,2,2,3) → EMPTY ledger', async () => {
+    // Sorting yields 1,2,2,3: the invariant fails at index 2 (expected 3, found 2). A duplicate
+    // seq would, if appended, produce a non-faithful restore — it must be rejected pre-replay.
+    const destDb = join(dir, 'restored.db');
+    await expect(
+      runImport(
+        { dbPath: destDb, inPath: '-' },
+        { readStdin: () => archiveFromSeqs([1, 2, 2, 3]) },
+      ),
+    ).rejects.toThrow(/not contiguous/i);
+    expect(await readBack(destDb)).toEqual([]);
+  });
+
+  it('rejects a CONTIGUOUS run that does NOT start at 1 (2,3,4) → EMPTY ledger', async () => {
+    // Offset-but-internally-contiguous: the run 2,3,4 is contiguous among themselves but the
+    // archive does not start at seq 1, so the 1..N invariant fails immediately (expected 1,
+    // found 2). Nothing is appended.
+    const destDb = join(dir, 'restored.db');
+    await expect(
+      runImport(
+        { dbPath: destDb, inPath: '-' },
+        { readStdin: () => archiveFromSeqs([2, 3, 4]) },
+      ),
+    ).rejects.toThrow(/expected seq 1, found 2/i);
+    expect(await readBack(destDb)).toEqual([]);
+  });
+
+  it('accepts a SHUFFLED but COMPLETE set {1,2,3} (the guard sorts first → keys on the seq SET, not line order)', async () => {
+    // A real export is always seq-ordered, but the guard must not reject a faithfully-complete
+    // archive merely for line order — it sorts by seq before checking 1..N. A shuffled 1..N is
+    // VALID and imports the 3 events.
+    const destDb = join(dir, 'restored.db');
+    const result = await runImport(
+      { dbPath: destDb, inPath: '-' },
+      { readStdin: () => archiveFromSeqs([3, 1, 2]) },
+    );
+    expect(result.eventCount).toBe(3);
+    // The restored ledger has exactly seq 1,2,3 (the AUTOINCREMENT reproduced 1..N).
+    expect((await readBack(destDb)).map((e) => e.seq)).toEqual([1, 2, 3]);
+  });
+
+  it('imports an EMPTY (N=0, header-only) archive CLEANLY → 0 events, 0 cursors', async () => {
+    // A header-only archive is vacuously contiguous (no seqs to check). Import succeeds with an
+    // empty ledger — the legitimate "restore an empty board" case, NOT a rejection.
+    const header = JSON.stringify(buildHeader(0, 0));
+    const destDb = join(dir, 'restored.db');
+    const result = await runImport(
+      { dbPath: destDb, inPath: '-' },
+      { readStdin: () => header + '\n' },
+    );
+    expect(result.eventCount).toBe(0);
+    expect(result.cursorCount).toBe(0);
+    expect(await readBack(destDb)).toEqual([]);
+  });
+
+  it('imports a genuine ≥8-event CONTIGUOUS archive FULLY + restores the cursor AFTER the batched append', async () => {
+    // The contiguity check is a NO-OP on a real export (always contiguous from 1). Seed a real
+    // board (~14 events, all 10 EVENT_TYPES + a stored cursor), export it, then import — proving
+    // the atomicity rework did not change the happy path AND that the cursor-restore loop still
+    // lands AFTER the single batched append (not the old per-event loop).
+    const srcDb = join(dir, 'source.db');
+    const src = createDataAccess({ dbPath: srcDb });
+    let sourceEvents: Event[];
+    let bobCursor: number;
+    try {
+      ({ bobCursor } = await seedBoard(src));
+      sourceEvents = await src.eventsSince(0);
+    } finally {
+      src.close();
+    }
+    expect(sourceEvents.length).toBeGreaterThanOrEqual(8); // a genuinely longer stream
+    const archiveText = await exportToText(srcDb);
+
+    const destDb = join(dir, 'restored.db');
+    const result = await runImport(
+      { dbPath: destDb, inPath: '-' },
+      { readStdin: () => archiveText },
+    );
+    expect(result.eventCount).toBe(sourceEvents.length);
+    expect(result.cursorCount).toBe(1);
+
+    const dest = createDataAccess({ dbPath: destDb });
+    try {
+      const restored = await dest.eventsSince(0);
+      // Fully replayed, contiguous 1..N (the single batched append reproduced every seq).
+      expect(restored.map((e) => e.seq)).toEqual(
+        sourceEvents.map((e) => e.seq),
+      );
+      expect(restored.length).toBeGreaterThanOrEqual(8);
+      // The cursor restored AFTER the batched append (the restore loop runs post-append).
+      expect(await dest.getCursor('bob')).toBe(bobCursor);
     } finally {
       dest.close();
     }
