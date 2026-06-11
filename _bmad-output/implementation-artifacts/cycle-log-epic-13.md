@@ -51,3 +51,5 @@ Append-only. TAB-separated: `<UTC>` TAB `<Story <id> | Epic <N>>` TAB `<stage>` 
 2026-06-10T17:47:00Z	Story 13.6	smoke_complete	method=cli result=pass iterations=1 defects_caught=0 evidence=DESIGN-16.7+SidebarTreeItem-chrome.css+decoration-model.test+App.test-72pass model=claude-opus-4-8
 2026-06-10T17:48:00Z	Story 13.6	committed	sha=545bdf4 submodules=
 2026-06-11T00:00:00Z	Epic 13	retrospective_complete	repos=. retro=epic-13-retro-2026-06-11.md rules_codified=24
+2026-06-11T00:05:00Z	Epic 13	epic_merged_to_feature	repos=. feature_sha=f2333fa merge_sha=f2333fa submodules=
+2026-06-11T00:05:01Z	Epic 13	epic_summary	stories=7 total_high=0 total_med=0 total_low=1 total_smoke_defects=0 rework_events=0 tests_final=1818 items_retired=14 contract=byte-identical
